@@ -1,0 +1,6 @@
+{
+  "name": "Prompter Nano Banana",
+  "description": "Gerador de roteiros para vídeo (VEO/DIGEN) e carrosséis do Instagram (Cérebro vs Coração) em nichos de Fitness e Psicologia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
