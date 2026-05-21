@@ -1,9 +1,11 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
+
 
 dotenv.config();
 
@@ -139,6 +141,16 @@ async function startServer() {
     res.send("ok");
   });
 
+  app.get("/api/preload-path", (req, res) => {
+    try {
+      const preloadPath = path.join(process.cwd(), 'spy-preload.cjs');
+      const fileUrl = `file:///${preloadPath.replace(/\\/g, '/')}`;
+      res.json({ path: fileUrl });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/keys", (req, res) => {
     try {
       res.json(keysManager.getStats());
@@ -191,8 +203,35 @@ async function startServer() {
     }
   });
 
+  app.post("/api/save-analysis", (req, res) => {
+    try {
+      const data = req.body;
+      const filePath = path.join(process.cwd(), 'spy-analysis.json');
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+      console.log(`[Spy Server] Análise de tela salva em: ${filePath}`);
+      res.json({ success: true, path: filePath });
+    } catch (error: any) {
+      console.error("Save Analysis Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/save-macro", (req, res) => {
+    try {
+      const data = req.body;
+      const filePath = path.join(process.cwd(), 'spy-macro.json');
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+      console.log(`[Spy Server] Macro salvo em: ${filePath}`);
+      res.json({ success: true, path: filePath });
+    } catch (error: any) {
+      console.error("Save Macro Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // API Routes - Gemini Generate & Analyze
   app.post("/api/generate", async (req, res) => {
+
     try {
       const { prompt, parts, responseSchema } = req.body;
       

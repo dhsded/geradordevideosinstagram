@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database } from 'lucide-react';
 import { jsPDF } from "jspdf";
+
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
 
@@ -90,7 +91,24 @@ const VISUAL_DYNAMISM = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'script' | 'analysis' | 'carousel'>('script');
+  const [activeTab, setActiveTab] = useState<'script' | 'analysis' | 'carousel' | 'spy'>('script');
+  
+  // Browser Spy states
+  const webviewRef = React.useRef<any>(null);
+  const [spyUrl, setSpyUrl] = useState('https://midjourney.com'); // default to a popular AI generator interface or google
+  const [inputUrl, setInputUrl] = useState('https://midjourney.com');
+  const [isInspectMode, setIsInspectMode] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [hoveredElement, setHoveredElement] = useState<any>(null);
+  const [selectedElement, setSelectedElement] = useState<any>(null);
+  const [recordedSteps, setRecordedSteps] = useState<any[]>([]);
+  const [preloadPath, setPreloadPath] = useState<string>('');
+  const [webviewCanGoBack, setWebviewCanGoBack] = useState(false);
+  const [webviewCanGoForward, setWebviewCanGoForward] = useState(false);
+  const [isWebviewLoading, setIsWebviewLoading] = useState(false);
+  const [activeSpyScriptTab, setActiveSpyScriptTab] = useState<'json' | 'puppeteer' | 'playwright'>('json');
+  const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: '', type: '' });
+
   const [niche, setNiche] = useState(NICHES[0]);
   const [animationStyle, setAnimationStyle] = useState(ANIMATION_STYLES[0]);
   const [artStyle, setArtStyle] = useState(ART_STYLES[0]);
@@ -168,6 +186,323 @@ export default function App() {
   React.useEffect(() => {
     fetchKeysStats();
   }, []);
+
+  // Buscar caminho do preload do espião
+  React.useEffect(() => {
+    const getPreload = async () => {
+      try {
+        const res = await fetch('/api/preload-path');
+        if (res.ok) {
+          const data = await res.json();
+          setPreloadPath(data.path);
+        }
+      } catch (err) {
+        console.error('Erro ao obter preload do espião:', err);
+      }
+    };
+    getPreload();
+  }, []);
+
+  // Monitorar e anexar listeners do Webview
+  React.useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const handleIpcMessage = (event: any) => {
+      const { channel, args } = event;
+      const data = args[0];
+
+      if (channel === 'spy-hover') {
+        setHoveredElement(data);
+      } else if (channel === 'spy-click') {
+        if (data.type === 'inspect') {
+          setSelectedElement(data);
+          setIsInspectMode(false);
+          webview.send('toggle-inspect', false);
+        }
+
+        if (isRecording) {
+          const stepId = Date.now();
+          const desc = data.tagName === 'BUTTON' || data.tagName === 'A' 
+            ? `Clicar no botão/link "${data.text || data.id || data.className || 'Sem texto'}"` 
+            : `Clicar no elemento <${data.tagName.toLowerCase()}>`;
+            
+          setRecordedSteps(prev => [...prev, {
+            id: stepId,
+            type: 'click',
+            selector: data.selector,
+            xpath: data.xpath,
+            tagName: data.tagName,
+            text: data.text,
+            description: desc
+          }]);
+        }
+      } else if (channel === 'spy-input') {
+        if (isRecording) {
+          const stepId = Date.now();
+          // Agrupar inputs seguidos no mesmo seletor para evitar redundância
+          setRecordedSteps(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === 'input' && last.selector === data.selector) {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...last,
+                value: data.value,
+                description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`
+              };
+              return updated;
+            }
+            return [...prev, {
+              id: stepId,
+              type: 'input',
+              selector: data.selector,
+              xpath: data.xpath,
+              tagName: data.tagName,
+              name: data.name,
+              value: data.value,
+              description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`
+            }];
+          });
+        }
+      }
+    };
+
+    const handleDomReady = () => {
+      webview.send('toggle-inspect', isInspectMode);
+      setInputUrl(webview.getURL());
+      setWebviewCanGoBack(webview.canGoBack());
+      setWebviewCanGoForward(webview.canGoForward());
+    };
+
+    const handleStartLoading = () => setIsWebviewLoading(true);
+    const handleStopLoading = () => {
+      setIsWebviewLoading(false);
+      setInputUrl(webview.getURL());
+      setWebviewCanGoBack(webview.canGoBack());
+      setWebviewCanGoForward(webview.canGoForward());
+    };
+
+    const handleNavigate = (e: any) => {
+      setInputUrl(e.url);
+      setWebviewCanGoBack(webview.canGoBack());
+      setWebviewCanGoForward(webview.canGoForward());
+    };
+
+    webview.addEventListener('ipc-message', handleIpcMessage);
+    webview.addEventListener('dom-ready', handleDomReady);
+    webview.addEventListener('did-start-loading', handleStartLoading);
+    webview.addEventListener('did-stop-loading', handleStopLoading);
+    webview.addEventListener('did-navigate', handleNavigate);
+    webview.addEventListener('did-navigate-in-page', handleNavigate);
+
+    return () => {
+      webview.removeEventListener('ipc-message', handleIpcMessage);
+      webview.removeEventListener('dom-ready', handleDomReady);
+      webview.removeEventListener('did-start-loading', handleStartLoading);
+      webview.removeEventListener('did-stop-loading', handleStopLoading);
+      webview.removeEventListener('did-navigate', handleNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleNavigate);
+    };
+  }, [isRecording, isInspectMode, activeTab]);
+
+  const handleSpyGoBack = () => {
+    if (webviewRef.current && webviewRef.current.canGoBack()) {
+      webviewRef.current.goBack();
+    }
+  };
+
+  const handleSpyGoForward = () => {
+    if (webviewRef.current && webviewRef.current.canGoForward()) {
+      webviewRef.current.goForward();
+    }
+  };
+
+  const handleSpyReload = () => {
+    if (webviewRef.current) {
+      webviewRef.current.reload();
+    }
+  };
+
+  const handleSpyNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    let targetUrl = inputUrl.trim();
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    setSpyUrl(targetUrl);
+    setInputUrl(targetUrl);
+  };
+
+  const handleToggleInspect = () => {
+    const newInspect = !isInspectMode;
+    setIsInspectMode(newInspect);
+    if (webviewRef.current) {
+      webviewRef.current.send('toggle-inspect', newInspect);
+    }
+  };
+
+  const handleClearSteps = () => {
+    setRecordedSteps([]);
+    setSelectedElement(null);
+  };
+
+  const handleRemoveStep = (id: number) => {
+    setRecordedSteps(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleSyncMacroToAi = async () => {
+    if (recordedSteps.length === 0) return;
+    try {
+      setSyncStatus({ message: 'Enviando macro...', type: '' });
+      const payload = {
+        url: spyUrl,
+        timestamp: new Date().toISOString(),
+        steps: recordedSteps
+      };
+      const response = await fetch('/api/save-macro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        setSyncStatus({ message: 'Macro sincronizado com o IA! ("spy-macro.json" salvo)', type: 'success' });
+        setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
+      } else {
+        throw new Error('Falha ao salvar macro no servidor.');
+      }
+    } catch (err: any) {
+      setSyncStatus({ message: `Erro ao sincronizar: ${err.message}`, type: 'error' });
+      setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
+    }
+  };
+
+  const handleAnalyzePageForAi = async () => {
+    if (!webviewRef.current) return;
+    try {
+      setSyncStatus({ message: 'Analisando DOM da página...', type: '' });
+      
+      const extractionScript = `
+        (() => {
+          const interactives = [];
+          const allElements = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [onclick]');
+          const parsed = new Set();
+          
+          function getCssSelector(el) {
+            if (!(el instanceof Element)) return '';
+            const path = [];
+            let current = el;
+            while (current && current.nodeType === Node.ELEMENT_NODE) {
+              let selector = current.nodeName.toLowerCase();
+              if (current.id) {
+                selector += '#' + current.id;
+                path.unshift(selector);
+                break;
+              } else {
+                let className = '';
+                if (current.className && typeof current.className === 'string') {
+                  const classes = current.className.trim().split(/\\\\s+/).filter(c => !c.includes(':') && !c.startsWith('nano-banana'));
+                  if (classes.length > 0) {
+                    className = '.' + classes.slice(0, 3).join('.');
+                  }
+                }
+                selector += className;
+                let sibling = current;
+                let nth = 1;
+                while (sibling = sibling.previousElementSibling) {
+                  if (sibling.nodeName.toLowerCase() === current.nodeName.toLowerCase()) nth++;
+                }
+                let hasNextSibling = false;
+                let nextSibling = current;
+                while (nextSibling = nextSibling.nextElementSibling) {
+                  if (nextSibling.nodeName.toLowerCase() === current.nodeName.toLowerCase()) {
+                    hasNextSibling = true;
+                    break;
+                  }
+                }
+                if (nth > 1 || hasNextSibling) {
+                  selector += \`:nth-of-type(\${nth})\`;
+                }
+              }
+              path.unshift(selector);
+              current = current.parentNode;
+            }
+            return path.join(' > ');
+          }
+
+          function getXPath(el) {
+            if (!(el instanceof Element)) return '';
+            const paths = [];
+            let current = el;
+            for (; current && current.nodeType === Node.ELEMENT_NODE; current = current.parentNode) {
+              let index = 0;
+              let hasSiblings = false;
+              for (let sibling = current.previousSibling; sibling; sibling = sibling.previousSibling) {
+                if (sibling.nodeType === Node.DOCUMENT_TYPE_NODE) continue;
+                if (sibling.nodeName === current.nodeName) index++;
+              }
+              for (let sibling = current.nextSibling; sibling; sibling = sibling.nextSibling) {
+                if (sibling.nodeName === current.nodeName) {
+                  hasSiblings = true;
+                  break;
+                }
+              }
+              const tagName = current.nodeName.toLowerCase();
+              const pathIndex = (index || hasSiblings) ? \`[\${index + 1}]\` : '';
+              paths.unshift(tagName + pathIndex);
+            }
+            return paths.length ? '/' + paths.join('/') : null;
+          }
+
+          allElements.forEach(el => {
+            if (parsed.has(el)) return;
+            parsed.add(el);
+            
+            let text = el.innerText || el.textContent || '';
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+              text = el.placeholder || el.value || '';
+            }
+            text = text.trim().substring(0, 80);
+            
+            interactives.push({
+              tagName: el.tagName,
+              id: el.id || '',
+              className: typeof el.className === 'string' ? el.className : '',
+              text: text,
+              selector: getCssSelector(el),
+              xpath: getXPath(el),
+              role: el.getAttribute('role') || '',
+              type: el.getAttribute('type') || ''
+            });
+          });
+          
+          return {
+            url: window.location.href,
+            title: document.title,
+            elements: interactives
+          };
+        })()
+      `;
+
+      const result = await webviewRef.current.executeJavaScript(extractionScript);
+      
+      const response = await fetch('/api/save-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result)
+      });
+
+      if (response.ok) {
+        setSyncStatus({ message: 'Análise da tela salva! ("spy-analysis.json" criado)', type: 'success' });
+        setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
+      } else {
+        throw new Error('Falha ao salvar a análise no servidor.');
+      }
+    } catch (err: any) {
+      setSyncStatus({ message: `Erro ao analisar página: ${err.message}`, type: 'error' });
+      setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
+    }
+  };
+
 
   const handleKeysFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -814,6 +1149,12 @@ export default function App() {
             >
               Análise
             </button>
+            <button 
+              onClick={() => setActiveTab('spy')}
+              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition ${activeTab === 'spy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Espião Flow
+            </button>
           </nav>
 
           <button 
@@ -831,9 +1172,368 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-grow w-full max-w-7xl mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-64px)] overflow-hidden">
+      <main className={`flex-grow w-full ${activeTab === 'spy' ? 'max-w-none px-4 pb-4 lg:px-6 lg:pb-6 pt-2' : 'max-w-7xl mx-auto p-4 lg:p-6'} grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-64px)] overflow-hidden`}>
         
-        {activeTab !== 'analysis' ? (
+
+        {activeTab === 'spy' ? (
+          <div className="lg:col-span-12 w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
+            {/* Coluna do Navegador (Esquerda) */}
+            <div className="lg:col-span-8 flex flex-col h-full bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+              {/* Barra de Navegação */}
+              <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/50">
+                <div className="flex items-center gap-1.5">
+                  <button 
+                    onClick={handleSpyGoBack} 
+                    disabled={!webviewCanGoBack} 
+                    className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition"
+                    title="Voltar"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={handleSpyGoForward} 
+                    disabled={!webviewCanGoForward} 
+                    className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition"
+                    title="Avançar"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={handleSpyReload} 
+                    className="p-2 hover:bg-slate-200/80 rounded-xl text-slate-600 transition"
+                    title="Atualizar"
+                  >
+                    <RotateCw className={`w-4 h-4 ${isWebviewLoading ? 'animate-spin text-indigo-500' : ''}`} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSpyNavigate} className="flex-grow flex items-center gap-2">
+                  <div className="flex-grow relative flex items-center">
+                    <div className="absolute left-3.5 text-slate-400">
+                      <Compass className="w-4 h-4" />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={inputUrl}
+                      onChange={(e) => setInputUrl(e.target.value)}
+                      placeholder="Digite a URL para navegar (ex: midjourney.com)"
+                      className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-inner"
+                    />
+                  </div>
+                  <button 
+                    type="submit" 
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-sm transition"
+                  >
+                    Ir
+                  </button>
+                </form>
+
+                {/* Inspect Target Button */}
+                <button 
+                  onClick={handleToggleInspect}
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-extrabold rounded-2xl shadow-sm transition cursor-pointer select-none border border-slate-200 ${isInspectMode ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-100 hover:bg-indigo-700' : 'bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300'}`}
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>{isInspectMode ? 'Inspecionando...' : 'Inspecionar'}</span>
+                </button>
+
+                {/* Analyze Target Button */}
+                <button 
+                  type="button"
+                  onClick={handleAnalyzePageForAi}
+                  className="flex items-center gap-2 px-4 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 rounded-2xl shadow-sm transition cursor-pointer select-none"
+                  title="Mapeia todos os botões e campos de texto desta tela e envia diretamente para o IA analisá-la!"
+                >
+                  <Cpu className="w-4 h-4" />
+                  <span>Analisar para o IA</span>
+                </button>
+
+              </div>
+
+              {/* WebView Area */}
+              <div className="flex-grow relative bg-slate-100/50">
+                {preloadPath ? (
+                  // @ts-ignore
+                  <webview
+                    ref={webviewRef}
+                    src={spyUrl}
+                    preload={preloadPath}
+                    className="absolute inset-0 w-full h-full bg-white"
+                    style={{ border: 'none' }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
+                    <p className="text-sm font-semibold">Carregando espião...</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Painel do Espião (Direita) */}
+            <div className="lg:col-span-4 flex flex-col h-full bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden text-slate-300">
+              {/* Header do Painel */}
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+                  <h3 className="font-bold text-sm uppercase tracking-wider text-white">Console do Espião</h3>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setIsRecording(!isRecording)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-xl transition ${isRecording ? 'bg-rose-500 text-white hover:bg-rose-600 animate-pulse' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'}`}
+                  >
+                    {isRecording ? (
+                      <>
+                        <Square className="w-3 h-3 fill-current" />
+                        <span>Parar</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Gravar</span>
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleSyncMacroToAi}
+                    disabled={recordedSteps.length === 0}
+                    className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 rounded-xl transition border border-indigo-700"
+                    title="Sincronizar Macro Gravado com o IA"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    onClick={handleClearSteps}
+                    disabled={recordedSteps.length === 0}
+                    className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 disabled:opacity-40 rounded-xl transition border border-slate-700"
+                    title="Limpar Fluxo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status de Sincronização */}
+              {syncStatus.message && (
+                <div className={`px-5 py-2.5 text-xs font-bold border-b transition-all flex items-center gap-2 ${
+                  syncStatus.type === 'success' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50' : 
+                  syncStatus.type === 'error' ? 'bg-rose-950/40 text-rose-400 border-rose-900/50' : 
+                  'bg-slate-950 text-indigo-400 border-slate-800'
+                }`}>
+                  <Database className="w-3.5 h-3.5 animate-pulse" />
+                  <span className="truncate">{syncStatus.message}</span>
+                </div>
+              )}
+
+
+              {/* Corpo (Abas de Informação e Lista de Passos) */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                
+                {/* Elemento Ativamente Focado / Selecionado */}
+                <div className="p-4 bg-slate-950/60 rounded-2xl border border-indigo-500/20">
+                  <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5" /> Inspetor de Código
+                  </h4>
+                  
+                  {selectedElement ? (
+                    <div className="space-y-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-md font-mono text-[10px]">
+                          {selectedElement.tagName}
+                        </span>
+                        {selectedElement.id && (
+                          <span className="text-slate-400 font-mono">#{selectedElement.id}</span>
+                        )}
+                        {selectedElement.text && (
+                          <span className="text-slate-300 italic truncate max-w-[150px]">
+                            "{selectedElement.text}"
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Seletor CSS */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                          <span>Seletor CSS</span>
+                          <button 
+                            onClick={() => handleCopy(selectedElement.selector, 'css_sel')}
+                            className="hover:text-indigo-400 flex items-center gap-1 text-[10px]"
+                          >
+                            {copiedStates['css_sel'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                            Copiar
+                          </button>
+                        </div>
+                        <code className="block p-2 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-[10px] break-all leading-tight">
+                          {selectedElement.selector}
+                        </code>
+                      </div>
+
+                      {/* XPath */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                          <span>XPath</span>
+                          <button 
+                            onClick={() => handleCopy(selectedElement.xpath, 'xpath_sel')}
+                            className="hover:text-indigo-400 flex items-center gap-1 text-[10px]"
+                          >
+                            {copiedStates['xpath_sel'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                            Copiar
+                          </button>
+                        </div>
+                        <code className="block p-2 bg-slate-900 border border-slate-800 rounded-lg text-amber-400 font-mono text-[10px] break-all leading-tight">
+                          {selectedElement.xpath}
+                        </code>
+                      </div>
+                    </div>
+                  ) : hoveredElement ? (
+                    <div className="space-y-1.5 text-xs text-slate-400">
+                      <p className="text-[11px] text-slate-500 text-left">Passe o mouse ou clique no elemento...</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded">
+                          {hoveredElement.tagName}
+                        </span>
+                        {hoveredElement.id && <span className="font-mono text-slate-500">#{hoveredElement.id}</span>}
+                        {hoveredElement.className && <span className="font-mono text-[10px] text-slate-600 truncate max-w-[120px]">.{hoveredElement.className.trim().split(/\s+/)[0]}</span>}
+                      </div>
+                      <code className="block p-1 text-[9px] font-mono text-slate-500 bg-slate-900/30 rounded truncate text-left">
+                        {hoveredElement.selector}
+                      </code>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 italic py-2 text-left">Nenhum elemento inspecionado. Use a ferramenta "Inspecionar" acima.</p>
+                  )}
+                </div>
+
+                {/* Histórico do Fluxo Gravado */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Fluxo Gravado ({recordedSteps.length})</h4>
+                  
+                  {recordedSteps.length === 0 ? (
+                    <div className="py-10 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
+                      <div className={`p-2.5 rounded-full mb-3 ${isRecording ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-500'}`}>
+                        <Play className="w-5 h-5" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400">Ainda não há passos gravados</p>
+                      <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Ative a gravação e interaja com o navegador para capturar suas ações.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {recordedSteps.map((step, idx) => (
+                        <div key={step.id} className="group flex items-start justify-between p-3 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition text-left text-xs gap-3">
+                          <div className="flex gap-2.5 items-start">
+                            <div className="mt-0.5 p-1 bg-slate-800 rounded-lg text-slate-400">
+                              {step.type === 'click' ? <MousePointer className="w-3.5 h-3.5 text-indigo-400" /> : <Keyboard className="w-3.5 h-3.5 text-emerald-400" />}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-200 text-[11px]">{step.description}</p>
+                              <code className="block mt-1 text-[9px] font-mono text-slate-500 truncate max-w-[180px]">
+                                {step.selector}
+                              </code>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => handleRemoveStep(step.id)}
+                            className="p-1 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-lg transition"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Exibição do Script Gerado para Automação */}
+                {recordedSteps.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Código de Automação</h4>
+                      <div className="flex bg-slate-800 p-0.5 rounded-lg text-[9px] font-bold">
+                        <button 
+                          onClick={() => setActiveSpyScriptTab('json')}
+                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'json' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          JSON
+                        </button>
+                        <button 
+                          onClick={() => setActiveSpyScriptTab('puppeteer')}
+                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'puppeteer' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          Pup
+                        </button>
+                        <button 
+                          onClick={() => setActiveSpyScriptTab('playwright')}
+                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'playwright' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          PW
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 relative flex flex-col">
+                      <div className="absolute right-3 top-3 z-10">
+                        <button 
+                          onClick={() => {
+                            const codeStr = 
+                              activeSpyScriptTab === 'json' ? JSON.stringify(recordedSteps, null, 2) :
+                              activeSpyScriptTab === 'puppeteer' ? 
+                              `const puppeteer = require('puppeteer');\n\n(async () => {\n  const browser = await puppeteer.launch({ headless: false });\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n  // Ações Gravadas:\n${recordedSteps.map(s => {
+                                if (s.type === 'click') {
+                                  return `  await page.waitForSelector('${s.selector}');\n  await page.click('${s.selector}');`;
+                                } else {
+                                  return `  await page.waitForSelector('${s.selector}');\n  await page.type('${s.selector}', '${s.value}');`;
+                                }
+                              }).join('\n\n')}\n\n  await browser.close();\n})();` :
+                              `const { chromium } = require('playwright');\n\n(async () => {\n  const browser = await chromium.launch({ headless: false });\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n  // Ações Gravadas:\n${recordedSteps.map(s => {
+                                if (s.type === 'click') {
+                                  return `  await page.click('${s.selector}');`;
+                                } else {
+                                  return `  await page.fill('${s.selector}', '${s.value}');`;
+                                }
+                              }).join('\n')}\n\n  await browser.close();\n})();`;
+                            
+                            handleCopy(codeStr, 'gen_script');
+                          }}
+                          className="flex items-center gap-1 text-[9px] font-black uppercase text-indigo-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2 py-1 rounded-lg transition"
+                        >
+                          {copiedStates['gen_script'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                          Copiar
+                        </button>
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto pr-1">
+                        <code className="block text-[10px] text-green-400 font-mono whitespace-pre text-left leading-relaxed">
+                          {activeSpyScriptTab === 'json' ? (
+                            JSON.stringify(recordedSteps, null, 2)
+                          ) : activeSpyScriptTab === 'puppeteer' ? (
+                            `const puppeteer = require('puppeteer');\n\n(async () => {\n  const browser = await puppeteer.launch();\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n${recordedSteps.map(s => {
+                              if (s.type === 'click') {
+                                return `  // ${s.description}\n  await page.waitForSelector('${s.selector}');\n  await page.click('${s.selector}');`;
+                              } else {
+                                return `  // ${s.description}\n  await page.waitForSelector('${s.selector}');\n  await page.type('${s.selector}', '${s.value}');`;
+                              }
+                            }).join('\n\n')}\n})();`
+                          ) : (
+                            `const { chromium } = require('playwright');\n\n(async () => {\n  const browser = await chromium.launch();\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n${recordedSteps.map(s => {
+                              if (s.type === 'click') {
+                                return `  // ${s.description}\n  await page.click('${s.selector}');`;
+                              } else {
+                                return `  // ${s.description}\n  await page.fill('${s.selector}', '${s.value}');`;
+                              }
+                            }).join('\n')}\n})();`
+                          )}
+                        </code>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          </div>
+        ) : activeTab !== 'analysis' ? (
           <>
             {/* Form Sidebar */}
             <aside className="lg:col-span-4 h-full flex flex-col overflow-hidden">
