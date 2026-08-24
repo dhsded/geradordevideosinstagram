@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, utilityProcess } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const http = require('http');
 
@@ -13,34 +14,40 @@ const isDev = !app.isPackaged;
 function startBackend() {
   if (isDev) {
     console.log('Starting backend server in development mode (using Vite middleware)...');
-    // Em desenvolvimento, rodamos "npm run dev" que inicia o tsx server.ts
     backendProcess = spawn('cmd.exe', ['/c', 'npm', 'run', 'dev'], {
       cwd: __dirname,
       env: { ...process.env, FORCE_COLOR: 'true' },
       stdio: 'inherit',
       shell: true
     });
-  } else {
-    console.log('Starting backend server in production mode...');
-    // Em produção, rodamos o script compilado dist/server.cjs usando node
-    backendProcess = spawn('node', [path.join(__dirname, 'dist', 'server.cjs')], {
-      cwd: __dirname,
-      env: { ...process.env, NODE_ENV: 'production' },
-      stdio: 'inherit'
+
+    backendProcess.on('error', (err) => {
+      console.error('Failed to start backend process in dev mode:', err);
     });
-  }
 
-  backendProcess.on('error', (err) => {
-    console.error('Failed to start backend process:', err);
-  });
+    backendProcess.on('exit', (code, signal) => {
+      console.log(`Dev backend process exited with code ${code} and signal ${signal}`);
+    });
+  } else {
+    console.log('Starting backend server in production mode via Electron utilityProcess...');
+    const serverScript = path.join(__dirname, 'dist', 'server.cjs');
+    
+    try {
+      backendProcess = utilityProcess.fork(serverScript, [], {
+        env: { ...process.env, NODE_ENV: 'production' },
+        stdio: 'inherit'
+      });
 
-  backendProcess.on('exit', (code, signal) => {
-    console.log(`Backend process exited with code ${code} and signal ${signal}`);
-    if (!isQuitting) {
-      // Se o backend cair inesperadamente e não estivermos fechando o app, avisar ou reiniciar
-      console.warn('Backend exited unexpectedly.');
+      backendProcess.on('exit', (code) => {
+        console.log(`Production backend process exited with code ${code}`);
+        if (!isQuitting) {
+          console.warn('Backend server process closed unexpectedly.');
+        }
+      });
+    } catch (err) {
+      console.error('Failed to fork backend server via utilityProcess:', err);
     }
-  });
+  }
 }
 
 function pollServerReady(callback) {
@@ -51,7 +58,6 @@ function pollServerReady(callback) {
     method: 'GET',
     timeout: 1000
   }, (res) => {
-    // Consumir a resposta para liberar o socket de forma limpa
     res.resume();
     res.on('end', () => {
       console.log('Express server is up and running on port 3000!');
@@ -60,16 +66,15 @@ function pollServerReady(callback) {
   });
 
   req.on('error', () => {
-    // Se deu erro de conexão, aguardar 200ms e tentar novamente
     if (!isQuitting) {
-      setTimeout(() => pollServerReady(callback), 200);
+      setTimeout(() => pollServerReady(callback), 250);
     }
   });
 
   req.on('timeout', () => {
     req.destroy();
     if (!isQuitting) {
-      setTimeout(() => pollServerReady(callback), 200);
+      setTimeout(() => pollServerReady(callback), 250);
     }
   });
 
@@ -77,12 +82,14 @@ function pollServerReady(callback) {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'build', 'icon.png');
   mainWindow = new BrowserWindow({
     width: 1280,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
-    show: false, // Ocultar até carregar por completo para evitar piscadas
+    height: 850,
+    minWidth: 900,
+    minHeight: 650,
+    show: false,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -92,14 +99,12 @@ function createWindow() {
     title: 'Prompter Nano Banana Desktop',
   });
 
-  // Ocultar menu nativo feio do browser (em produção), habilitar atalhos úteis
   if (!isDev) {
     Menu.setApplicationMenu(null);
   } else {
     mainWindow.webContents.openDevTools();
   }
 
-  // Carregar o endereço do Express (que gerencia o Vite ou os estáticos do React)
   mainWindow.loadURL('http://localhost:3000');
 
   mainWindow.once('ready-to-show', () => {
@@ -114,10 +119,8 @@ function createWindow() {
 
 // Inicialização do app
 app.whenReady().then(() => {
-  // 1. Iniciar o processo de backend
   startBackend();
 
-  // 2. Aguardar o servidor estar pronto antes de abrir a janela
   pollServerReady(() => {
     createWindow();
   });
@@ -129,7 +132,6 @@ app.whenReady().then(() => {
   });
 });
 
-// Fechamento da aplicação
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -139,12 +141,16 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   isQuitting = true;
   if (backendProcess) {
-    console.log('Terminating backend process...');
-    // Matar processo filho no Windows de forma limpa
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', backendProcess.pid, '/f', '/t']);
-    } else {
-      backendProcess.kill();
+    console.log('Terminating backend server process...');
+    try {
+      if (typeof backendProcess.kill === 'function') {
+        backendProcess.kill();
+      }
+      if (backendProcess.pid && process.platform === 'win32' && isDev) {
+        spawn('taskkill', ['/pid', backendProcess.pid, '/f', '/t']);
+      }
+    } catch (e) {
+      console.error('Error stopping backend:', e);
     }
   }
 });

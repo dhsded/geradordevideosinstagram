@@ -1,17 +1,62 @@
 {
-  "name": "react-example",
+  "name": "prompter-nano-banana",
+  "productName": "Prompter Nano Banana",
+  "version": "1.0.0",
+  "description": "Gerador de Roteiros e Carrosséis Instagram",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "main": "main.cjs",
+  "author": "Diego Dutra",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"try{fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('release',{recursive:true,force:true});}catch(e){}\"",
     "lint": "tsc --noEmit",
     "electron:dev": "electron .",
-    "electron:start": "npm run build && electron ."
+    "electron:start": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder --win",
+    "electron:build:portable": "npm run build && electron-builder --win portable",
+    "electron:build:dir": "npm run build && electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.diegodutra.prompternanobanana",
+    "productName": "Prompter Nano Banana",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "build/**/*",
+      "main.cjs",
+      "preload.js",
+      "keys.json",
+      "metadata.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "keys.json",
+        "to": "keys.json"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Prompter Nano Banana",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    }
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -34,6 +79,9 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "electron": "^42.2.0",
+    "electron-builder": "^26.15.3",
+    "jimp": "^1.6.1",
+    "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

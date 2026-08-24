@@ -1,9 +1,12 @@
 node_modules/
-build/
 dist/
+dist-electron/
+release/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
 keys.json
+!build/icon.ico
+!build/icon.png

@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
 
@@ -16,7 +16,7 @@ function maskKeyForLog(key: string): string {
 }
 
 // Helper principal para geração com ROTAÇÃO e RESILIÊNCIA de chaves
-async function executeWithKeyRotation(model: string, args: any) {
+async function executeWithKeyRotation(preferredModel: string, args: any) {
   const triedKeys = new Set<string>();
   
   while (true) {
@@ -55,14 +55,22 @@ async function executeWithKeyRotation(model: string, args: any) {
     });
 
     let lastError: any;
-    const modelsToTry = [model, "gemini-1.5-flash", "gemini-1.5-pro"];
+    const modelsToTry = [...new Set([
+      preferredModel,
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro"
+    ])];
+    
     let success = false;
     let result: any;
+    let keyIsExhaustedOrInvalid = false;
 
     for (const currentModel of modelsToTry) {
-      let isQuotaOrInvalid = false;
+      let modelFailedPermanently = false;
 
-      for (let i = 0; i < 3; i++) { // Máximo de 3 tentativas por modelo em caso de erro 503
+      for (let i = 0; i < 3; i++) { // Máximo de 3 tentativas por modelo em caso de 503
         try {
           console.log(`[Rotation] Tentando modelo ${currentModel} (Tentativa ${i + 1}) com chave ${maskedKey}...`);
           result = await dynamicAi.models.generateContent({
@@ -73,43 +81,48 @@ async function executeWithKeyRotation(model: string, args: any) {
           break; // Sucesso!
         } catch (error: any) {
           lastError = error;
-          console.error(`[Rotation] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, error.message || error);
+          const errMsg = error?.message || String(error);
+          console.error(`[Rotation] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, errMsg);
 
-          // Verificar se é erro de cota (429) ou chave inválida
+          // 1. Verificar erro de COTA (429 / RESOURCE_EXHAUSTED)
           const isQuota = 
-            error.status === 429 || 
-            error.message?.includes("429") || 
-            error.message?.includes("RESOURCE_EXHAUSTED") || 
-            error.message?.includes("Quota exceeded");
-            
+            error?.status === 429 || 
+            errMsg.includes("429") || 
+            errMsg.includes("RESOURCE_EXHAUSTED") || 
+            errMsg.toLowerCase().includes("quota exceeded");
+
+          // 2. Verificar erro de AUTENTICAÇÃO / CHAVE INVÁLIDA (401 / 403 / API_KEY_INVALID)
           const isInvalidKey = 
-            error.status === 400 || 
-            error.message?.includes("API key not valid") || 
-            error.message?.includes("API_KEY_INVALID") ||
-            error.message?.includes("not valid");
+            error?.status === 401 || 
+            error?.status === 403 ||
+            errMsg.includes("API key not valid") || 
+            errMsg.includes("API_KEY_INVALID") ||
+            errMsg.includes("API key expired");
 
           if (isQuota || isInvalidKey) {
-            isQuotaOrInvalid = true;
-            break; // Quebra o loop de tentativas do modelo atual para rotacionar chave
+            keyIsExhaustedOrInvalid = true;
+            break; // Chave não tem mais cota ou é inválida, rotacionar chave imediatamente
           }
 
-          // Se for indisponibilidade temporária de serviço (503), aguarda com exponencial back-off
-          const isUnavailable = error.message?.includes("503") || error.message?.includes("UNAVAILABLE");
+          // 3. Se for indisponibilidade temporária de serviço (503), aguarda com exponencial back-off
+          const isUnavailable = error?.status === 503 || errMsg.includes("503") || errMsg.includes("UNAVAILABLE");
           if (isUnavailable && i < 2) {
             const delay = Math.pow(2, i) * 1000;
-            console.log(`[Rotation] Servidor instável (503). Retentando em ${delay}ms...`);
+            console.log(`[Rotation] Servidor instável (503). Retentando modelo em ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
 
+          // Erro específico do modelo (404 modelo inexistente, ou erro 400 de parâmetros), tentar próximo modelo da lista
+          modelFailedPermanently = true;
           break;
         }
       }
 
       if (success) break;
 
-      if (isQuotaOrInvalid) {
-        // Se for erro de cota ou chave inválida, não adianta testar outros modelos com essa chave.
+      if (keyIsExhaustedOrInvalid) {
+        // Se a chave esgotou cota ou é inválida, não adianta testar outros modelos com essa chave.
         break;
       }
     }
@@ -120,10 +133,11 @@ async function executeWithKeyRotation(model: string, args: any) {
       }
       return result;
     } else {
-      // Marcar chave como esgotada/com erro e tentar a próxima do loop
       console.warn(`[Rotation] Chave ${maskedKey} falhou ou esgotou cota. Rotacionando para próxima chave ativa...`);
-      if (!isFallback) {
+      if (!isFallback && keyIsExhaustedOrInvalid) {
         keysManager.markExhausted(activeKey);
+      } else if (!isFallback) {
+        keysManager.recordError(activeKey);
       }
       continue;
     }
@@ -192,11 +206,12 @@ async function startServer() {
 
   app.delete("/api/keys", (req, res) => {
     try {
-      const { key } = req.body;
-      if (!key) {
-        return res.status(400).json({ error: "O campo 'key' é obrigatório para exclusão." });
+      const { id, key } = req.body;
+      const target = id || key;
+      if (!target) {
+        return res.status(400).json({ error: "O identificador da chave é obrigatório para exclusão." });
       }
-      keysManager.removeKey(key);
+      keysManager.removeKey(target);
       res.json(keysManager.getStats());
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -233,9 +248,9 @@ async function startServer() {
   app.post("/api/generate", async (req, res) => {
 
     try {
-      const { prompt, parts, responseSchema } = req.body;
+      const { parts, responseSchema } = req.body;
       
-      const result = await executeWithKeyRotation("gemini-3-flash-preview", {
+      const result = await executeWithKeyRotation("gemini-2.5-flash", {
         contents: { parts },
         config: {
           responseMimeType: "application/json",
@@ -254,7 +269,7 @@ async function startServer() {
     try {
       const { prompt, videoData, mimeType } = req.body;
       
-      const result = await executeWithKeyRotation("gemini-3-flash-preview", {
+      const result = await executeWithKeyRotation("gemini-2.5-flash", {
         contents: {
           parts: [
             { text: prompt },
@@ -275,7 +290,7 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
+  // Vite middleware for development or Static serving for production
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -283,7 +298,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // Determinar caminho correto de arquivos estáticos em produção
+    let distPath = path.join(process.cwd(), 'dist');
+    if (!fs.existsSync(path.join(distPath, 'index.html')) && fs.existsSync(path.join(__dirname, 'index.html'))) {
+      distPath = __dirname;
+    }
+
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

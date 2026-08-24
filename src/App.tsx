@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -44,6 +44,13 @@ interface GeneratedCarousel {
   instagramPost: string;
 }
 
+interface ReferencePdfFile {
+  name: string;
+  data: string;
+  mimeType: string;
+  size: number;
+}
+
 const NICHES = ['Fitness', 'Psicologia', 'Psiquiatria', 'Neuropsicologia', 'Top 10 Filmes e Séries'];
 const ANIMATION_STYLES = [
   'Stop Motion',
@@ -67,17 +74,17 @@ const ART_STYLES = [
 ];
 
 const NICHE_CAROUSEL_TONES: Record<string, string[]> = {
-  'Psicologia': ['Psicológico', 'Filosófico', 'Profundidade'],
-  'Psiquiatria': ['Psicológico', 'Filosófico', 'Profundidade'],
-  'Neuropsicologia': ['Psicológico', 'Filosófico', 'Profundidade'],
+  'Psicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
+  'Psiquiatria': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
+  'Neuropsicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
   'Fitness': ['Motivacional', 'Tutorial / Passo a Passo', 'Curiosidades / Mitos'],
   'Top 10 Filmes e Séries': ['Ranking / Top 10', 'Recomendação Secreta', 'Curiosidades / Bastidores']
 };
 
 const NICHE_SCRIPT_TONES: Record<string, string[]> = {
-  'Psicologia': ['Poético', 'Metafórico e Profundo', 'Filosófico'],
-  'Psiquiatria': ['Poético', 'Metafórico e Profundo', 'Filosófico'],
-  'Neuropsicologia': ['Poético', 'Metafórico e Profundo', 'Filosófico'],
+  'Psicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
+  'Psiquiatria': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
+  'Neuropsicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
   'Fitness': ['Motivacional / Foco', 'Instrucional / Passo a Passo', 'Curiosidades'],
   'Top 10 Filmes e Séries': []
 };
@@ -118,9 +125,9 @@ export default function App() {
   const [sceneCount, setSceneCount] = useState(3);
   const [duration, setDuration] = useState(5);
   const [topic, setTopic] = useState('');
-  const [scriptTone, setScriptTone] = useState('Poético');
+  const [scriptTone, setScriptTone] = useState('Acolhedor / Compassivo');
   const [includeHook, setIncludeHook] = useState(true);
-  const [carouselTone, setCarouselTone] = useState('Psicológico');
+  const [carouselTone, setCarouselTone] = useState('Acolhedor / Compassivo');
   const [characterDescription, setCharacterDescription] = useState('');
   
   React.useEffect(() => {
@@ -138,11 +145,11 @@ export default function App() {
     }
   }, [niche]);
 
-  const [characterImages, setCharacterImages] = useState<{data: string, mimeType: string}[]>([]);
+  const [characterImages, setCharacterImages] = useState<({data: string, mimeType: string} | undefined)[]>([]);
   const [contextImages, setContextImages] = useState<{data: string, mimeType: string}[]>([]);
+  const [referencePdfs, setReferencePdfs] = useState<ReferencePdfFile[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isCancelled, setIsCancelled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GeneratedPrompts | null>(null);
   const [carouselResult, setCarouselResult] = useState<GeneratedCarousel | null>(null);
@@ -154,6 +161,9 @@ export default function App() {
   
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
+  // Abort controller ref para cancelamento real das requisições
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Estados e manipuladores do Gerenciador de Chaves Rotativas
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
   const [keysStats, setKeysStats] = useState<{
@@ -161,6 +171,7 @@ export default function App() {
     free: number;
     exhausted: number;
     keysList: Array<{
+      id: string;
       keyMasked: string;
       status: 'free' | 'exhausted';
       successCount: number;
@@ -555,12 +566,12 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const handleRemoveKey = async (maskedKey: string) => {
+  const handleRemoveKey = async (id: string) => {
     try {
       const response = await fetch('/api/keys', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: maskedKey })
+        body: JSON.stringify({ id })
       });
       if (response.ok) {
         const data = await response.json();
@@ -601,7 +612,10 @@ export default function App() {
   };
 
   const handleCancel = () => {
-    setIsCancelled(true);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setIsLoading(false);
     setIsAnalyzing(false);
     setError('Operação cancelada pelo usuário.');
@@ -625,7 +639,7 @@ export default function App() {
       content += `${result.nanoBananaImagePrompt}\n\n`;
       content += `=========================================\n\n`;
       
-      result.scenes.forEach((scene) => {
+      result.scenes?.forEach((scene) => {
         content += `CENA ${scene.sceneNumber} (${scene.duration}s)\n`;
         content += `Contexto: ${scene.contextPt}\n\n`;
         content += `[PROMPT DE VÍDEO - INGLÊS]\n`;
@@ -650,7 +664,7 @@ export default function App() {
     } else if (activeTab === 'carousel' && carouselResult) {
       let content = `--- CARROSSEL INSTAGRAM ---\n\n`;
       
-      carouselResult.slides.forEach((slide) => {
+      carouselResult.slides?.forEach((slide) => {
         content += `SLIDE ${slide.slideNumber}\n`;
         content += `Descrição: ${slide.descriptionPt}\n`;
         content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
@@ -679,43 +693,48 @@ export default function App() {
     let yPos = 20;
     const margin = 20;
     const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
     const maxLineWidth = pageWidth - margin * 2;
 
     const addText = (text: string, fontSize: number, isBold: boolean = false, textColor: [number, number, number] = [0,0,0]) => {
+      if (!text) return;
       doc.setFontSize(fontSize);
       doc.setFont("helvetica", isBold ? "bold" : "normal");
       doc.setTextColor(textColor[0], textColor[1], textColor[2]);
       
       const lines = doc.splitTextToSize(text, maxLineWidth);
-      
-      if (yPos + (lines.length * fontSize * 0.4) > doc.internal.pageSize.height - margin) {
-        doc.addPage();
-        yPos = margin;
+      const lineHeight = fontSize * 0.4 + 1.5;
+
+      for (const line of lines) {
+        if (yPos + lineHeight > pageHeight - margin) {
+          doc.addPage();
+          yPos = margin;
+        }
+        doc.text(line, margin, yPos);
+        yPos += lineHeight;
       }
-      
-      doc.text(lines, margin, yPos);
-      yPos += lines.length * fontSize * 0.4 + 5;
+      yPos += 3;
     };
 
     if (activeTab === 'script' && result) {
       addText("ROTEIRO GERADO", 18, true);
-      yPos += 5;
+      yPos += 3;
       
       addText("NANO BANANA COMPONENT", 12, true, [100, 100, 200]);
       addText(result.nanoBananaImagePrompt, 10);
-      yPos += 10;
+      yPos += 5;
 
-      result.scenes.forEach((scene) => {
+      result.scenes?.forEach((scene) => {
         addText(`CENA ${scene.sceneNumber} (${scene.duration}s)`, 14, true);
         addText("Contexto:", 10, true, [100, 100, 100]);
         addText(scene.contextPt, 10);
-        addText("Prompt de Video (EN):", 10, true, [50, 150, 50]);
+        addText("Prompt de Vídeo (EN):", 10, true, [50, 150, 50]);
         addText(scene.videoPromptEn, 10);
-        addText("Falas / Dialogo:", 10, true, [200, 100, 50]);
+        addText("Falas / Diálogo:", 10, true, [200, 100, 50]);
         addText(`PT: ${scene.dialoguePt}`, 10);
         addText(`EN: ${scene.dialogueEn}`, 10);
         addText(`ES: ${scene.dialogueEs}`, 10);
-        yPos += 5;
+        yPos += 4;
       });
 
       addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
@@ -725,9 +744,9 @@ export default function App() {
     } else if (activeTab === 'carousel' && carouselResult) {
       addText("CARROSSEL INSTAGRAM", 18, true);
       addText(`ESTILO: ${artStyle}`, 12, true, [100, 100, 100]);
-      yPos += 5;
+      yPos += 3;
 
-      carouselResult.slides.forEach((slide) => {
+      carouselResult.slides?.forEach((slide) => {
         addText(`SLIDE ${slide.slideNumber}`, 14, true);
         addText("Descrição:", 10, true, [100, 100, 100]);
         addText(slide.descriptionPt, 10);
@@ -737,7 +756,7 @@ export default function App() {
         addText(`ES: ${slide.textInBubblesEs}`, 10);
         addText("Prompt de Imagem (EN):", 10, true, [50, 150, 50]);
         addText(slide.imagePromptEn, 10);
-        yPos += 5;
+        yPos += 4;
       });
 
       addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
@@ -747,51 +766,44 @@ export default function App() {
   };
 
   const exportAsDOCX = async () => {
-    const doc = new Document({
-      sections: [{
-        properties: {},
-        children: []
-      }]
-    });
-
     const children: any[] = [];
 
     if (activeTab === 'script' && result) {
       children.push(new Paragraph({ text: "ROTEIRO GERADO", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
       children.push(new Paragraph({ text: `Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Nano Banana:", bold: true }), new TextRun({ text: ` ${result.nanoBananaImagePrompt}` })] }));
+      children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Nano Banana: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
       
-      result.scenes.forEach((scene) => {
+      result.scenes?.forEach((scene) => {
         children.push(new Paragraph({ text: "" }));
         children.push(new Paragraph({ text: `CENA ${scene.sceneNumber} (${scene.duration}s)`, heading: HeadingLevel.HEADING_3 }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Contexto: ", bold: true }), new TextRun({ text: scene.contextPt })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Vídeo: ", bold: true }), new TextRun({ text: scene.videoPromptEn })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Contexto: ", bold: true }), new TextRun({ text: scene.contextPt || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Vídeo: ", bold: true }), new TextRun({ text: scene.videoPromptEn || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || '' })] }));
       });
 
       children.push(new Paragraph({ text: "" }));
       children.push(new Paragraph({ text: "Legenda Instagram", heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ text: result.instagramPost }));
+      children.push(new Paragraph({ text: result.instagramPost || '' }));
 
     } else if (activeTab === 'carousel' && carouselResult) {
       children.push(new Paragraph({ text: "CARROSSEL GERADO", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
       children.push(new Paragraph({ text: `Estilo: ${artStyle.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
 
-      carouselResult.slides.forEach((slide) => {
+      carouselResult.slides?.forEach((slide) => {
         children.push(new Paragraph({ text: "" }));
         children.push(new Paragraph({ text: `SLIDE ${slide.slideNumber}`, heading: HeadingLevel.HEADING_3 }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Descrição: ", bold: true }), new TextRun({ text: slide.descriptionPt })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem: ", bold: true }), new TextRun({ text: slide.imagePromptEn })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Descrição: ", bold: true }), new TextRun({ text: slide.descriptionPt || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem: ", bold: true }), new TextRun({ text: slide.imagePromptEn || '' })] }));
       });
 
       children.push(new Paragraph({ text: "" }));
       children.push(new Paragraph({ text: "Legenda Instagram", heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ text: carouselResult.instagramPost }));
+      children.push(new Paragraph({ text: carouselResult.instagramPost || '' }));
     }
 
     if (children.length > 0) {
@@ -825,7 +837,7 @@ export default function App() {
   const handleRemoveImage = (index: number) => {
     setCharacterImages(prev => {
       const newImages = [...prev];
-      delete newImages[index];
+      newImages[index] = undefined;
       return newImages;
     });
   };
@@ -851,11 +863,47 @@ export default function App() {
     setContextImages(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file: File) => {
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        setError('Por favor, selecione apenas arquivos em formato PDF.');
+        return;
+      }
+      if (file.size > 30 * 1024 * 1024) {
+        setError(`O arquivo "${file.name}" ultrapassa o limite de 30MB.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const [header, base64] = dataUrl.split(',');
+        const mimeType = 'application/pdf';
+        
+        setReferencePdfs(prev => [...prev, { 
+          name: file.name, 
+          data: base64, 
+          mimeType, 
+          size: file.size 
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleRemovePdf = (index: number) => {
+    setReferencePdfs(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (file.size > 100 * 1024 * 1024) { // 100MB limit for base64
+    if (file.size > 100 * 1024 * 1024) { // 100MB limit
       setError('Vídeo muito grande. Por favor, use vídeos menores que 100MB.');
       return;
     }
@@ -873,14 +921,21 @@ export default function App() {
 
   const handleAnalyzeVideo = async () => {
     if (!videoFile) return;
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsAnalyzing(true);
-    setIsCancelled(false);
     setError(null);
 
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           prompt: "Analise este vídeo e crie uma sinopse cativante para uma postagem no Instagram. Inclua gancho inicial, corpo do texto e hashtags relevantes.",
           videoData: videoFile.data,
@@ -894,32 +949,38 @@ export default function App() {
       }
 
       const data = await response.json();
-      if (isCancelled) return;
       if (!data.text) throw new Error('Sem resposta da análise.');
       setAnalysisResult(data.text);
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error(err);
       setError(err.message || 'Erro ao analisar vídeo.');
     } finally {
       setIsAnalyzing(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!topic.trim() && contextImages.length === 0) {
-      setError('Por favor, insira o tema da história ou anexe imagens de referência.');
+    if (!topic.trim() && contextImages.length === 0 && referencePdfs.length === 0) {
+      setError('Por favor, insira o tema da história ou anexe PDFs/imagens de referência.');
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoading(true);
-    setIsCancelled(false);
     setError(null);
     setResult(null);
     setCarouselResult(null);
 
     try {
-      const temaFinal = topic.trim() || "Utilize exclusivamente as informações e textos contidos nas imagens de referência anexadas.";
+      const temaFinal = topic.trim() || "Utilize com profundidade as informações, conceitos e ensinamentos contidos nos PDFs e imagens de referência anexados.";
       
       let promptText = "";
       let responseSchema: any = {};
@@ -929,6 +990,7 @@ export default function App() {
         O nicho do canal é: "${niche}".
         O estilo de animação DEVE ser estritamente "${animationStyle}". Descreva isso claramente em todos os prompts de vídeo.
         O estilo visual dos enquadramentos deve seguir: "${visualDynamism}".
+        ${mixedOffs ? '- DINAMISMO CRIATIVO: Alterne cenas com o personagem em cena e cenas de corte/transição (b-roll, foco no ambiente ou detalhes visuais) com narração em off (isVoiceOver: true).' : ''}
         ${niche !== 'Top 10 Filmes e Séries' ? `O tom da narrativa deve ser estritamente: "${scriptTone}".` : ''}
         O tema do vídeo é: "${temaFinal}".
         ${includeHook ? 'A primeira cena (CENA 1) DEVE conter um "HOOK" (gancho) poderoso que prenda a atenção nos primeiros 3 segundos e gere identificação instantânea.' : 'Não é necessário um gancho comercial na primeira cena; foque no fluxo emocional natural e profundo.'}
@@ -937,11 +999,21 @@ export default function App() {
         - IDENTIFICAÇÃO DE VOZ: Analise as imagens de personagem enviadas. Se houver um personagem feminino proeminente, a voz da narração deve ser FEMININA. Se for masculino, MASCULINA. Se não houver clareza ou não houver fotos, use uma voz que melhor se adapte ao tema.
         - Use PSICOLOGIA e FILOSOFIA para criar falas que toquem na ferida, que façam o espectador se sentir compreendido.
         - O objetivo é gerar identificação visceral. O espectador deve pensar: "Isso foi escrito para mim".
-        ${niche !== 'Top 10 Filmes e Séries' ? `
+        ${niche !== 'Top 10 Filmes e Séries' && niche !== 'Fitness' ? `
+        - ${scriptTone === 'Acolhedor / Compassivo' ? 'Use um tom acolhedor e compassivo: diálogo suave, focado em validação emocional profunda, carinho e acolhimento sem cobranças ou julgamentos, ideal para cura interna e autocompaixão.' : ''}
+        - ${scriptTone === 'Terapêutico / ACT' ? 'Use uma abordagem terapêutica baseada em ACT (Terapia de Aceitação e Compromisso): foco na observação consciente dos pensamentos ("você não é seus pensamentos"), aceitação de emoções difíceis sem lutar contra elas e atenção plena ao momento presente.' : ''}
+        - ${scriptTone === 'Vulnerável / Íntimo' ? 'Use um tom vulnerável e íntimo: conversas sinceras e abertas sobre carência, medos, sensação de abandono e dor emocional que gerem identificação imediata.' : ''}
+        - ${scriptTone === 'Encorajador / Reparador' ? 'Use um tom encorajador e reparador: foco em restaurar a autoestima, perdoar erros do passado, reconstruir o amor-próprio e firmar compromissos pessoais gentis.' : ''}
         - ${scriptTone === 'Poético' ? 'Use rimas suaves, métrica e metáforas visuais delicadas, focando na beleza da dor e da superação.' : ''}
         - ${scriptTone === 'Metafórico e Profundo' ? 'Use analogias com a natureza, o universo ou objetos cotidianos para explicar sentimentos complexos que "quebram" quem lê.' : ''}
         - ${scriptTone === 'Filosófico' ? 'Explore dilemas existenciais, a brevidade da vida e a busca por sentido, citando ou aludindo a grandes pensadores de forma acessível.' : ''}
-        ` : 'Para o nicho de Filmes e Séries, foque em curiosidades, rankings e fatos impactantes do TOP 10, mantendo o dinamismo informativo.'}
+        ` : ''}
+        ${niche === 'Fitness' ? `
+        - ${scriptTone === 'Motivacional / Foco' ? 'Foque em quebra de limites, superação de dores e barreiras mentais, disciplina férrea e mentalidade inabalável.' : ''}
+        - ${scriptTone === 'Instrucional / Passo a Passo' ? 'Estruture as falas com orientações técnicas e práticas de alta precisão sobre biomecânica, postura, treino e execução correta.' : ''}
+        - ${scriptTone === 'Curiosidades' ? 'Revele dados científicos fascinantes e mitos desmistificados sobre o corpo humano, metabolismo e ganho de rendimento.' : ''}
+        ` : ''}
+        ${niche === 'Top 10 Filmes e Séries' ? 'Para o nicho de Filmes e Séries, foque em curiosidades, rankings e fatos impactantes do TOP 10, mantendo o dinamismo informativo.' : ''}
         
         O vídeo terá ${sceneCount} cenas, cada uma com aproximadamente ${duration} segundos.
         Crie um prompt (em Inglês) para cada cena focado em um estilo cinematográfico e artístico.
@@ -1013,7 +1085,15 @@ export default function App() {
           }
         }
 
-        if (carouselTone === 'Psicológico') {
+        if (carouselTone === 'Acolhedor / Compassivo') {
+          promptText += `Como o tom é Acolhedor / Compassivo, os diálogos nos balões devem ser suaves, focados em validação emocional, carinho e acolhimento sem cobranças ou julgamento, ideal para processos de cura interna e autocompaixão.\n`;
+        } else if (carouselTone === 'Terapêutico / ACT') {
+          promptText += `Como o tom é Terapêutico / ACT, foque em observação neutra dos pensamentos ("você não é seus pensamentos"), aceitação de emoções difíceis sem lutar contra elas e presença consciente no momento presente.\n`;
+        } else if (carouselTone === 'Vulnerável / Íntimo') {
+          promptText += `Como o tom é Vulnerável / Íntimo, foque em conversas sinceras e profundas sobre carência, medos, sensação de abandono e dor emocional crua, gerando forte identificação com o leitor.\n`;
+        } else if (carouselTone === 'Encorajador / Reparador') {
+          promptText += `Como o tom é Encorajador / Reparador, foque em restaurar a autoestima, perdoar erros passados, reconstrução do amor-próprio e firmar compromissos pessoais positivos.\n`;
+        } else if (carouselTone === 'Psicológico') {
           promptText += `Como o tom é Psicológico, foque em comportamentos, traumas, curas internas, autoconhecimento e o funcionamento da mente humana. Use termos que evoquem introspecção científica e emocional.\n`;
         } else if (carouselTone === 'Filosófico') {
           promptText += `Como o tom é Filosófico, foque em grandes questões da existência, verdade, tempo, ética, moral e a natureza do ser. Cite ou aluda a correntes filosóficas de forma poética.\n`;
@@ -1028,7 +1108,7 @@ export default function App() {
         } else if (carouselTone === 'Ranking / Top 10') {
           promptText += `Como o tom é de Ranking / Top 10, ordene ou selecione os melhores filmes/séries em formato de ranking cativante, dando motivos e instigando à discussão nos comentários.\n`;
         } else if (carouselTone === 'Recomendação Secreta') {
-          promptText += `Como o tom é de Recomendação Secreta, recomende uma obra-prima oculta com argumentos brilhantes, criando asco de quem ainda não assistiu e desejo urgente de ver.\n`;
+          promptText += `Como o tom é de Recomendação Secreta, recomende uma obra-prima oculta com argumentos brilhantes, criando o desejo urgente de assistir.\n`;
         } else if (carouselTone === 'Curiosidades / Bastidores') {
           promptText += `Como o tom é de Curiosidades / Bastidores, revele segredos inacreditáveis ocorridos por trás das câmeras, curiosidades sobre roteiros e mistérios de produção.\n`;
         }
@@ -1075,6 +1155,14 @@ export default function App() {
         };
       }
 
+      if (referencePdfs.length > 0 || contextImages.length > 0) {
+        promptText += `\nINSTRUÇÕES DE ANÁLISE DE DOCUMENTOS E LIVROS DE REFERÊNCIA (PDF / IMAGENS):
+        - Foram anexados ${referencePdfs.length} arquivo(s) PDF e ${contextImages.length} imagem(ns) de texto como material de estudo e embasamento teórico.
+        - Você DEVE percorrer e analisar detalhadamente o conteúdo desses PDFs e imagens anexadas.
+        - Aprenda com o material: identifique os principais conceitos, reflexões de autocompaixão/autodesenvolvimento, dinâmicas mentais, metáforas e ensinamentos do autor.
+        - Incorpore essas ideias e lições de forma fiel, rica e sensível nas falas, narrações e na condução das cenas, traduzindo o conhecimento com clareza e impacto para o formato do Instagram.\n`;
+      }
+
       const parts: any[] = [{ text: promptText }];
       
       for (let i = 0; i < characterCount; i++) {
@@ -1086,9 +1174,14 @@ export default function App() {
         parts.push({ inlineData: { data: img.data, mimeType: img.mimeType } });
       }
 
+      for (const pdf of referencePdfs) {
+        parts.push({ inlineData: { data: pdf.data, mimeType: pdf.mimeType } });
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           prompt: promptText,
           parts,
@@ -1102,20 +1195,28 @@ export default function App() {
       }
 
       const data = await response.json();
-      if (isCancelled) return;
       if (!data.text) throw new Error('Sem resposta da API.');
 
-      const jsonResult = JSON.parse(data.text);
+      let cleanText = data.text.trim();
+      if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+
+      const jsonResult = JSON.parse(cleanText);
       if (activeTab === 'script') {
         setResult(jsonResult);
       } else {
         setCarouselResult(jsonResult);
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao gerar.');
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -1598,13 +1699,13 @@ export default function App() {
                     {niche !== 'Top 10 Filmes e Séries' && (
                       <div className="space-y-2">
                         <label className="block text-xs font-semibold text-slate-900">Tom da Narrativa</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-1.5">
                           {(NICHE_SCRIPT_TONES[niche] || []).map(tone => (
                             <button
                               key={tone}
                               type="button"
                               onClick={() => setScriptTone(tone)}
-                              className={`py-2 px-1 text-[9px] font-bold rounded-lg border transition ${scriptTone === tone ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}
+                              className={`py-2 px-1.5 text-[10px] font-bold rounded-lg border transition leading-tight text-center ${scriptTone === tone ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}
                             >
                               {tone}
                             </button>
@@ -1650,13 +1751,13 @@ export default function App() {
 
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-slate-900">Tom do Diálogo</label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-1.5">
                       {(NICHE_CAROUSEL_TONES[niche] || []).map(tone => (
                         <button
                           key={tone}
                           type="button"
                           onClick={() => setCarouselTone(tone)}
-                          className={`py-2 px-1 text-[10px] font-bold rounded-lg border transition ${carouselTone === tone ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}
+                          className={`py-2 px-1.5 text-[10px] font-bold rounded-lg border transition leading-tight text-center ${carouselTone === tone ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}
                         >
                           {tone}
                         </button>
@@ -1772,7 +1873,7 @@ export default function App() {
 
               {/* Context/Scenario Images Upload */}
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-900">Anexar Imagens com Textos de Referência</label>
+                <label className="block text-xs font-semibold text-slate-900">Anexar Imagens com Textos de Referência <span className="text-slate-400 font-normal">(Opcional)</span></label>
                 <div className="grid grid-cols-4 gap-2">
                   <label className="aspect-square cursor-pointer bg-slate-50 border border-slate-200 border-dashed rounded-xl flex flex-col items-center justify-center hover:bg-slate-100 transition text-slate-400">
                     <Upload className="w-5 h-5 mb-1" />
@@ -1801,6 +1902,65 @@ export default function App() {
                       </button>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Reference PDFs / Books Upload */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-900">
+                    Anexar PDFs de Livros / Artigos de Referência <span className="text-slate-400 font-normal">(Opcional)</span>
+                  </label>
+                  {referencePdfs.length > 0 && (
+                    <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-medium">
+                      {referencePdfs.length} PDF{referencePdfs.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="cursor-pointer bg-slate-50 border border-slate-200 border-dashed rounded-xl p-3 flex items-center justify-center gap-2 hover:bg-slate-100 transition text-slate-500 group">
+                    <FileText className="w-4 h-4 text-indigo-500 group-hover:scale-110 transition" />
+                    <span className="text-xs font-semibold text-slate-700">Selecionar arquivo PDF para a IA estudar</span>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="application/pdf,.pdf" 
+                      className="hidden" 
+                      onChange={handlePdfUpload}
+                    />
+                  </label>
+
+                  {referencePdfs.length > 0 && (
+                    <div className="grid grid-cols-1 gap-2 pt-1">
+                      {referencePdfs.map((pdf, i) => (
+                        <div 
+                          key={i} 
+                          className="flex items-center justify-between p-2.5 bg-red-50/60 border border-red-100 rounded-xl text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 overflow-hidden">
+                            <div className="p-1.5 bg-red-100 text-red-600 rounded-lg shrink-0 font-bold text-[10px]">
+                              PDF
+                            </div>
+                            <div className="truncate">
+                              <p className="font-semibold text-slate-800 truncate">{pdf.name}</p>
+                              <p className="text-[10px] text-slate-500">
+                                {(pdf.size / (1024 * 1024)).toFixed(2)} MB • Material de estudo da IA
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePdf(i)}
+                            className="p-1.5 hover:bg-red-200/80 text-red-600 rounded-lg transition shrink-0 ml-2"
+                            title="Remover PDF"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1891,7 +2051,7 @@ export default function App() {
                     <h3 className="text-indigo-900 font-bold text-sm uppercase">Capinha Nano Banana</h3>
                   </div>
                   <button 
-                    onClick={() => handleCopy(result.nanoBananaImagePrompt, 'nano_banana')}
+                    onClick={() => handleCopy(result.nanoBananaImagePrompt || '', 'nano_banana')}
                     className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-600 bg-white px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition shadow-sm border border-indigo-200"
                   >
                     {copiedStates['nano_banana'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1909,7 +2069,7 @@ export default function App() {
                   <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
                     <Sparkles className="w-4 h-4 text-indigo-400" /> Legenda Vídeo
                   </h3>
-                  <button onClick={() => handleCopy(result.instagramPost, 'ig_post')} className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-400 bg-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition border border-slate-700">
+                  <button onClick={() => handleCopy(result.instagramPost || '', 'ig_post')} className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-400 bg-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition border border-slate-700">
                     {copiedStates['ig_post'] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />} Copiar Legenda
                   </button>
                 </div>
@@ -1918,7 +2078,7 @@ export default function App() {
                 </div>
               </div>
 
-              {result.scenes.map((scene, index) => (
+              {result.scenes?.map((scene, index) => (
                 <div key={index} className="bg-slate-900 rounded-2xl p-6 text-slate-300 flex flex-col gap-4 shadow-inner">
                   <h3 className="text-white font-semibold flex items-center gap-2">
                     Cena {scene.sceneNumber} <span className="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded">{scene.duration}s</span>
@@ -1981,7 +2141,7 @@ export default function App() {
                         <Clapperboard className="w-3.5 h-3.5" /> Prompt de Vídeo (IA)
                       </label>
                       <button 
-                        onClick={() => handleCopy(scene.videoPromptEn, `vp_${index}`)}
+                        onClick={() => handleCopy(scene.videoPromptEn || '', `vp_${index}`)}
                         className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition"
                       >
                         {copiedStates[`vp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
@@ -2020,7 +2180,7 @@ export default function App() {
                   <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
                     <Sparkles className="w-4 h-4 text-indigo-400" /> Legenda Carrossel
                   </h3>
-                  <button onClick={() => handleCopy(carouselResult.instagramPost, 'ig_carousel')} className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-400 bg-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition border border-slate-700">
+                  <button onClick={() => handleCopy(carouselResult.instagramPost || '', 'ig_carousel')} className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-400 bg-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition border border-slate-700">
                     {copiedStates['ig_carousel'] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />} Copiar Legenda
                   </button>
                 </div>
@@ -2029,7 +2189,7 @@ export default function App() {
                 </div>
               </div>
 
-              {carouselResult.slides.map((slide, index) => (
+              {carouselResult.slides?.map((slide, index) => (
                 <div key={index} className="bg-slate-900 rounded-2xl p-6 text-slate-300 flex flex-col gap-4 shadow-inner border-l-4 border-indigo-500">
                   <div className="flex items-center justify-between">
                     <h3 className="text-white font-bold text-lg">Slide {slide.slideNumber}</h3>
@@ -2099,7 +2259,7 @@ export default function App() {
                         <ImageIcon className="w-3.5 h-3.5" /> Prompt de Imagem (Midjourney / DALL-E)
                       </label>
                       <button 
-                        onClick={() => handleCopy(slide.imagePromptEn, `cp_${index}`)}
+                        onClick={() => handleCopy(slide.imagePromptEn || '', `cp_${index}`)}
                         className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition"
                       >
                         {copiedStates[`cp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
@@ -2299,8 +2459,8 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {keysStats.keysList.map((keyObj, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50 transition">
+                          {keysStats.keysList.map((keyObj) => (
+                            <tr key={keyObj.id} className="hover:bg-slate-50/50 transition">
                               <td className="p-3 font-mono text-[11px] text-slate-600">{keyObj.keyMasked}</td>
                               <td className="p-3">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${keyObj.status === 'free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
@@ -2311,7 +2471,7 @@ export default function App() {
                               <td className="p-3 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>
                               <td className="p-3 text-right">
                                 <button 
-                                  onClick={() => handleRemoveKey(keyObj.keyMasked)}
+                                  onClick={() => handleRemoveKey(keyObj.id)}
                                   className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
                                   title="Remover Chave"
                                 >
