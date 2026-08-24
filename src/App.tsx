@@ -577,7 +577,17 @@ export default function App() {
 
   const handleRemoveKey = async (id: string) => {
     try {
-      const response = await fetch(getApiUrl('/api/keys'), {
+      setKeyManagerError(null);
+      // Atualização otimista imediata na UI
+      setKeysStats(prev => ({
+        ...prev,
+        total: Math.max(0, prev.total - 1),
+        free: Math.max(0, prev.free - (prev.keysList.find(k => k.id === id)?.status === 'free' ? 1 : 0)),
+        exhausted: Math.max(0, prev.exhausted - (prev.keysList.find(k => k.id === id)?.status === 'exhausted' ? 1 : 0)),
+        keysList: prev.keysList.filter(k => k.id !== id)
+      }));
+
+      const response = await fetch(getApiUrl(`/api/keys?id=${encodeURIComponent(id)}`), {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -588,15 +598,18 @@ export default function App() {
       } else {
         const errData = await response.json();
         setKeyManagerError(errData.error || 'Erro ao remover chave.');
+        fetchKeysStats();
       }
     } catch (err: any) {
       console.error(err);
       setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
+      fetchKeysStats();
     }
   };
 
   const handleResetKeys = async () => {
     try {
+      setKeyManagerError(null);
       const response = await fetch(getApiUrl('/api/keys/reset'), { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
@@ -610,13 +623,26 @@ export default function App() {
   const handleClearKeys = async () => {
     if (!window.confirm('Tem certeza que deseja apagar todas as chaves cadastradas?')) return;
     try {
-      const response = await fetch(getApiUrl('/api/keys/clear'), { method: 'POST' });
+      setKeyManagerError(null);
+      // Atualização otimista imediata na UI
+      setKeysStats({ total: 0, free: 0, exhausted: 0, keysList: [] });
+
+      const response = await fetch(getApiUrl('/api/keys/clear'), { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
       if (response.ok) {
         const data = await response.json();
         setKeysStats(data);
+      } else {
+        const errData = await response.json();
+        setKeyManagerError(errData.error || 'Erro ao limpar chaves.');
+        fetchKeysStats();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
+      fetchKeysStats();
     }
   };
 

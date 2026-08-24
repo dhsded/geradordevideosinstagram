@@ -217,12 +217,25 @@ export async function startServer(port = 3000) {
 
   app.delete("/api/keys", (req, res) => {
     try {
-      const { id, key } = req.body;
-      const target = id || key;
+      const target = req.body?.id || req.body?.key || req.query?.id || req.query?.key;
       if (!target) {
         return res.status(400).json({ error: "O identificador da chave é obrigatório para exclusão." });
       }
-      keysManager.removeKey(target);
+      keysManager.removeKey(String(target));
+      res.json(keysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/keys/:id", (req, res) => {
+    try {
+      const target = req.params.id;
+      if (target === "all") {
+        keysManager.clearAll();
+      } else {
+        keysManager.removeKey(target);
+      }
       res.json(keysManager.getStats());
     } catch (error: any) {
       res.status(500).json({ error: error.message });

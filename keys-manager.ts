@@ -11,6 +11,11 @@ export interface GeminiKey {
 }
 
 function getKeysFilePath(): string {
+  // Em desenvolvimento, preferir o keys.json na raiz do projeto
+  if (process.env.NODE_ENV !== 'production' && fs.existsSync(path.join(process.cwd(), 'keys.json'))) {
+    return path.join(process.cwd(), 'keys.json');
+  }
+
   const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library/Preferences') : path.join(process.env.HOME || '', '.config'));
   const writableDir = appData ? path.join(appData, 'prompter-nano-banana') : process.cwd();
   const targetFile = path.join(writableDir, 'keys.json');
@@ -65,7 +70,7 @@ export class KeysManager {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
   }
 
-  private load() {
+  public load() {
     try {
       if (fs.existsSync(KEYS_FILE)) {
         const data = fs.readFileSync(KEYS_FILE, 'utf-8');
@@ -85,6 +90,7 @@ export class KeysManager {
       } else {
         this.keys = [];
       }
+      console.log(`[KeysManager] Carregadas ${this.keys.length} chaves de: ${KEYS_FILE}`);
     } catch (error) {
       console.error('Erro ao carregar chaves do arquivo json:', error);
       this.keys = [];
@@ -98,6 +104,17 @@ export class KeysManager {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(KEYS_FILE, JSON.stringify(this.keys, null, 2), 'utf-8');
+      console.log(`[KeysManager] Salvo com sucesso (${this.keys.length} chaves) em: ${KEYS_FILE}`);
+
+      // Sincronizar também com keys.json na raiz do projeto se existir
+      const localFile = path.join(process.cwd(), 'keys.json');
+      if (localFile !== KEYS_FILE && fs.existsSync(localFile)) {
+        try {
+          fs.writeFileSync(localFile, JSON.stringify(this.keys, null, 2), 'utf-8');
+        } catch (e) {
+          // Ignorar se local não for gravável
+        }
+      }
     } catch (error) {
       console.error('Erro ao salvar chaves no arquivo json:', error);
     }
@@ -115,6 +132,10 @@ export class KeysManager {
     // Priorizar chaves com menos erros
     freeKeys.sort((a, b) => a.errorCount - b.errorCount);
     return freeKeys[0].key;
+  }
+
+  public getNextActiveKey(): string | null {
+    return this.getActiveKey();
   }
 
   public markExhausted(keyOrId: string) {
@@ -164,8 +185,10 @@ export class KeysManager {
   }
 
   public removeKey(target: string) {
+    if (!target) return;
+    const clean = target.trim();
     const initialLen = this.keys.length;
-    this.keys = this.keys.filter(k => k.id !== target && k.key !== target);
+    this.keys = this.keys.filter(k => k.id !== clean && k.key !== clean);
     if (this.keys.length !== initialLen) {
       this.save();
     }
