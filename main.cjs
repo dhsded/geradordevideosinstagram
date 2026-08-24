@@ -29,23 +29,15 @@ function startBackend() {
       console.log(`Dev backend process exited with code ${code} and signal ${signal}`);
     });
   } else {
-    console.log('Starting backend server in production mode via Electron utilityProcess...');
+    console.log('Starting internal backend server in production mode...');
     const serverScript = path.join(__dirname, 'dist', 'server.cjs');
-    
     try {
-      backendProcess = utilityProcess.fork(serverScript, [], {
-        env: { ...process.env, NODE_ENV: 'production' },
-        stdio: 'inherit'
-      });
-
-      backendProcess.on('exit', (code) => {
-        console.log(`Production backend process exited with code ${code}`);
-        if (!isQuitting) {
-          console.warn('Backend server process closed unexpectedly.');
-        }
-      });
+      const serverModule = require(serverScript);
+      if (typeof serverModule.startServer === 'function') {
+        serverModule.startServer(3000);
+      }
     } catch (err) {
-      console.error('Failed to fork backend server via utilityProcess:', err);
+      console.error('Failed to start internal server:', err);
     }
   }
 }

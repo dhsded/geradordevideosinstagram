@@ -10,7 +10,49 @@ export interface GeminiKey {
   addedAt: string;
 }
 
-const KEYS_FILE = path.join(process.cwd(), 'keys.json');
+function getKeysFilePath(): string {
+  const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library/Preferences') : path.join(process.env.HOME || '', '.config'));
+  const writableDir = appData ? path.join(appData, 'prompter-nano-banana') : process.cwd();
+  const targetFile = path.join(writableDir, 'keys.json');
+
+  if (fs.existsSync(targetFile)) {
+    return targetFile;
+  }
+
+  // Procurar arquivo seed de chaves empacotado com o projeto
+  const candidateSeedPaths = [
+    path.join(process.cwd(), 'keys.json'),
+    (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'keys.json') : null,
+    path.join(__dirname, 'keys.json'),
+    path.join(__dirname, '..', 'keys.json'),
+  ].filter(Boolean) as string[];
+
+  for (const seed of candidateSeedPaths) {
+    if (fs.existsSync(seed)) {
+      try {
+        if (!fs.existsSync(writableDir)) {
+          fs.mkdirSync(writableDir, { recursive: true });
+        }
+        fs.copyFileSync(seed, targetFile);
+        return targetFile;
+      } catch (e) {
+        return seed;
+      }
+    }
+  }
+
+  try {
+    if (!fs.existsSync(writableDir)) {
+      fs.mkdirSync(writableDir, { recursive: true });
+    }
+    fs.writeFileSync(targetFile, '[]', 'utf-8');
+    return targetFile;
+  } catch (e) {
+    return path.join(process.cwd(), 'keys.json');
+  }
+}
+
+const KEYS_FILE = getKeysFilePath();
 
 export class KeysManager {
   private keys: GeminiKey[] = [];
@@ -51,6 +93,10 @@ export class KeysManager {
 
   private save() {
     try {
+      const dir = path.dirname(KEYS_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.writeFileSync(KEYS_FILE, JSON.stringify(this.keys, null, 2), 'utf-8');
     } catch (error) {
       console.error('Erro ao salvar chaves no arquivo json:', error);
@@ -61,91 +107,92 @@ export class KeysManager {
     return this.keys;
   }
 
-  public addKeys(rawKeys: string[]): void {
-    const now = new Date().toISOString();
-    rawKeys.forEach(rawKey => {
-      const trimmed = rawKey.trim();
-      if (!trimmed) return;
-      // Evitar duplicados
-      const exists = this.keys.some(k => k.key === trimmed);
-      if (!exists) {
+  public getActiveKey(): string | null {
+    const freeKeys = this.keys.filter(k => k.status === 'free');
+    if (freeKeys.length === 0) {
+      return null;
+    }
+    // Priorizar chaves com menos erros
+    freeKeys.sort((a, b) => a.errorCount - b.errorCount);
+    return freeKeys[0].key;
+  }
+
+  public markExhausted(keyOrId: string) {
+    const item = this.keys.find(k => k.key === keyOrId || k.id === keyOrId);
+    if (item) {
+      item.status = 'exhausted';
+      item.errorCount += 1;
+      this.save();
+    }
+  }
+
+  public recordSuccess(key: string) {
+    const item = this.keys.find(k => k.key === key);
+    if (item) {
+      item.successCount += 1;
+      this.save();
+    }
+  }
+
+  public recordError(key: string) {
+    const item = this.keys.find(k => k.key === key);
+    if (item) {
+      item.errorCount += 1;
+      this.save();
+    }
+  }
+
+  public addKeys(newKeys: string[]) {
+    let modified = false;
+    for (const rawKey of newKeys) {
+      const cleanKey = rawKey.trim();
+      if (cleanKey && cleanKey.startsWith('AIzaSy') && !this.keys.some(k => k.key === cleanKey)) {
         this.keys.push({
           id: this.generateId(),
-          key: trimmed,
+          key: cleanKey,
           status: 'free',
           successCount: 0,
           errorCount: 0,
-          addedAt: now
+          addedAt: new Date().toISOString()
         });
+        modified = true;
       }
+    }
+    if (modified) {
+      this.save();
+    }
+  }
+
+  public removeKey(target: string) {
+    const initialLen = this.keys.length;
+    this.keys = this.keys.filter(k => k.id !== target && k.key !== target);
+    if (this.keys.length !== initialLen) {
+      this.save();
+    }
+  }
+
+  public resetStatuses() {
+    this.keys.forEach(k => {
+      k.status = 'free';
+      k.errorCount = 0;
     });
     this.save();
   }
 
-  public removeKey(idOrMaskedOrReal: string): void {
-    this.keys = this.keys.filter(k => 
-      k.id !== idOrMaskedOrReal && 
-      k.key !== idOrMaskedOrReal && 
-      this.mask(k.key) !== idOrMaskedOrReal
-    );
-    this.save();
-  }
-
-  public resetStatuses(): void {
-    this.keys = this.keys.map(k => ({
-      ...k,
-      status: 'free'
-    }));
-    this.save();
-  }
-
-  public clearAll(): void {
+  public clearAll() {
     this.keys = [];
     this.save();
-  }
-
-  public getNextActiveKey(): string | null {
-    const active = this.keys.find(k => k.status === 'free');
-    return active ? active.key : null;
-  }
-
-  public markExhausted(key: string): void {
-    const keyObj = this.keys.find(k => k.key === key);
-    if (keyObj) {
-      keyObj.status = 'exhausted';
-      keyObj.errorCount += 1;
-      this.save();
-    }
-  }
-
-  public recordSuccess(key: string): void {
-    const keyObj = this.keys.find(k => k.key === key);
-    if (keyObj) {
-      keyObj.successCount += 1;
-      this.save();
-    }
-  }
-
-  public recordError(key: string): void {
-    const keyObj = this.keys.find(k => k.key === key);
-    if (keyObj) {
-      keyObj.errorCount += 1;
-      this.save();
-    }
-  }
-
-  public mask(key: string): string {
-    if (key.length <= 10) return '***';
-    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
   }
 
   public getStats() {
     const total = this.keys.length;
     const free = this.keys.filter(k => k.status === 'free').length;
     const exhausted = this.keys.filter(k => k.status === 'exhausted').length;
+    
+    // Retornar chaves mascaradas para segurança na UI
     const keysList = this.keys.map(k => ({
       id: k.id,
-      keyMasked: this.mask(k.key),
+      keyMasked: k.key.length > 10 ? `${k.key.substring(0, 6)}...${k.key.substring(k.key.length - 4)}` : 'Chave inválida',
       status: k.status,
       successCount: k.successCount,
       errorCount: k.errorCount,

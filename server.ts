@@ -6,12 +6,11 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
 
-
 dotenv.config();
 
 // Helper para mascarar chaves nos logs
 function maskKeyForLog(key: string): string {
-  if (key.length <= 10) return '***';
+  if (!key || key.length <= 10) return '***';
   return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
 }
 
@@ -21,7 +20,7 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
   
   while (true) {
     // 1. Obter a próxima chave ativa disponível
-    let activeKey = keysManager.getNextActiveKey();
+    let activeKey = keysManager.getActiveKey();
     let isFallback = false;
 
     if (!activeKey) {
@@ -62,9 +61,9 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
       "gemini-1.5-flash",
       "gemini-1.5-pro"
     ])];
-    
+
     let success = false;
-    let result: any;
+    let result: any = null;
     let keyIsExhaustedOrInvalid = false;
 
     for (const currentModel of modelsToTry) {
@@ -144,11 +143,23 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
   }
 }
 
-async function startServer() {
+export async function startServer(port = 3000) {
   const app = express();
-  const PORT = 3000;
+  const PORT = port || 3000;
 
-  app.use(express.json({ limit: '150mb' }));
+  // CORS Middleware para permitir conexões de qualquer porta local
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
+  app.use(express.json({ limit: '200mb' }));
+  app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
   // API Routes - Key Management
   app.get("/api/health", (req, res) => {
@@ -246,7 +257,6 @@ async function startServer() {
 
   // API Routes - Gemini Generate & Analyze
   app.post("/api/generate", async (req, res) => {
-
     try {
       const { parts, responseSchema } = req.body;
       
@@ -292,27 +302,53 @@ async function startServer() {
 
   // Vite middleware for development or Static serving for production
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("Vite middleware could not be loaded, fallback to static serving:", e);
+    }
   } else {
     // Determinar caminho correto de arquivos estáticos em produção
-    let distPath = path.join(process.cwd(), 'dist');
-    if (!fs.existsSync(path.join(distPath, 'index.html')) && fs.existsSync(path.join(__dirname, 'index.html'))) {
-      distPath = __dirname;
+    let distPath = path.join(__dirname, 'dist');
+    if (!fs.existsSync(path.join(distPath, 'index.html'))) {
+      if (fs.existsSync(path.join(__dirname, 'index.html'))) {
+        distPath = __dirname;
+      } else if (fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'))) {
+        distPath = path.join(process.cwd(), 'dist');
+      }
     }
 
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.send("Prompter Nano Banana API is online.");
+      }
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`Port ${PORT} is already in use. Server is already active.`);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+
+  return server;
 }
 
-startServer();
+// Auto-iniciar se executado diretamente
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}

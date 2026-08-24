@@ -17,6 +17,15 @@ enum Type {
   NULL = "NULL",
 }
 
+const getApiUrl = (endpoint: string): string => {
+  if (typeof window !== 'undefined') {
+    if (window.location.port === '5173' || !window.location.origin.startsWith('http')) {
+      return `http://127.0.0.1:3000${endpoint}`;
+    }
+  }
+  return endpoint;
+};
+
 interface GeneratedPrompts {
   scenes: {
     sceneNumber: number;
@@ -184,7 +193,7 @@ export default function App() {
 
   const fetchKeysStats = async () => {
     try {
-      const response = await fetch('/api/keys');
+      const response = await fetch(getApiUrl('/api/keys'));
       if (response.ok) {
         const data = await response.json();
         setKeysStats(data);
@@ -202,7 +211,7 @@ export default function App() {
   React.useEffect(() => {
     const getPreload = async () => {
       try {
-        const res = await fetch('/api/preload-path');
+        const res = await fetch(getApiUrl('/api/preload-path'));
         if (res.ok) {
           const data = await res.json();
           setPreloadPath(data.path);
@@ -496,7 +505,7 @@ export default function App() {
 
       const result = await webviewRef.current.executeJavaScript(extractionScript);
       
-      const response = await fetch('/api/save-analysis', {
+      const response = await fetch(getApiUrl('/api/save-analysis'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(result)
@@ -542,7 +551,7 @@ export default function App() {
           return;
         }
 
-        const response = await fetch('/api/keys/upload', {
+        const response = await fetch(getApiUrl('/api/keys/upload'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keys: extractedKeys })
@@ -568,7 +577,7 @@ export default function App() {
 
   const handleRemoveKey = async (id: string) => {
     try {
-      const response = await fetch('/api/keys', {
+      const response = await fetch(getApiUrl('/api/keys'), {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -588,7 +597,7 @@ export default function App() {
 
   const handleResetKeys = async () => {
     try {
-      const response = await fetch('/api/keys/reset', { method: 'POST' });
+      const response = await fetch(getApiUrl('/api/keys/reset'), { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         setKeysStats(data);
@@ -601,7 +610,7 @@ export default function App() {
   const handleClearKeys = async () => {
     if (!window.confirm('Tem certeza que deseja apagar todas as chaves cadastradas?')) return;
     try {
-      const response = await fetch('/api/keys/clear', { method: 'POST' });
+      const response = await fetch(getApiUrl('/api/keys/clear'), { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         setKeysStats(data);
@@ -932,7 +941,7 @@ export default function App() {
     setError(null);
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(getApiUrl('/api/analyze'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -1178,7 +1187,7 @@ export default function App() {
         parts.push({ inlineData: { data: pdf.data, mimeType: pdf.mimeType } });
       }
 
-      const response = await fetch('/api/generate', {
+      const response = await fetch(getApiUrl('/api/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
