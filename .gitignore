@@ -8,5 +8,6 @@ coverage/
 .env*
 !.env.example
 keys.json
+providers-config.json
 !build/icon.ico
 !build/icon.png

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
@@ -173,7 +173,80 @@ export default function App() {
   // Abort controller ref para cancelamento real das requisições
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Estados e manipuladores do Gerenciador de Chaves Rotativas
+  // Constantes de Modelos de I.A
+  const POPULAR_OPENROUTER_MODELS = [
+    {
+      id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+      name: 'NVIDIA Nemotron 3 Ultra 550B',
+      tag: '550B Parâmetros • Gratuito',
+      desc: 'Ultra alta capacidade para narrativas complexas e adaptações profundas'
+    },
+    {
+      id: 'nvidia/nemotron-3.5-lightning:free',
+      name: 'NVIDIA Nemotron 3.5 Lightning',
+      tag: 'Ultrarrápido • Gratuito',
+      desc: 'Velocidade instantânea para geração de roteiros dinâmicos'
+    },
+    {
+      id: 'nvidia/nemotron-3-super:free',
+      name: 'NVIDIA Nemotron 3 Super',
+      tag: 'Alta Performance • Gratuito',
+      desc: 'Equilíbrio ideal entre inteligência de escrita e tempo de resposta'
+    },
+    {
+      id: 'deepseek/deepseek-r1:free',
+      name: 'DeepSeek R1',
+      tag: 'Raciocínio Lógico • Gratuito',
+      desc: 'Excelente para análises e estruturação de carrosséis educativos'
+    },
+    {
+      id: 'meta-llama/llama-3.3-70b-instruct:free',
+      name: 'Meta Llama 3.3 70B Instruct',
+      tag: 'Robusto & Criativo • Gratuito',
+      desc: 'Muito criativo para ganchos virais e copywriting de engajamento'
+    },
+    {
+      id: 'google/gemini-2.0-flash-exp:free',
+      name: 'Google Gemini 2.0 Flash Exp',
+      tag: 'Experimental • Gratuito',
+      desc: 'Modelo ágil do Google via gateway OpenRouter'
+    }
+  ];
+
+  const GEMINI_AVAILABLE_MODELS = [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Padrão Recomendado)' },
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Mais Recente)' },
+    { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Ultraleve)' },
+    { id: 'gemini-flash-latest', name: 'Gemini Flash Latest' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Alta Capacidade)' },
+  ];
+
+  // Estados da Central de I.As e Provedores
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openrouter'>('gemini');
+  const [selectedProviderTab, setSelectedProviderTab] = useState<'gemini' | 'openrouter'>('gemini');
+  const [geminiModel, setGeminiModel] = useState<string>('gemini-2.5-flash');
+  const [openrouterConfig, setOpenrouterConfig] = useState<{
+    hasKey: boolean;
+    apiKeyMasked: string;
+    baseUrl: string;
+    model: string;
+  }>({
+    hasKey: false,
+    apiKeyMasked: '',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'nvidia/nemotron-3-ultra-550b-a55b:free'
+  });
+  const [openrouterKeyInput, setOpenrouterKeyInput] = useState('');
+  const [openrouterBaseUrlInput, setOpenrouterBaseUrlInput] = useState('https://openrouter.ai/api/v1');
+  const [openrouterModelInput, setOpenrouterModelInput] = useState('nvidia/nemotron-3-ultra-550b-a55b:free');
+  const [isCustomOpenRouterModel, setIsCustomOpenRouterModel] = useState(false);
+  const [isTestingProvider, setIsTestingProvider] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSavingProviderSettings, setIsSavingProviderSettings] = useState(false);
+
+  // Estados e manipuladores do Gerenciador de Chaves Rotativas Gemini
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
   const [keysStats, setKeysStats] = useState<{
     total: number;
@@ -191,20 +264,33 @@ export default function App() {
   const [isUploadingKeys, setIsUploadingKeys] = useState(false);
   const [keyManagerError, setKeyManagerError] = useState<string | null>(null);
 
-  const fetchKeysStats = async () => {
+  const fetchProvidersAndStats = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/keys'));
+      const response = await fetch(getApiUrl('/api/providers'));
       if (response.ok) {
         const data = await response.json();
-        setKeysStats(data);
+        if (data.activeProvider) {
+          setActiveProvider(data.activeProvider);
+        }
+        if (data.gemini?.preferredModel) {
+          setGeminiModel(data.gemini.preferredModel);
+        }
+        if (data.openrouter) {
+          setOpenrouterConfig(data.openrouter);
+          setOpenrouterBaseUrlInput(data.openrouter.baseUrl || 'https://openrouter.ai/api/v1');
+          setOpenrouterModelInput(data.openrouter.model || 'nvidia/nemotron-3-ultra-550b-a55b:free');
+        }
+        if (data.geminiStats) {
+          setKeysStats(data.geminiStats);
+        }
       }
     } catch (err) {
-      console.error('Erro ao buscar estatísticas de chaves:', err);
+      console.error('Erro ao buscar estatísticas de provedores:', err);
     }
   };
 
   React.useEffect(() => {
-    fetchKeysStats();
+    fetchProvidersAndStats();
   }, []);
 
   // Buscar caminho do preload do espião
@@ -598,12 +684,12 @@ export default function App() {
       } else {
         const errData = await response.json();
         setKeyManagerError(errData.error || 'Erro ao remover chave.');
-        fetchKeysStats();
+        fetchProvidersAndStats();
       }
     } catch (err: any) {
       console.error(err);
       setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
-      fetchKeysStats();
+      fetchProvidersAndStats();
     }
   };
 
@@ -637,12 +723,111 @@ export default function App() {
       } else {
         const errData = await response.json();
         setKeyManagerError(errData.error || 'Erro ao limpar chaves.');
-        fetchKeysStats();
+        fetchProvidersAndStats();
       }
     } catch (err: any) {
       console.error(err);
       setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
-      fetchKeysStats();
+      fetchProvidersAndStats();
+    }
+  };
+
+  const handleSelectActiveProvider = async (prov: 'gemini' | 'openrouter') => {
+    try {
+      setKeyManagerError(null);
+      const res = await fetch(getApiUrl('/api/providers/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeProvider: prov })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveProvider(data.activeProvider);
+      }
+    } catch (err: any) {
+      console.error('Erro ao alternar provedor:', err);
+    }
+  };
+
+  const handleSaveOpenRouterSettings = async (makeActive = false) => {
+    setIsSavingProviderSettings(true);
+    setKeyManagerError(null);
+    setTestResult(null);
+    try {
+      const payload: any = {
+        activeProvider: makeActive ? 'openrouter' : activeProvider,
+        openrouter: {
+          baseUrl: openrouterBaseUrlInput.trim() || 'https://openrouter.ai/api/v1',
+          model: openrouterModelInput.trim() || 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        }
+      };
+      if (openrouterKeyInput.trim()) {
+        payload.openrouter.apiKey = openrouterKeyInput.trim();
+      }
+
+      const res = await fetch(getApiUrl('/api/providers/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erro ao salvar configurações.');
+      }
+      const data = await res.json();
+      setActiveProvider(data.activeProvider);
+      setOpenrouterConfig(data.openrouter);
+      setOpenrouterKeyInput('');
+      setTestResult({ success: true, message: 'Configurações do OpenRouter salvas com sucesso!' });
+    } catch (err: any) {
+      setKeyManagerError(err.message || 'Erro ao salvar configurações.');
+    } finally {
+      setIsSavingProviderSettings(false);
+    }
+  };
+
+  const handleSaveGeminiModel = async (model: string) => {
+    setGeminiModel(model);
+    try {
+      await fetch(getApiUrl('/api/providers/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gemini: { preferredModel: model }
+        })
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleTestProvider = async (prov: 'gemini' | 'openrouter') => {
+    setIsTestingProvider(true);
+    setTestResult(null);
+    setKeyManagerError(null);
+    try {
+      const body: any = { provider: prov };
+      if (prov === 'openrouter') {
+        if (openrouterKeyInput.trim()) body.apiKey = openrouterKeyInput.trim();
+        body.baseUrl = openrouterBaseUrlInput.trim();
+        body.model = openrouterModelInput.trim();
+      } else {
+        body.model = geminiModel;
+      }
+      const res = await fetch(getApiUrl('/api/providers/test'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha no teste de conexão.');
+      }
+      setTestResult({ success: true, message: data.message });
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Erro no teste.' });
+    } finally {
+      setIsTestingProvider(false);
     }
   };
 
@@ -974,7 +1159,9 @@ export default function App() {
         body: JSON.stringify({
           prompt: "Analise este vídeo e crie uma sinopse cativante para uma postagem no Instagram. Inclua gancho inicial, corpo do texto e hashtags relevantes.",
           videoData: videoFile.data,
-          mimeType: videoFile.mimeType
+          mimeType: videoFile.mimeType,
+          provider: activeProvider,
+          model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
         })
       });
 
@@ -1237,7 +1424,9 @@ export default function App() {
         body: JSON.stringify({
           prompt: promptText,
           parts,
-          responseSchema
+          responseSchema,
+          provider: activeProvider,
+          model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
         })
       });
 
@@ -1311,15 +1500,35 @@ export default function App() {
           </nav>
 
           <button 
-            onClick={() => setIsKeyManagerOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-[10px] sm:text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl shadow-sm transition cursor-pointer select-none"
+            onClick={() => {
+              setSelectedProviderTab(activeProvider);
+              setTestResult(null);
+              setKeyManagerError(null);
+              setIsKeyManagerOpen(true);
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 text-[10px] sm:text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded-xl shadow-xs transition cursor-pointer select-none group"
+            title="Abrir Central de I.As e Provedores"
           >
-            <Key className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="hidden sm:inline">Chaves</span>
-            {keysStats.total > 0 && (
-              <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-extrabold rounded-full ${keysStats.free > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-                {keysStats.free}/{keysStats.total}
-              </span>
+            {activeProvider === 'openrouter' ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                <Cpu className="w-3.5 h-3.5 text-amber-500 group-hover:rotate-12 transition-transform" />
+                <span className="hidden sm:inline font-bold">OpenRouter</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-black rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 max-w-[130px] truncate">
+                  {openrouterModelInput.split('/').pop()?.replace(':free', '') || 'Nemotron'}
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline font-bold">Gemini</span>
+                {keysStats.total > 0 && (
+                  <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-black rounded-md ${keysStats.free > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                    {keysStats.free}/{keysStats.total}
+                  </span>
+                )}
+              </>
             )}
           </button>
         </div>
@@ -2438,153 +2647,479 @@ export default function App() {
 
       </main>
 
-      {/* MODAL DO GERENCIADOR DE CHAVES */}
+      {/* MODAL DA CENTRAL DE I.AS E PROVEDORES */}
       {isKeyManagerOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div 
-            className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header do Modal */}
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                  <Key className="w-5 h-5" />
+                <div className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-md shadow-indigo-100">
+                  <Bot className="w-5 h-5" />
                 </div>
                 <div className="text-left">
-                  <h3 className="text-base font-bold text-slate-900">Gerenciador de Chaves Rotativas</h3>
-                  <p className="text-xs text-slate-500">Adicione chaves Gemini (.txt) para rotação automática e resiliência</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">Central de I.As e Provedores</h3>
+                    <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      Multi-IA
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">Selecione o provedor ativo e configure suas chaves e modelos correspondentes</p>
                 </div>
               </div>
               <button 
                 onClick={() => setIsKeyManagerOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                className="p-2 hover:bg-slate-200/60 rounded-xl text-slate-400 hover:text-slate-600 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Conteúdo do Modal (Scrollable) */}
+            {/* Abas de Navegação dos Provedores */}
+            <div className="px-6 pt-4 pb-2 bg-slate-50/40 border-b border-slate-100 flex gap-2">
+              <button
+                onClick={() => {
+                  setSelectedProviderTab('gemini');
+                  setTestResult(null);
+                  setKeyManagerError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                  selectedProviderTab === 'gemini'
+                    ? 'bg-white text-indigo-700 border-indigo-200/80 shadow-xs'
+                    : 'bg-slate-100/70 hover:bg-slate-100 text-slate-600 border-transparent'
+                }`}
+              >
+                <Sparkles className={`w-4 h-4 ${selectedProviderTab === 'gemini' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                <span>Google Gemini</span>
+                {activeProvider === 'gemini' && (
+                  <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[9px] font-extrabold rounded-full">
+                    Ativo
+                  </span>
+                )}
+                {keysStats.total > 0 && activeProvider !== 'gemini' && (
+                  <span className="px-1.5 py-0.5 bg-slate-200/80 text-slate-600 text-[9px] font-bold rounded-full">
+                    {keysStats.free} chaves
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedProviderTab('openrouter');
+                  setTestResult(null);
+                  setKeyManagerError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                  selectedProviderTab === 'openrouter'
+                    ? 'bg-white text-amber-700 border-amber-200/80 shadow-xs'
+                    : 'bg-slate-100/70 hover:bg-slate-100 text-slate-600 border-transparent'
+                }`}
+              >
+                <Cpu className={`w-4 h-4 ${selectedProviderTab === 'openrouter' ? 'text-amber-600' : 'text-slate-400'}`} />
+                <span>OpenRouter (Nemotron Free)</span>
+                {activeProvider === 'openrouter' && (
+                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-extrabold rounded-full">
+                    Ativo
+                  </span>
+                )}
+                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black rounded-md">
+                  FREE
+                </span>
+              </button>
+            </div>
+
+            {/* Conteúdo da Aba (Scrollable) */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              
+              {/* Feedback de Erro Geral */}
               {keyManagerError && (
-                <div className="p-3 text-xs bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-left">
-                  <span className="font-bold">Erro:</span> {keyManagerError}
+                <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-left flex items-start gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Atenção:</span> {keyManagerError}
+                  </div>
                 </div>
               )}
 
-              {/* Cards de Resumo */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Chaves</p>
-                  <p className="text-2xl font-black text-slate-800 mt-1">{keysStats.total}</p>
-                </div>
-                <div className="p-4 bg-emerald-50/50 border border-emerald-100/80 rounded-2xl text-center">
-                  <p className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wider">Chaves Livres</p>
-                  <p className="text-2xl font-black text-emerald-600 mt-1">{keysStats.free}</p>
-                </div>
-                <div className="p-4 bg-amber-50/50 border border-amber-100/80 rounded-2xl text-center">
-                  <p className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wider">Esgotadas (429)</p>
-                  <p className="text-2xl font-black text-amber-600 mt-1">{keysStats.exhausted}</p>
-                </div>
-              </div>
-
-              {/* Área de Upload / Entrada */}
-              <div className="p-5 border border-dashed border-slate-200 rounded-2xl hover:border-indigo-400 transition bg-slate-50/30 flex flex-col items-center justify-center text-center gap-3">
-                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
-                  <Upload className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-700">Fazer Upload de arquivo .txt</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Carregue um arquivo contendo uma chave Gemini por linha (começando com AIzaSy)</p>
-                </div>
-                
-                <label className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition cursor-pointer flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Selecionar Arquivo .txt</span>
-                  <input 
-                    type="file" 
-                    accept=".txt" 
-                    onChange={handleKeysFileUpload} 
-                    className="hidden"
-                    disabled={isUploadingKeys}
-                  />
-                </label>
-              </div>
-
-              {/* Tabela / Lista de Chaves */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest text-left">Lista de Chaves Carregadas</h4>
-                
-                {keysStats.keysList.length === 0 ? (
-                  <div className="py-8 text-center border border-slate-100 rounded-2xl bg-slate-50/20">
-                    <Key className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs text-slate-400 font-medium">Nenhuma chave rotativa carregada.</p>
-                    <p className="text-[10px] text-slate-400/80 mt-0.5">O sistema usará por padrão a chave contida no arquivo .env.</p>
+              {/* Feedback de Teste de Conexão */}
+              {testResult && (
+                <div className={`p-3.5 text-xs rounded-2xl text-left flex items-start gap-2.5 animate-in fade-in ${
+                  testResult.success 
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+                    : 'bg-rose-50 border border-rose-200 text-rose-800'
+                }`}>
+                  {testResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-bold">{testResult.success ? 'Conexão Estabelecida!' : 'Erro na Conexão:'}</p>
+                    <p className="mt-0.5 text-slate-600">{testResult.message}</p>
                   </div>
-                ) : (
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-xs">
-                    <div className="max-h-48 overflow-y-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
-                            <th className="p-3">Chave</th>
-                            <th className="p-3">Status</th>
-                            <th className="p-3 text-center">Sucesso</th>
-                            <th className="p-3 text-center">Falhas</th>
-                            <th className="p-3 text-right">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {keysStats.keysList.map((keyObj) => (
-                            <tr key={keyObj.id} className="hover:bg-slate-50/50 transition">
-                              <td className="p-3 font-mono text-[11px] text-slate-600">{keyObj.keyMasked}</td>
-                              <td className="p-3">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${keyObj.status === 'free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                                  {keyObj.status === 'free' ? 'Ativa' : 'Esgotada'}
-                                </span>
-                              </td>
-                              <td className="p-3 text-center text-emerald-600 font-bold">{keyObj.successCount}</td>
-                              <td className="p-3 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>
-                              <td className="p-3 text-right">
-                                <button 
-                                  onClick={() => handleRemoveKey(keyObj.id)}
-                                  className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                  title="Remover Chave"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                </div>
+              )}
+
+              {/* ======================= ABA GOOGLE GEMINI ======================= */}
+              {selectedProviderTab === 'gemini' && (
+                <div className="space-y-6 text-left">
+                  {/* Card de Status Ativo do Gemini */}
+                  <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">Provedor Google Gemini</h4>
+                        <p className="text-[11px] text-slate-500">
+                          {activeProvider === 'gemini' 
+                            ? 'Este é o motor atualmente ativo para geração de roteiros e carrosséis.' 
+                            : 'Atualmente inativo. Clique ao lado para ativar o Gemini como motor principal.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {activeProvider === 'gemini' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200">
+                        <Check className="w-3.5 h-3.5" /> IA Ativa
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleSelectActiveProvider('gemini')}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Definir Gemini como IA Ativa
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Seletor de Modelo Gemini */}
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
+                    <label className="text-xs font-bold text-slate-700 block">Modelo Gemini Preferido</label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        value={geminiModel}
+                        onChange={(e) => handleSaveGeminiModel(e.target.value)}
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
+                      >
+                        {GEMINI_AVAILABLE_MODELS.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleTestProvider('gemini')}
+                        disabled={isTestingProvider}
+                        className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        {isTestingProvider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        <span>Testar Gemini</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">O sistema rotaciona automaticamente entre os modelos e suas chaves gratuitas em caso de 429 ou sobrecarga.</p>
+                  </div>
+
+                  {/* Cards de Resumo de Chaves */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Chaves</p>
+                      <p className="text-2xl font-black text-slate-800 mt-1">{keysStats.total}</p>
+                    </div>
+                    <div className="p-4 bg-emerald-50/50 border border-emerald-100/80 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wider">Chaves Livres</p>
+                      <p className="text-2xl font-black text-emerald-600 mt-1">{keysStats.free}</p>
+                    </div>
+                    <div className="p-4 bg-amber-50/50 border border-amber-100/80 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wider">Esgotadas (429)</p>
+                      <p className="text-2xl font-black text-amber-600 mt-1">{keysStats.exhausted}</p>
                     </div>
                   </div>
-                )}
-              </div>
+
+                  {/* Área de Upload / Entrada de arquivo .txt */}
+                  <div className="p-5 border border-dashed border-slate-200 rounded-2xl hover:border-indigo-400 transition bg-slate-50/30 flex flex-col items-center justify-center text-center gap-3">
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-700">Fazer Upload de arquivo .txt de Chaves Gemini</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Carregue um arquivo contendo uma chave Gemini por linha (começando com AIzaSy)</p>
+                    </div>
+                    
+                    <label className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition cursor-pointer flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>{isUploadingKeys ? 'Carregando...' : 'Selecionar Arquivo .txt'}</span>
+                      <input 
+                        type="file" 
+                        accept=".txt" 
+                        onChange={handleKeysFileUpload} 
+                        className="hidden"
+                        disabled={isUploadingKeys}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Tabela de Chaves Carregadas */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chaves Rotativas Cadastradas</h4>
+                      <span className="text-[10px] text-slate-400">{keysStats.keysList.length} cadastradas</span>
+                    </div>
+                    
+                    {keysStats.keysList.length === 0 ? (
+                      <div className="py-8 text-center border border-slate-100 rounded-2xl bg-slate-50/20">
+                        <Key className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs text-slate-400 font-medium">Nenhuma chave rotativa carregada.</p>
+                        <p className="text-[10px] text-slate-400/80 mt-0.5">O sistema usará por padrão a chave contida no arquivo .env se disponível.</p>
+                      </div>
+                    ) : (
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-xs">
+                        <div className="max-h-44 overflow-y-auto">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                <th className="p-3">Chave</th>
+                                <th className="p-3">Status</th>
+                                <th className="p-3 text-center">Sucessos</th>
+                                <th className="p-3 text-center">Falhas</th>
+                                <th className="p-3 text-right">Ações</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {keysStats.keysList.map((keyObj) => (
+                                <tr key={keyObj.id} className="hover:bg-slate-50/50 transition">
+                                  <td className="p-3 font-mono text-[11px] text-slate-600">{keyObj.keyMasked}</td>
+                                  <td className="p-3">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${keyObj.status === 'free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                                      {keyObj.status === 'free' ? 'Ativa' : 'Esgotada'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center text-emerald-600 font-bold">{keyObj.successCount}</td>
+                                  <td className="p-3 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>
+                                  <td className="p-3 text-right">
+                                    <button 
+                                      onClick={() => handleRemoveKey(keyObj.id)}
+                                      className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                      title="Remover Chave"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ======================= ABA OPENROUTER ======================= */}
+              {selectedProviderTab === 'openrouter' && (
+                <div className="space-y-6 text-left">
+                  {/* Card de Status Ativo do OpenRouter */}
+                  <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center">
+                        <Cpu className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">Provedor OpenRouter API</h4>
+                        <p className="text-[11px] text-slate-500">
+                          {activeProvider === 'openrouter' 
+                            ? 'Este é o motor atualmente ativo para geração de roteiros e carrosséis.' 
+                            : 'Atualmente inativo. Clique ao lado para ativar o OpenRouter como motor principal.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {activeProvider === 'openrouter' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-xl border border-amber-300">
+                        <Check className="w-3.5 h-3.5" /> IA Ativa
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleSelectActiveProvider('openrouter')}
+                        className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Definir OpenRouter como IA Ativa
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Campo de Chave API OpenRouter */}
+                  <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Chave da API OpenRouter (OPENROUTER_API_KEY)</span>
+                      </label>
+                      <a 
+                        href="https://openrouter.ai/keys" 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1 font-bold"
+                      >
+                        <span>Obter chave no OpenRouter</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="password"
+                        value={openrouterKeyInput}
+                        onChange={(e) => setOpenrouterKeyInput(e.target.value)}
+                        placeholder={openrouterConfig.hasKey ? `Chave salva: ${openrouterConfig.apiKeyMasked}` : 'Cole sua chave: sk-or-v1-...'}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${openrouterConfig.hasKey || openrouterKeyInput ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                        {openrouterConfig.hasKey 
+                          ? `Chave configurada no servidor (${openrouterConfig.apiKeyMasked})` 
+                          : 'Nenhuma chave salva no momento.'}
+                      </span>
+                      <span className="text-[10px] text-slate-400">Você também pode definir via arquivo .env</span>
+                    </div>
+                  </div>
+
+                  {/* Seleção de Modelos Gratuitos Recomendados */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">Modelos Gratuitos Recomendados (Free Tier)</h4>
+                        <p className="text-[10px] text-slate-400">Modelos com alta capacidade de contexto e sem custo de hardware</p>
+                      </div>
+                      <button
+                        onClick={() => setIsCustomOpenRouterModel(!isCustomOpenRouterModel)}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition"
+                      >
+                        {isCustomOpenRouterModel ? 'Ver Lista Recomendada' : 'Digitar Outro Modelo'}
+                      </button>
+                    </div>
+
+                    {!isCustomOpenRouterModel ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {POPULAR_OPENROUTER_MODELS.map((m) => {
+                          const isSelected = openrouterModelInput === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setOpenrouterModelInput(m.id)}
+                              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                isSelected
+                                  ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-500/20 shadow-xs'
+                                  : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-800">{m.name}</span>
+                                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black rounded-md">
+                                  FREE
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">{m.desc}</p>
+                              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400">
+                                <span className="font-semibold text-amber-700/90">{m.tag}</span>
+                                {isSelected && <span className="font-bold text-amber-600 flex items-center gap-0.5"><Check className="w-3 h-3" /> Selecionado</span>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                        <label className="text-xs font-bold text-slate-700">Identificador do Modelo no OpenRouter</label>
+                        <input
+                          type="text"
+                          value={openrouterModelInput}
+                          onChange={(e) => setOpenrouterModelInput(e.target.value)}
+                          placeholder="ex: nvidia/nemotron-3-ultra-550b-a55b:free ou anthropic/claude-3.5-sonnet"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                        />
+                        <p className="text-[10px] text-slate-400">Consulte os identificadores em openrouter.ai/models.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Configuração de Base URL */}
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
+                    <label className="text-xs font-bold text-slate-700 block">Base URL da API OpenRouter</label>
+                    <input
+                      type="text"
+                      value={openrouterBaseUrlInput}
+                      onChange={(e) => setOpenrouterBaseUrlInput(e.target.value)}
+                      placeholder="https://openrouter.ai/api/v1"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+
+                  {/* Ações do OpenRouter: Testar e Salvar */}
+                  <div className="flex flex-wrap gap-2 justify-end pt-2">
+                    <button
+                      onClick={() => handleTestProvider('openrouter')}
+                      disabled={isTestingProvider}
+                      className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isTestingProvider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span>Testar Conexão</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveOpenRouterSettings(true)}
+                      disabled={isSavingProviderSettings}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>Salvar e Definir como IA Ativa</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Rodapé do Modal */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
               <div className="flex gap-2">
-                <button 
-                  onClick={handleResetKeys}
-                  disabled={keysStats.exhausted === 0}
-                  className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
-                >
-                  Reativar Esgotadas
-                </button>
-                <button 
-                  onClick={handleClearKeys}
-                  disabled={keysStats.total === 0}
-                  className="px-3.5 py-1.5 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
-                >
-                  Limpar Tudo
-                </button>
+                {selectedProviderTab === 'gemini' && (
+                  <>
+                    <button 
+                      onClick={handleResetKeys}
+                      disabled={keysStats.exhausted === 0}
+                      className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Reativar Esgotadas
+                    </button>
+                    <button 
+                      onClick={handleClearKeys}
+                      disabled={keysStats.total === 0}
+                      className="px-3.5 py-1.5 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Limpar Tudo
+                    </button>
+                  </>
+                )}
+                {selectedProviderTab === 'openrouter' && (
+                  <button 
+                    onClick={() => handleSaveOpenRouterSettings(false)}
+                    disabled={isSavingProviderSettings}
+                    className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                  >
+                    Salvar Alterações
+                  </button>
+                )}
               </div>
               <button 
                 onClick={() => setIsKeyManagerOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
               >
                 Fechar
               </button>

@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
+import { providersManager } from "./providers-manager";
 
 dotenv.config();
 
@@ -144,6 +145,163 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
   }
 }
 
+// Helper para geração através do OPENROUTER API
+async function executeWithOpenRouter(args: {
+  promptText?: string;
+  parts: any[];
+  responseSchema?: any;
+  preferredModel?: string;
+}) {
+  const apiKey = providersManager.getOpenRouterKey();
+  if (!apiKey) {
+    throw new Error("Chave do OpenRouter não configurada. Por favor, adicione sua chave OpenRouter (sk-or-v1-...) no Menu de I.As ou no arquivo .env.");
+  }
+
+  const baseUrl = providersManager.getOpenRouterBaseUrl();
+  const configuredModel = providersManager.getOpenRouterModel();
+  const primaryModel = args.preferredModel || configuredModel || "nvidia/nemotron-3-ultra-550b-a55b:free";
+
+  // Lista de modelos OpenRouter com foco em modelos gratuitos de alto contexto
+  const modelsToTry = [...new Set([
+    primaryModel,
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "nvidia/nemotron-3-super:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "google/gemini-2.0-flash-exp:free",
+    "qwen/qwen-2.5-coder-32b-instruct:free"
+  ])];
+
+  let schemaInstruction = "";
+  if (args.responseSchema) {
+    schemaInstruction = `\n\nESQUEMA JSON ESTRITO OBRIGATÓRIO (Responda APENAS com um objeto JSON válido estritamente aderente a esta estrutura, sem blocos de texto antes ou depois):\n${JSON.stringify(args.responseSchema, null, 2)}`;
+  }
+
+  const systemMessage = {
+    role: "system",
+    content: `Você é um roteirista premiado e engenheiro de prompts especialista em Instagram. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON.${schemaInstruction}`
+  };
+
+  const userContentArray: any[] = [];
+  let combinedText = "";
+
+  for (const p of args.parts || []) {
+    if (p.text) {
+      combinedText += (combinedText ? "\n\n" : "") + p.text;
+    } else if (p.inlineData) {
+      if (p.inlineData.mimeType?.startsWith('image/')) {
+        userContentArray.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`
+          }
+        });
+      } else if (p.inlineData.mimeType === 'application/pdf') {
+        userContentArray.push({
+          type: "text",
+          text: `[Material de Referência / Livro em PDF Anexado: ${p.inlineData.data.length} bytes base64]`
+        });
+      }
+    }
+  }
+
+  if (combinedText) {
+    userContentArray.unshift({
+      type: "text",
+      text: combinedText + "\n\nIMPORTANTE: Retorne APENAS o JSON válido."
+    });
+  }
+
+  const userMessage = {
+    role: "user",
+    content: userContentArray.length === 1 && userContentArray[0].type === "text"
+      ? userContentArray[0].text
+      : userContentArray
+  };
+
+  let lastError: any = null;
+
+  for (const currentModel of modelsToTry) {
+    console.log(`[OpenRouter] Tentando geração com modelo: ${currentModel}...`);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://prompter-nano-banana.app",
+            "X-Title": "Prompter Nano Banana"
+          },
+          body: JSON.stringify({
+            model: currentModel,
+            messages: [systemMessage, userMessage],
+            response_format: { type: "json_object" },
+            temperature: 0.7,
+          })
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          let errJson: any = null;
+          try { errJson = JSON.parse(errText); } catch {}
+          const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+
+          console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}):`, errMsg);
+
+          if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key")) {
+            throw new Error(`Chave do OpenRouter inválida ou não autorizada (${response.status}): ${errMsg}`);
+          }
+
+          lastError = new Error(`OpenRouter ${currentModel}: ${errMsg}`);
+          break; // modelo ocupado ou sem cota, tentar próximo modelo da lista
+        }
+
+        const data: any = await response.json();
+        const rawContent = data?.choices?.[0]?.message?.content;
+        if (!rawContent) {
+          throw new Error(`OpenRouter retornou resposta vazia no modelo ${currentModel}.`);
+        }
+
+        let cleanText = rawContent.trim();
+        if (cleanText.startsWith('```json')) {
+          cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (cleanText.startsWith('```')) {
+          cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        try {
+          JSON.parse(cleanText);
+        } catch (parseErr) {
+          const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            cleanText = jsonMatch[0];
+            JSON.parse(cleanText);
+          } else {
+            throw new Error(`Modelo ${currentModel} não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
+          }
+        }
+
+        console.log(`[OpenRouter] Geração concluída com sucesso usando modelo ${currentModel}!`);
+        return { text: cleanText };
+      } catch (err: any) {
+        lastError = err;
+        if (err.message?.includes("Chave do OpenRouter inválida")) {
+          throw err;
+        }
+        console.warn(`[OpenRouter] Falha na tentativa ${attempt + 1} do modelo ${currentModel}:`, err.message);
+        if (attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error("Falha ao gerar conteúdo com todos os modelos OpenRouter disponíveis.");
+}
+
 export async function startServer(port = 3000) {
   const app = express();
   const PORT = port || 3000;
@@ -269,12 +427,113 @@ export async function startServer(port = 3000) {
     }
   });
 
-  // API Routes - Gemini Generate & Analyze
+  // API Routes - AI Providers & Settings
+  app.get("/api/providers", (req, res) => {
+    try {
+      res.json({
+        ...providersManager.getPublicConfig(),
+        geminiStats: keysManager.getStats(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/providers/settings", (req, res) => {
+    try {
+      const { activeProvider, openrouter, gemini } = req.body;
+      providersManager.updateConfig({ activeProvider, openrouter, gemini });
+      res.json({
+        ...providersManager.getPublicConfig(),
+        geminiStats: keysManager.getStats(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/providers/test", async (req, res) => {
+    try {
+      const { provider, model, apiKey, baseUrl } = req.body;
+      const targetProvider = provider || providersManager.getActiveProvider();
+
+      if (targetProvider === "openrouter") {
+        const keyToUse = (apiKey || providersManager.getOpenRouterKey()).trim();
+        const urlToUse = baseUrl || providersManager.getOpenRouterBaseUrl();
+        const modelToUse = model || providersManager.getOpenRouterModel();
+
+        if (!keyToUse) {
+          return res.status(400).json({ error: "Chave da API OpenRouter não informada. Insira sua chave sk-or-v1-..." });
+        }
+
+        const testRes = await fetch(`${urlToUse}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${keyToUse}`,
+            "HTTP-Referer": "https://prompter-nano-banana.app",
+            "X-Title": "Prompter Nano Banana"
+          },
+          body: JSON.stringify({
+            model: modelToUse,
+            messages: [{ role: "user", content: "Responda em formato JSON: {\"status\": \"ok\", \"message\": \"conectado\"}" }],
+            response_format: { type: "json_object" },
+            max_tokens: 30
+          })
+        });
+
+        if (!testRes.ok) {
+          const errText = await testRes.text();
+          let errJson: any = null;
+          try { errJson = JSON.parse(errText); } catch {}
+          return res.status(testRes.status).json({ 
+            error: errJson?.error?.message || errText || `Erro HTTP ${testRes.status}` 
+          });
+        }
+
+        const data: any = await testRes.json();
+        return res.json({ 
+          success: true, 
+          message: `Conexão bem-sucedida com OpenRouter usando o modelo ${modelToUse}!`,
+          sample: data?.choices?.[0]?.message?.content
+        });
+      } else {
+        // Test Gemini
+        const result = await executeWithKeyRotation("gemini-2.5-flash", {
+          contents: { parts: [{ text: "Responda em JSON: {\"status\": \"ok\"}" }] },
+          config: { responseMimeType: "application/json" }
+        });
+        return res.json({ 
+          success: true, 
+          message: "Conexão com Gemini estabelecida com sucesso!", 
+          sample: result.text 
+        });
+      }
+    } catch (error: any) {
+      console.error("Provider Test Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao testar provedor" });
+    }
+  });
+
+  // API Routes - Multi-Provider Generate & Analyze
   app.post("/api/generate", async (req, res) => {
     try {
-      const { parts, responseSchema } = req.body;
-      
-      const result = await executeWithKeyRotation("gemini-2.5-flash", {
+      const { parts, responseSchema, prompt, provider: reqProvider, model: reqModel } = req.body;
+      const activeProvider = reqProvider || providersManager.getActiveProvider();
+
+      if (activeProvider === 'openrouter') {
+        const result = await executeWithOpenRouter({
+          promptText: prompt,
+          parts,
+          responseSchema,
+          preferredModel: reqModel,
+        });
+        return res.json({ text: result.text });
+      }
+
+      // Default / Gemini
+      const geminiModel = reqModel || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
+      const result = await executeWithKeyRotation(geminiModel, {
         contents: { parts },
         config: {
           responseMimeType: "application/json",
@@ -284,16 +543,28 @@ export async function startServer(port = 3000) {
 
       res.json({ text: result.text });
     } catch (error: any) {
-      console.error("Gemini Generate Error:", error);
+      console.error("Generate Error:", error);
       res.status(500).json({ error: error.message || "Internal Server Error" });
     }
   });
 
   app.post("/api/analyze", async (req, res) => {
     try {
-      const { prompt, videoData, mimeType } = req.body;
-      
-      const result = await executeWithKeyRotation("gemini-2.5-flash", {
+      const { prompt, videoData, mimeType, provider: reqProvider, model: reqModel } = req.body;
+      const activeProvider = reqProvider || providersManager.getActiveProvider();
+
+      if (activeProvider === 'openrouter') {
+        const result = await executeWithOpenRouter({
+          promptText: prompt,
+          parts: [{ text: prompt }],
+          preferredModel: reqModel,
+        });
+        return res.json({ text: result.text });
+      }
+
+      // Default / Gemini
+      const geminiModel = reqModel || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
+      const result = await executeWithKeyRotation(geminiModel, {
         contents: {
           parts: [
             { text: prompt },
@@ -309,7 +580,7 @@ export async function startServer(port = 3000) {
 
       res.json({ text: result.text });
     } catch (error: any) {
-      console.error("Gemini Analyze Error:", error);
+      console.error("Analyze Error:", error);
       res.status(500).json({ error: error.message || "Internal Server Error" });
     }
   });
