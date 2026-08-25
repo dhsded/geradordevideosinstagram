@@ -62,6 +62,7 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/jszip": "^3.4.0",
     "@types/pdf-parse": "^1.1.5",
     "@vitejs/plugin-react": "^5.0.4",
     "docx": "^9.6.1",
@@ -70,6 +71,7 @@
     "express": "^4.21.2",
     "file-saver": "^2.0.5",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "pdf-parse": "^2.4.5",

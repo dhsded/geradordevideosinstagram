@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3 } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle } from 'lucide-react';
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
@@ -42,6 +43,7 @@ interface GeneratedPrompts {
 }
 
 interface GeneratedCarousel {
+  coverImagePrompt: string;
   slides: {
     slideNumber: number;
     imagePromptEn: string;
@@ -58,6 +60,38 @@ interface ReferencePdfFile {
   data: string;
   mimeType: string;
   size: number;
+}
+
+// Interfaces da Auditoria Visual e Organização de Imagens por Roteiro
+interface AuditImageItem {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  dataUrl: string;
+  base64: string;
+}
+
+interface AuditSlideResult {
+  slide_numero: number;
+  descricao_esperada: string;
+  imagem_arquivo_correspondente: string;
+  pontuacao_consistencia: string;
+  feedback_visual: string;
+  destaque_pontos_fortes?: string[];
+  alertas_inconsistencia?: string[];
+}
+
+interface AuditSurplusImage {
+  nome_arquivo: string;
+  motivo_descarte: string;
+}
+
+interface AuditResult {
+  resumo_geral_consistencia: string;
+  pontuacao_media_geral?: string;
+  auditoria_imagens: AuditSlideResult[];
+  imagens_sobressalentes?: AuditSurplusImage[];
 }
 
 const NICHES = ['Fitness', 'Psicologia', 'Psiquiatria', 'Neuropsicologia', 'Top 10 Filmes e Séries'];
@@ -107,7 +141,7 @@ const VISUAL_DYNAMISM = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'script' | 'analysis' | 'carousel' | 'spy'>('script');
+  const [activeTab, setActiveTab] = useState<'script' | 'analysis' | 'carousel' | 'spy' | 'audit'>('script');
   
   // Browser Spy states
   const webviewRef = React.useRef<any>(null);
@@ -168,6 +202,17 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   
+  // Auditoria Visual e Organização de Imagens por Roteiro states
+  const [uploadedAuditImages, setUploadedAuditImages] = useState<AuditImageItem[]>([]);
+  const [auditScriptInput, setAuditScriptInput] = useState<string>('');
+  const [auditCharacterNotes, setAuditCharacterNotes] = useState<string>('');
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditImageModalUrl, setAuditImageModalUrl] = useState<{ url: string; title: string } | null>(null);
+  const [isGeneratingZip, setIsGeneratingZip] = useState(false);
+  const [isDragOverAudit, setIsDragOverAudit] = useState(false);
+
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
   // Abort controller ref para cancelamento real das requisições
@@ -1016,7 +1061,277 @@ export default function App() {
     }
     setIsLoading(false);
     setIsAnalyzing(false);
+    setIsAuditing(false);
     setError('Operação cancelada pelo usuário.');
+    setAuditError('Auditoria cancelada pelo usuário.');
+  };
+
+  // Funções da Auditoria Visual e Organização de Imagens
+  const handleAuditImagesSelect = (files: FileList | File[]) => {
+    setAuditError(null);
+    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+    if (fileArray.length === 0) return;
+
+    fileArray.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const base64 = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+        const newItem: AuditImageItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || 'image/png',
+          dataUrl,
+          base64
+        };
+        setUploadedAuditImages(prev => {
+          const exists = prev.some(p => p.name === file.name && p.size === file.size);
+          return exists ? prev : [...prev, newItem];
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveAuditImage = (id: string) => {
+    setUploadedAuditImages(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleClearAllAuditImages = () => {
+    setUploadedAuditImages([]);
+    setAuditResult(null);
+    setAuditError(null);
+  };
+
+  const handlePullScriptFromGeneration = () => {
+    setAuditError(null);
+    if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
+      let scriptText = `=== CARROSSEL GERADO: ${topic || 'Carrossel Sem Título'} ===\n\n`;
+      carouselResult.slides.forEach((s) => {
+        scriptText += `Slide ${s.slideNumber}:\n`;
+        scriptText += `- Descrição Visual: ${s.descriptionPt}\n`;
+        scriptText += `- Prompt de Imagem: ${s.imagePromptEn}\n`;
+        scriptText += `- Diálogo / Texto em Balões: "${s.textInBubblesPt}"\n\n`;
+      });
+      setAuditScriptInput(scriptText.trim());
+      
+      const charNotes = [
+        artStyle ? `Estilo Visual: ${artStyle}` : '',
+        carouselTone ? `Tom Narrativo: ${carouselTone}` : '',
+        characterDescription ? `Personagens: ${characterDescription}` : 'Personagens principais com consistência de traço, iluminação e cores'
+      ].filter(Boolean).join('\n');
+      
+      setAuditCharacterNotes(charNotes);
+    } else if (result && result.scenes && result.scenes.length > 0) {
+      let scriptText = `=== ROTEIRO DE VÍDEO GERADO: ${topic || 'Vídeo Sem Título'} ===\n\n`;
+      if (result.nanoBananaImagePrompt) {
+        scriptText += `Capa do Vídeo (PostForge):\n- Prompt: ${result.nanoBananaImagePrompt}\n\n`;
+      }
+      result.scenes.forEach((s) => {
+        scriptText += `Slide / Cena ${s.sceneNumber} (${s.duration}s):\n`;
+        scriptText += `- Contexto da Cena: ${s.contextPt}\n`;
+        scriptText += `- Prompt Visual: ${s.videoPromptEn}\n`;
+        scriptText += `- Diálogo / Narração: "${s.dialoguePt}"\n\n`;
+      });
+      setAuditScriptInput(scriptText.trim());
+
+      const charNotes = [
+        animationStyle ? `Estilo de Animação: ${animationStyle}` : '',
+        scriptTone ? `Tom da Narrativa: ${scriptTone}` : '',
+        characterDescription ? `Personagens: ${characterDescription}` : 'Continuidade de figurino, traço e paleta de iluminação cinematográfica'
+      ].filter(Boolean).join('\n');
+
+      setAuditCharacterNotes(charNotes);
+    } else {
+      setAuditError('Nenhum roteiro ou carrossel gerado foi encontrado na sessão. Gere um na aba Vídeo/Carrossel ou cole o texto dos seus slides diretamente.');
+    }
+  };
+
+  const handleRunAudit = async () => {
+    if (uploadedAuditImages.length === 0) {
+      setAuditError('Por favor, faça o upload de pelo menos 1 imagem para auditoria.');
+      return;
+    }
+    if (!auditScriptInput.trim()) {
+      setAuditError('Por favor, informe ou puxe o roteiro dos slides para ordenar as imagens.');
+      return;
+    }
+
+    setIsAuditing(true);
+    setAuditError(null);
+    setAuditResult(null);
+
+    try {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const payload = {
+        images: uploadedAuditImages.map(img => ({
+          name: img.name,
+          mimeType: img.mimeType,
+          data: img.base64
+        })),
+        scriptContext: auditScriptInput,
+        characterNotes: auditCharacterNotes,
+        provider: activeProvider,
+        model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
+      };
+
+      const response = await fetch(getApiUrl('/api/audit-images'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `Erro HTTP ${response.status} ao auditar imagens.`);
+      }
+
+      const data = await response.json();
+      if (!data.text) throw new Error('A IA não retornou resposta válida.');
+
+      if (data.failoverUsed) {
+        setLastGenerationMeta({
+          provider: data.provider,
+          model: data.model,
+          failoverUsed: true,
+          originalProvider: data.originalProvider,
+          failoverReason: data.failoverReason
+        });
+      } else {
+        setLastGenerationMeta({
+          provider: data.provider,
+          model: data.model,
+          failoverUsed: false
+        });
+      }
+
+      let cleanText = data.text.trim();
+      if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+
+      const parsed: AuditResult = JSON.parse(cleanText);
+      setAuditResult(parsed);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      console.error('Erro na auditoria de imagens:', err);
+      setAuditError(err.message || 'Ocorreu um erro ao processar a auditoria de imagens.');
+    } finally {
+      setIsAuditing(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleDownloadOrderedImagesZip = async () => {
+    if (!auditResult || !auditResult.auditoria_imagens || auditResult.auditoria_imagens.length === 0) return;
+    setIsGeneratingZip(true);
+    try {
+      const zip = new JSZip();
+      const imagesFolder = zip.folder("imagens_ordenadas");
+
+      auditResult.auditoria_imagens.forEach((item) => {
+        const matched = uploadedAuditImages.find(img => 
+          img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
+          img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
+          item.imagem_arquivo_correspondente.toLowerCase().includes(img.name.toLowerCase())
+        );
+
+        if (matched && imagesFolder) {
+          const extension = matched.name.split('.').pop() || 'png';
+          const cleanName = matched.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+          const sequentialFilename = `Slide_${String(item.slide_numero).padStart(2, '0')}_${cleanName}.${extension}`;
+          imagesFolder.file(sequentialFilename, matched.base64, { base64: true });
+        }
+      });
+
+      if (auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0) {
+        const surplusFolder = zip.folder("imagens_sobressalentes");
+        auditResult.imagens_sobressalentes.forEach((surplus) => {
+          const matched = uploadedAuditImages.find(img => 
+            img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase()
+          );
+          if (matched && surplusFolder) {
+            surplusFolder.file(matched.name, matched.base64, { base64: true });
+          }
+        });
+      }
+
+      let reportText = `====================================================\n`;
+      reportText += `POSTFORGE - RELATÓRIO DE AUDITORIA & ORDENAÇÃO DE IMAGENS\n`;
+      reportText += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+      reportText += `Pontuação Média de Consistência: ${auditResult.pontuacao_media_geral || 'N/A'}\n`;
+      reportText += `====================================================\n\n`;
+      reportText += `RESUMO GERAL DE CONSISTÊNCIA:\n${auditResult.resumo_geral_consistencia}\n\n`;
+      reportText += `----------------------------------------------------\n`;
+      reportText += `MAPEAMENTO SEQUENCIAL DOS SLIDES:\n`;
+      reportText += `----------------------------------------------------\n\n`;
+
+      auditResult.auditoria_imagens.forEach((item) => {
+        reportText += `[SLIDE ${item.slide_numero}] -> Arquivo: "${item.imagem_arquivo_correspondente}" (Consistência: ${item.pontuacao_consistencia})\n`;
+        reportText += `Descrição Esperada: ${item.descricao_esperada}\n`;
+        reportText += `Feedback Visual da IA: ${item.feedback_visual}\n`;
+        if (item.destaque_pontos_fortes && item.destaque_pontos_fortes.length > 0) {
+          reportText += `Pontos Fortes: ${item.destaque_pontos_fortes.join(', ')}\n`;
+        }
+        if (item.alertas_inconsistencia && item.alertas_inconsistencia.length > 0) {
+          reportText += `Alertas/Ajustes: ${item.alertas_inconsistencia.join(', ')}\n`;
+        }
+        reportText += `\n`;
+      });
+
+      if (auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0) {
+        reportText += `----------------------------------------------------\n`;
+        reportText += `IMAGENS SOBRESSALENTES / NÃO UTILIZADAS:\n`;
+        reportText += `----------------------------------------------------\n\n`;
+        auditResult.imagens_sobressalentes.forEach((surplus) => {
+          reportText += `- Arquivo: "${surplus.nome_arquivo}": ${surplus.motivo_descarte}\n`;
+        });
+      }
+
+      zip.file("relatorio_auditoria_postforge.txt", reportText);
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      saveAs(zipBlob, `PostForge_Imagens_Sequenciais_${Date.now()}.zip`);
+    } catch (err: any) {
+      console.error('Erro ao gerar ZIP:', err);
+      alert('Ocorreu um erro ao gerar o arquivo ZIP: ' + err.message);
+    } finally {
+      setIsGeneratingZip(false);
+    }
+  };
+
+  const handleExportAuditReportTXT = () => {
+    if (!auditResult) return;
+    let reportText = `====================================================\n`;
+    reportText += `POSTFORGE - RELATÓRIO DE AUDITORIA DE IMAGENS\n`;
+    reportText += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+    reportText += `Pontuação Média de Consistência: ${auditResult.pontuacao_media_geral || 'N/A'}\n`;
+    reportText += `====================================================\n\n`;
+    reportText += `RESUMO GERAL:\n${auditResult.resumo_geral_consistencia}\n\n`;
+    
+    auditResult.auditoria_imagens.forEach((item) => {
+      reportText += `=====================================\n`;
+      reportText += `SLIDE ${item.slide_numero} (Consistência: ${item.pontuacao_consistencia})\n`;
+      reportText += `Imagem Mapeada: ${item.imagem_arquivo_correspondente}\n`;
+      reportText += `Descrição Esperada: ${item.descricao_esperada}\n`;
+      reportText += `Feedback da IA: ${item.feedback_visual}\n`;
+      if (item.destaque_pontos_fortes?.length) {
+        reportText += `Pontos Fortes:\n  - ${item.destaque_pontos_fortes.join('\n  - ')}\n`;
+      }
+      if (item.alertas_inconsistencia?.length) {
+        reportText += `Alertas:\n  - ${item.alertas_inconsistencia.join('\n  - ')}\n`;
+      }
+      reportText += `\n`;
+    });
+
+    const blob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `auditoria_imagens_postforge_${Date.now()}.txt`);
   };
 
   const handleCopy = async (text: string, id: string) => {
@@ -1683,6 +1998,18 @@ export default function App() {
               Carrossel
             </button>
             <button 
+              onClick={() => setActiveTab('audit')}
+              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${activeTab === 'audit' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Images className="w-3.5 h-3.5" />
+              <span>Auditoria Visual</span>
+              {uploadedAuditImages.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] font-black rounded-full">
+                  {uploadedAuditImages.length}
+                </span>
+              )}
+            </button>
+            <button 
               onClick={() => setActiveTab('analysis')}
               className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition ${activeTab === 'analysis' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
@@ -2091,6 +2418,470 @@ export default function App() {
 
               </div>
             </div>
+          </div>
+        ) : activeTab === 'audit' ? (
+          <div className="lg:col-span-12 w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
+            {/* Coluna Esquerda: Formulário de Auditoria & Upload de Imagens */}
+            <aside className="lg:col-span-5 h-full flex flex-col overflow-hidden">
+              <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 flex flex-col gap-5 h-full overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                      <ListOrdered className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-slate-800">Auditoria & Organização</h2>
+                      <p className="text-[11px] text-slate-400">Consistência de personagens e ordem dos slides</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bloco 1: Upload em Lote de Imagens */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Imagens Geradas em Lote</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      {uploadedAuditImages.length} {uploadedAuditImages.length === 1 ? 'imagem' : 'imagens'}
+                    </span>
+                  </div>
+
+                  {/* Dropzone Drag and Drop */}
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOverAudit(true); }}
+                    onDragLeave={() => setIsDragOverAudit(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDragOverAudit(false);
+                      if (e.dataTransfer.files) {
+                        handleAuditImagesSelect(e.dataTransfer.files);
+                      }
+                    }}
+                    className={`relative border-2 border-dashed rounded-2xl p-5 text-center transition-all flex flex-col items-center justify-center gap-2.5 cursor-pointer ${
+                      isDragOverAudit 
+                        ? 'border-indigo-500 bg-indigo-50/70 scale-[0.99]' 
+                        : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-indigo-300'
+                    }`}
+                  >
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      onChange={(e) => e.target.files && handleAuditImagesSelect(e.target.files)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    />
+                    <div className="w-10 h-10 rounded-full bg-indigo-100/80 text-indigo-600 flex items-center justify-center shadow-xs">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-700">
+                        Arraste e solte várias imagens aqui
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        PNG, JPG, WEBP • Selecione de uma só vez as imagens geradas pela IA
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Grid de Miniaturas Carregadas */}
+                  {uploadedAuditImages.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Miniaturas carregadas ({uploadedAuditImages.length}):</span>
+                        <button
+                          type="button"
+                          onClick={handleClearAllAuditImages}
+                          className="text-rose-500 hover:text-rose-700 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Limpar Todas
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1.5 bg-slate-100/60 rounded-xl border border-slate-200/70">
+                        {uploadedAuditImages.map((img) => (
+                          <div key={img.id} className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white aspect-square flex items-center justify-center shadow-2xs">
+                            <img 
+                              src={img.dataUrl} 
+                              alt={img.name} 
+                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
+                              onClick={() => setAuditImageModalUrl({ url: img.dataUrl, title: img.name })}
+                            />
+                            <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 text-white text-[8px] font-mono px-1 py-0.5 truncate text-center">
+                              {img.name}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAuditImage(img.id)}
+                              className="absolute top-1 right-1 w-4 h-4 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow cursor-pointer"
+                              title="Remover imagem"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bloco 2: Campo de Entrada do Roteiro / Slides */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Roteiro / Slides Esperados</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handlePullScriptFromGeneration}
+                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                      title="Puxar o roteiro ou carrossel gerado anteriormente na aplicação"
+                    >
+                      <Sparkles className="w-3 h-3 text-indigo-500" />
+                      <span>Puxar Roteiro Gerado</span>
+                    </button>
+                  </div>
+
+                  <textarea
+                    rows={5}
+                    value={auditScriptInput}
+                    onChange={(e) => setAuditScriptInput(e.target.value)}
+                    placeholder={`Cole aqui o roteiro ou clique em "Puxar Roteiro Gerado" acima.\nExemplo:\nSlide 1: Coração vermelho olhando com tristeza para o horizonte...\nSlide 2: Cérebro azul examinando um mapa de pensamentos...`}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
+                  />
+                </div>
+
+                {/* Bloco 3: Diretrizes de Personagem / Estilo (Opcional) */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Critérios de Personagem & Estilo (Opcional)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={auditCharacterNotes}
+                    onChange={(e) => setAuditCharacterNotes(e.target.value)}
+                    placeholder="Ex: Cérebro Azul estilo 3D Clay, Coração Vermelho, traços suaves, iluminação cinematográfica quente..."
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
+                  />
+                </div>
+
+                {/* Erro de Auditoria */}
+                {auditError && (
+                  <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-left flex items-start gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Atenção:</span> {auditError}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botão de Processamento */}
+                <div className="mt-auto space-y-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleRunAudit}
+                    disabled={isAuditing || uploadedAuditImages.length === 0 || !auditScriptInput.trim()}
+                    className="w-full py-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-slate-900 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-200 hover:opacity-95 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer group"
+                  >
+                    {isAuditing ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Auditando e Ordenando com IA...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 text-indigo-300 group-hover:rotate-12 transition-transform" />
+                        <span>Analisar e Ordenar Imagens com IA</span>
+                      </>
+                    )}
+                  </button>
+
+                  {isAuditing && (
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      className="w-full py-2 text-xs text-slate-500 hover:text-red-500 font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" /> Cancelar Auditoria
+                    </button>
+                  )}
+                </div>
+
+              </div>
+            </aside>
+
+            {/* Coluna Direita: Painel de Resultados (Grid Ordenado & Cards Sequenciais) */}
+            <section className="lg:col-span-7 h-full flex flex-col overflow-hidden">
+              {!auditResult && !isAuditing && (
+                <div className="bg-slate-900 rounded-3xl shadow-inner h-full min-h-[400px] flex flex-col items-center justify-center text-slate-400 p-8 text-center border border-slate-800">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-indigo-400 mb-4 shadow-inner">
+                    <Images className="w-8 h-8" />
+                  </div>
+                  <p className="text-lg font-bold text-slate-200">Pronto para Auditar suas Imagens!</p>
+                  <p className="text-xs mt-2 max-w-md text-slate-400 leading-relaxed">
+                    Faça o upload do lote de imagens geradas à esquerda e insira o roteiro dos slides. A IA do PostForge analisará visualmente cada arquivo, verificará a consistência de personagem e organizará a sequência ideal dos slides.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 mt-6 text-left max-w-lg w-full">
+                    <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60">
+                      <span className="text-[10px] font-bold text-indigo-400 block uppercase">Passo 1</span>
+                      <span className="text-xs text-slate-300">Carregue as imagens geradas</span>
+                    </div>
+                    <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60">
+                      <span className="text-[10px] font-bold text-indigo-400 block uppercase">Passo 2</span>
+                      <span className="text-xs text-slate-300">Puxe o roteiro dos slides</span>
+                    </div>
+                    <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60">
+                      <span className="text-[10px] font-bold text-indigo-400 block uppercase">Passo 3</span>
+                      <span className="text-xs text-slate-300">Ordene e baixe o .ZIP</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isAuditing && (
+                <div className="bg-slate-900 rounded-3xl shadow-inner h-full min-h-[400px] flex flex-col items-center justify-center text-indigo-400 p-8 text-center border border-slate-800">
+                  <Loader2 className="w-12 h-12 animate-spin mb-4 text-indigo-500" />
+                  <p className="font-bold tracking-wide text-slate-100 text-lg">
+                    Auditando Imagens com Visão Computacional...
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2 max-w-md leading-relaxed">
+                    Comparando traços faciais, iluminação, paleta de cores e expressões dos personagens com cada slide do seu roteiro.
+                  </p>
+                </div>
+              )}
+
+              {auditResult && !isAuditing && (
+                <div className="flex flex-col gap-4 animate-in fade-in duration-500 h-full overflow-y-auto pb-4 pr-1">
+                  {/* Banner de Failover caso ativo */}
+                  {lastGenerationMeta?.failoverUsed && (
+                    <div className="p-4 bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white rounded-2xl border border-amber-500/40 flex items-start gap-3 text-left shadow-lg">
+                      <RefreshCw className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-amber-200">Alternância Automática de I.A Executada!</h4>
+                        <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                          A auditoria visual foi concluída com sucesso via <strong>{lastGenerationMeta.provider === 'gemini' ? 'Google Gemini' : 'OpenRouter'}</strong> ({lastGenerationMeta.model}).
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Header Card de Resumo da Auditoria */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-500/30 shadow-xl space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black rounded-full">
+                            AUDITORIA CONCLUÍDA
+                          </span>
+                          {auditResult.pontuacao_media_geral && (
+                            <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-bold rounded-full">
+                              Média: {auditResult.pontuacao_media_geral}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-lg font-bold text-white mt-1.5">
+                          Sequência Ordenada ({auditResult.auditoria_imagens?.length || 0} Slides Mapeados)
+                        </h3>
+                      </div>
+
+                      {/* Botões de Ação Rápida */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleExportAuditReportTXT}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          title="Exportar Relatório em TXT"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> TXT
+                        </button>
+                        <button
+                          onClick={handleDownloadOrderedImagesZip}
+                          disabled={isGeneratingZip}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+                          title="Baixar todas as imagens renomeadas em ordem numérica (.zip)"
+                        >
+                          <FolderArchive className="w-3.5 h-3.5" />
+                          <span>{isGeneratingZip ? 'Gerando ZIP...' : 'Baixar Imagens (.ZIP)'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Resumo Geral da IA */}
+                    <div className="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/80 text-xs text-slate-200 leading-relaxed">
+                      <p className="font-bold text-indigo-300 mb-1 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Parecer de Continuidade Visual:
+                      </p>
+                      <p>{auditResult.resumo_geral_consistencia}</p>
+                    </div>
+                  </div>
+
+                  {/* Grid Sequencial dos Slides Ordenados */}
+                  <div className="space-y-4">
+                    {auditResult.auditoria_imagens?.map((item) => {
+                      const matchedImg = uploadedAuditImages.find(img => 
+                        img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
+                        img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
+                        item.imagem_arquivo_correspondente.toLowerCase().includes(img.name.toLowerCase())
+                      );
+
+                      const scoreNumber = parseInt(item.pontuacao_consistencia.replace(/[^0-9]/g, '')) || 85;
+                      const badgeColor = scoreNumber >= 90 
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                        : scoreNumber >= 75 
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
+                          : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+
+                      return (
+                        <div 
+                          key={item.slide_numero}
+                          className="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-slate-300 shadow-xl flex flex-col md:flex-row gap-5 relative overflow-hidden group hover:border-indigo-500/40 transition-all"
+                        >
+                          {/* Coluna da Imagem */}
+                          <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
+                            <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 shadow-inner group/img">
+                              {matchedImg ? (
+                                <>
+                                  <img 
+                                    src={matchedImg.dataUrl} 
+                                    alt={item.imagem_arquivo_correspondente} 
+                                    className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                  />
+                                  <button
+                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${item.slide_numero} - ${matchedImg.name}` })}
+                                    className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
+                                    title="Expandir Imagem"
+                                  >
+                                    <div className="p-2 bg-slate-900/80 rounded-xl backdrop-blur-xs flex items-center gap-1.5 text-xs font-bold">
+                                      <ZoomIn className="w-4 h-4" /> Expandir
+                                    </div>
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-4 text-center">
+                                  <ImageIcon className="w-8 h-8 mb-1 text-slate-600" />
+                                  <span className="text-[10px]">Arquivo mapeado:</span>
+                                  <span className="text-xs font-bold text-slate-300 font-mono mt-0.5 truncate max-w-full">
+                                    {item.imagem_arquivo_correspondente}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-800/60 p-2 rounded-xl border border-slate-700/60">
+                              <span className="truncate max-w-[130px]" title={item.imagem_arquivo_correspondente}>
+                                📁 {item.imagem_arquivo_correspondente}
+                              </span>
+                              {matchedImg && (
+                                <button
+                                  onClick={() => saveAs(matchedImg.dataUrl, `Slide_${item.slide_numero}_${matchedImg.name}`)}
+                                  className="text-indigo-400 hover:text-indigo-300 p-1 hover:bg-slate-700 rounded-md cursor-pointer transition"
+                                  title="Baixar imagem individual"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Coluna de Informações e Feedback da IA */}
+                          <div className="flex-1 flex flex-col justify-between gap-3">
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                                    {item.slide_numero}
+                                  </span>
+                                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                                    Slide {item.slide_numero}
+                                  </h4>
+                                </div>
+
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${badgeColor}`}>
+                                  {item.pontuacao_consistencia} Consistência
+                                </span>
+                              </div>
+
+                              <div className="space-y-2.5">
+                                {/* Descrição esperada */}
+                                <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60 text-xs">
+                                  <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-0.5">
+                                    Requisito do Roteiro:
+                                  </span>
+                                  <p className="text-slate-200 leading-relaxed">{item.descricao_esperada}</p>
+                                </div>
+
+                                {/* Feedback Visual da IA */}
+                                <div className="p-3 bg-indigo-950/40 rounded-xl border border-indigo-500/20 text-xs">
+                                  <span className="text-[10px] font-bold text-indigo-400 block uppercase tracking-wider mb-0.5 flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" /> Análise de Consistência & Traço:
+                                  </span>
+                                  <p className="text-indigo-100 leading-relaxed">{item.feedback_visual}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Tags de Pontos Fortes e Alertas */}
+                            {(item.destaque_pontos_fortes?.length || item.alertas_inconsistencia?.length) ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800">
+                                {item.destaque_pontos_fortes?.map((forte, fIdx) => (
+                                  <span key={fIdx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-medium">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {forte}
+                                  </span>
+                                ))}
+                                {item.alertas_inconsistencia?.map((alerta, aIdx) => (
+                                  <span key={aIdx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-900/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-medium">
+                                    <AlertTriangle className="w-3 h-3 text-amber-400" /> {alerta}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Seção de Imagens Sobressalentes / Descartadas */}
+                  {auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0 && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-slate-300 shadow-xl space-y-4">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                          Imagens Sobressalentes / Não Utilizadas ({auditResult.imagens_sobressalentes.length})
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Estas imagens foram analisadas mas não foram selecionadas como a melhor representação para a sequência narrativa:
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {auditResult.imagens_sobressalentes.map((surplus, sIdx) => {
+                          const matchedImg = uploadedAuditImages.find(img => img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase());
+                          return (
+                            <div key={sIdx} className="p-3 bg-slate-800/50 rounded-2xl border border-slate-700/60 flex items-center gap-3">
+                              {matchedImg && (
+                                <img 
+                                  src={matchedImg.dataUrl} 
+                                  alt={surplus.nome_arquivo}
+                                  onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
+                                  className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-slate-200 truncate font-mono">{surplus.nome_arquivo}</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">{surplus.motivo_descarte}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+            </section>
           </div>
         ) : activeTab !== 'analysis' ? (
           <>
@@ -3562,6 +4353,44 @@ export default function App() {
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Zoom de Imagem da Auditoria */}
+      {auditImageModalUrl && (
+        <div 
+          onClick={() => setAuditImageModalUrl(null)}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95"
+          >
+            <div className="p-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between text-white">
+              <span className="text-xs font-bold font-mono truncate max-w-[500px]">{auditImageModalUrl.title}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => saveAs(auditImageModalUrl.url, auditImageModalUrl.title.replace(/[^a-zA-Z0-9._-]/g, '_'))}
+                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" /> Baixar
+                </button>
+                <button
+                  onClick={() => setAuditImageModalUrl(null)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 p-4 flex items-center justify-center bg-slate-950 overflow-auto">
+              <img 
+                src={auditImageModalUrl.url} 
+                alt={auditImageModalUrl.title} 
+                className="max-h-[75vh] w-auto object-contain rounded-xl shadow-lg"
+              />
             </div>
           </div>
         </div>

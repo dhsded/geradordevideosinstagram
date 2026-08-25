@@ -366,6 +366,130 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // API Route - Auditoria e Organização Sequencial de Imagens por Roteiro
+  app.post("/api/audit-images", async (req, res) => {
+    try {
+      const { images, scriptContext, characterNotes, provider: reqProvider, model: reqModel } = req.body;
+      
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "Nenhuma imagem foi fornecida para auditoria." });
+      }
+
+      if (!scriptContext || typeof scriptContext !== 'string' || !scriptContext.trim()) {
+        return res.status(400).json({ error: "O contexto do roteiro / slides é obrigatório." });
+      }
+
+      const parts: any[] = [];
+
+      const promptText = `Você é um Diretor de Arte, Auditor Visual e Especialista em Continuidade Cinematográfica e Consistência de Personagens para Instagram.
+Sua missão é realizar uma Auditoria Visual e Organização Sequencial das imagens enviadas com base no roteiro/slides fornecido.
+
+=== ROTEIRO / SEQUÊNCIA DE SLIDES ESPERADA ===
+${scriptContext.trim()}
+
+${characterNotes ? `=== DIRETRIZES DE CONSISTÊNCIA DE PERSONAGEM E ESTILO ===\n${characterNotes.trim()}\n` : ''}
+
+=== SUAS TAREFAS DE AUDITORIA ===
+1. Examine com atenção cada uma das ${images.length} imagens fornecidas abaixo.
+2. Identifique os traços do personagem, estilo visual, paleta de cores, expressão emocional e elementos de cena em cada imagem.
+3. Para CADA SLIDE do roteiro (Slide 1, Slide 2, etc.), selecione a melhor imagem correspondente entre as enviadas (identificada exatamente pelo nome do arquivo correspondente).
+4. Avalie a consistência visual em porcentagem (ex: "95%", "90%", "85%").
+5. Forneça um feedback visual detalhado explicando por que a imagem foi mapeada para aquele slide, destacando a fidelidade à narrativa e ao personagem.
+6. Se houver imagens sobressalentes que não foram utilizadas nos slides, liste-as com o motivo pelo qual não foram a melhor escolha para a sequência.
+7. Forneça uma análise resumida da consistência geral da coleção de imagens.
+
+Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
+
+      parts.push({ text: promptText });
+
+      images.forEach((img: { name: string; mimeType: string; data: string }, index: number) => {
+        parts.push({
+          text: `\n--- [INÍCIO DA IMAGEM ${index + 1}: ARQUIVO "${img.name}"] ---`
+        });
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType || 'image/png',
+            data: img.data.includes('base64,') ? img.data.split('base64,')[1] : img.data
+          }
+        });
+        parts.push({
+          text: `--- [FIM DA IMAGEM: ARQUIVO "${img.name}"] ---\n`
+        });
+      });
+
+      const responseSchema = {
+        type: "OBJECT",
+        properties: {
+          resumo_geral_consistencia: { 
+            type: "STRING", 
+            description: "Resumo executivo sobre a consistência dos personagens, estilo artístico e iluminação." 
+          },
+          pontuacao_media_geral: { 
+            type: "STRING", 
+            description: "Média percentual de consistência de toda a sequência, ex: 92%" 
+          },
+          auditoria_imagens: {
+            type: "ARRAY",
+            description: "Lista ordenada sequencialmente de slides com suas respectivas imagens mapeadas",
+            items: {
+              type: "OBJECT",
+              properties: {
+                slide_numero: { type: "INTEGER", description: "Número sequencial do slide (1, 2, 3...)" },
+                descricao_esperada: { type: "STRING", description: "Resumo do que era esperado neste slide" },
+                imagem_arquivo_correspondente: { type: "STRING", description: "Nome exato do arquivo de imagem correspondente que melhor representa este slide" },
+                pontuacao_consistencia: { type: "STRING", description: "Porcentagem de correspondência e consistência, ex: 95%" },
+                feedback_visual: { type: "STRING", description: "Explicação detalhada da escolha e fidelidade visual" },
+                destaque_pontos_fortes: { 
+                  type: "ARRAY", 
+                  items: { type: "STRING" },
+                  description: "Pontos fortes visuais e de consistência" 
+                },
+                alertas_inconsistencia: { 
+                  type: "ARRAY", 
+                  items: { type: "STRING" },
+                  description: "Eventuais pequenas inconsistências ou sugestões de melhoria" 
+                }
+              },
+              required: ["slide_numero", "descricao_esperada", "imagem_arquivo_correspondente", "pontuacao_consistencia", "feedback_visual"]
+            }
+          },
+          imagens_sobressalentes: {
+            type: "ARRAY",
+            description: "Imagens que sobraram e não foram alocadas a nenhum slide",
+            items: {
+              type: "OBJECT",
+              properties: {
+                nome_arquivo: { type: "STRING", description: "Nome do arquivo não utilizado" },
+                motivo_descarte: { type: "STRING", description: "Motivo pelo qual a imagem não entrou na sequência final" }
+              },
+              required: ["nome_arquivo", "motivo_descarte"]
+            }
+          }
+        },
+        required: ["resumo_geral_consistencia", "auditoria_imagens"]
+      };
+
+      const result = await aiService.generate({
+        parts,
+        responseSchema,
+        provider: reqProvider,
+        model: reqModel
+      });
+
+      res.json({
+        text: result.text,
+        provider: result.provider,
+        model: result.model,
+        failoverUsed: result.failoverUsed,
+        originalProvider: result.originalProvider,
+        failoverReason: result.failoverReason
+      });
+    } catch (error: any) {
+      console.error("Audit Images Error:", error);
+      res.status(500).json({ error: error.message || "Erro durante auditoria de imagens." });
+    }
+  });
+
   // Vite middleware for development or Static serving for production
   if (process.env.NODE_ENV !== "production") {
     try {
