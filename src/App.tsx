@@ -27,15 +27,26 @@ const getApiUrl = (endpoint: string): string => {
   return endpoint;
 };
 
+export type DialogueLanguage = 'pt' | 'en' | 'es' | 'all';
+
+export const LANGUAGES = [
+  { id: 'pt' as const, label: 'Português', flag: '🇧🇷', code: 'PT', name: 'Português (Brasil)' },
+  { id: 'en' as const, label: 'Inglês', flag: '🇺🇸', code: 'EN', name: 'Inglês (English)' },
+  { id: 'es' as const, label: 'Espanhol', flag: '🇪🇸', code: 'ES', name: 'Espanhol (Español)' },
+  { id: 'all' as const, label: 'Trilíngue (PT, EN e ES)', flag: '🌐', code: 'TODOS', name: 'Trilíngue (PT, EN e ES)' },
+];
+
 interface GeneratedPrompts {
+  language?: DialogueLanguage | string;
   scenes: {
     sceneNumber: number;
     duration: number;
     contextPt: string;
     videoPromptEn: string;
-    dialoguePt: string;
-    dialogueEn: string;
-    dialogueEs: string;
+    dialoguePt?: string;
+    dialogueEn?: string;
+    dialogueEs?: string;
+    dialogue?: string;
     isVoiceOver: boolean;
   }[];
   nanoBananaImagePrompt: string;
@@ -43,13 +54,15 @@ interface GeneratedPrompts {
 }
 
 interface GeneratedCarousel {
+  language?: DialogueLanguage | string;
   coverImagePrompt: string;
   slides: {
     slideNumber: number;
     imagePromptEn: string;
-    textInBubblesPt: string;
-    textInBubblesEn: string;
-    textInBubblesEs: string;
+    textInBubblesPt?: string;
+    textInBubblesEn?: string;
+    textInBubblesEs?: string;
+    textInBubbles?: string;
     descriptionPt: string;
   }[];
   instagramPost: string;
@@ -172,6 +185,7 @@ export default function App() {
   const [includeHook, setIncludeHook] = useState(true);
   const [carouselTone, setCarouselTone] = useState('Acolhedor / Compassivo');
   const [characterDescription, setCharacterDescription] = useState('');
+  const [dialogueLanguage, setDialogueLanguage] = useState<DialogueLanguage>('pt');
   
   React.useEffect(() => {
     const availableCarouselTones = NICHE_CAROUSEL_TONES[niche] || [];
@@ -1265,10 +1279,11 @@ export default function App() {
     if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
       let scriptText = `=== CARROSSEL GERADO: ${topic || 'Carrossel Sem Título'} ===\n\n`;
       carouselResult.slides.forEach((s) => {
+        const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
         scriptText += `Slide ${s.slideNumber}:\n`;
         scriptText += `- Descrição Visual: ${s.descriptionPt}\n`;
         scriptText += `- Prompt de Imagem: ${s.imagePromptEn}\n`;
-        scriptText += `- Diálogo / Texto em Balões: "${s.textInBubblesPt}"\n\n`;
+        scriptText += `- Diálogo / Texto em Balões: "${bubbleText}"\n\n`;
       });
       setAuditScriptInput(scriptText.trim());
       
@@ -1285,10 +1300,11 @@ export default function App() {
         scriptText += `Capa do Vídeo (PostForge):\n- Prompt: ${result.nanoBananaImagePrompt}\n\n`;
       }
       result.scenes.forEach((s) => {
+        const dialogueText = s.dialoguePt || s.dialogueEn || s.dialogueEs || s.dialogue || '';
         scriptText += `Slide / Cena ${s.sceneNumber} (${s.duration}s):\n`;
         scriptText += `- Contexto da Cena: ${s.contextPt}\n`;
         scriptText += `- Prompt Visual: ${s.videoPromptEn}\n`;
-        scriptText += `- Diálogo / Narração: "${s.dialoguePt}"\n\n`;
+        scriptText += `- Diálogo / Narração: "${dialogueText}"\n\n`;
       });
       setAuditScriptInput(scriptText.trim());
 
@@ -1512,6 +1528,10 @@ export default function App() {
 
   const exportAsTXT = () => {
     if (activeTab === 'script' && result) {
+      const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
+      const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
+      const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
+
       let content = `--- PROMPT CAPA DO POST (POSTFORGE) ---\n\n`;
       content += `${result.nanoBananaImagePrompt}\n\n`;
       content += `=========================================\n\n`;
@@ -1522,9 +1542,17 @@ export default function App() {
         content += `[PROMPT DE VÍDEO - INGLÊS]\n`;
         content += `${scene.videoPromptEn}\n\n`;
         content += `--- NARRAÇÃO / DIÁLOGO ---\n`;
-        content += `PT: ${scene.dialoguePt}\n\n`;
-        content += `EN: ${scene.dialogueEn}\n\n`;
-        content += `ES: ${scene.dialogueEs}\n\n`;
+        if (isEn) {
+          content += `EN: ${scene.dialogueEn || scene.dialogue}\n\n`;
+        } else if (isEs) {
+          content += `ES: ${scene.dialogueEs || scene.dialogue}\n\n`;
+        } else if (isAll) {
+          content += `PT: ${scene.dialoguePt}\n`;
+          content += `EN: ${scene.dialogueEn}\n`;
+          content += `ES: ${scene.dialogueEs}\n\n`;
+        } else {
+          content += `PT: ${scene.dialoguePt || scene.dialogue}\n\n`;
+        }
         content += `=========================================\n\n`;
       });
 
@@ -1539,14 +1567,26 @@ export default function App() {
       link.click();
       URL.revokeObjectURL(url);
     } else if (activeTab === 'carousel' && carouselResult) {
+      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
+      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
+      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+
       let content = `--- CARROSSEL INSTAGRAM (POSTFORGE) ---\n\n`;
       
       carouselResult.slides?.forEach((slide) => {
         content += `SLIDE ${slide.slideNumber}\n`;
         content += `Descrição: ${slide.descriptionPt}\n`;
-        content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
-        content += `Texto nos Balões (EN): ${slide.textInBubblesEn}\n`;
-        content += `Texto nos Balões (ES): ${slide.textInBubblesEs}\n\n`;
+        if (isEn) {
+          content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles}\n\n`;
+        } else if (isEs) {
+          content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles}\n\n`;
+        } else if (isAll) {
+          content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
+          content += `Texto nos Balões (EN): ${slide.textInBubblesEn}\n`;
+          content += `Texto nos Balões (ES): ${slide.textInBubblesEs}\n\n`;
+        } else {
+          content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles}\n\n`;
+        }
         content += `[PROMPT DE IMAGEM - INGLÊS]\n`;
         content += `${slide.imagePromptEn}\n\n`;
         content += `=========================================\n\n`;
@@ -1594,6 +1634,10 @@ export default function App() {
     };
 
     if (activeTab === 'script' && result) {
+      const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
+      const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
+      const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
+
       addText("ROTEIRO GERADO - POSTFORGE", 18, true);
       yPos += 3;
       
@@ -1608,9 +1652,17 @@ export default function App() {
         addText("Prompt de Vídeo (EN):", 10, true, [50, 150, 50]);
         addText(scene.videoPromptEn, 10);
         addText("Falas / Diálogo:", 10, true, [200, 100, 50]);
-        addText(`PT: ${scene.dialoguePt}`, 10);
-        addText(`EN: ${scene.dialogueEn}`, 10);
-        addText(`ES: ${scene.dialogueEs}`, 10);
+        if (isEn) {
+          addText(`EN: ${scene.dialogueEn || scene.dialogue}`, 10);
+        } else if (isEs) {
+          addText(`ES: ${scene.dialogueEs || scene.dialogue}`, 10);
+        } else if (isAll) {
+          addText(`PT: ${scene.dialoguePt}`, 10);
+          addText(`EN: ${scene.dialogueEn}`, 10);
+          addText(`ES: ${scene.dialogueEs}`, 10);
+        } else {
+          addText(`PT: ${scene.dialoguePt || scene.dialogue}`, 10);
+        }
         yPos += 4;
       });
 
@@ -1619,6 +1671,10 @@ export default function App() {
       doc.save("roteiro_postforge.pdf");
 
     } else if (activeTab === 'carousel' && carouselResult) {
+      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
+      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
+      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+
       addText("CARROSSEL INSTAGRAM - POSTFORGE", 18, true);
       addText(`ESTILO: ${artStyle}`, 12, true, [100, 100, 100]);
       yPos += 3;
@@ -1628,9 +1684,17 @@ export default function App() {
         addText("Descrição:", 10, true, [100, 100, 100]);
         addText(slide.descriptionPt, 10);
         addText("Texto nos Balões:", 10, true, [50, 50, 200]);
-        addText(`PT: ${slide.textInBubblesPt}`, 10);
-        addText(`EN: ${slide.textInBubblesEn}`, 10);
-        addText(`ES: ${slide.textInBubblesEs}`, 10);
+        if (isEn) {
+          addText(`EN: ${slide.textInBubblesEn || slide.textInBubbles}`, 10);
+        } else if (isEs) {
+          addText(`ES: ${slide.textInBubblesEs || slide.textInBubbles}`, 10);
+        } else if (isAll) {
+          addText(`PT: ${slide.textInBubblesPt}`, 10);
+          addText(`EN: ${slide.textInBubblesEn}`, 10);
+          addText(`ES: ${slide.textInBubblesEs}`, 10);
+        } else {
+          addText(`PT: ${slide.textInBubblesPt || slide.textInBubbles}`, 10);
+        }
         addText("Prompt de Imagem (EN):", 10, true, [50, 150, 50]);
         addText(slide.imagePromptEn, 10);
         yPos += 4;
@@ -1646,6 +1710,10 @@ export default function App() {
     const children: any[] = [];
 
     if (activeTab === 'script' && result) {
+      const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
+      const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
+      const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
+
       children.push(new Paragraph({ text: "ROTEIRO GERADO - POSTFORGE", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
       children.push(new Paragraph({ text: `Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
       children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem de Capa: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
@@ -1655,9 +1723,17 @@ export default function App() {
         children.push(new Paragraph({ text: `CENA ${scene.sceneNumber} (${scene.duration}s)`, heading: HeadingLevel.HEADING_3 }));
         children.push(new Paragraph({ children: [new TextRun({ text: "Contexto: ", bold: true }), new TextRun({ text: scene.contextPt || '' })] }));
         children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Vídeo: ", bold: true }), new TextRun({ text: scene.videoPromptEn || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || '' })] }));
+        if (isEn) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || scene.dialogue || '' })] }));
+        } else if (isEs) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || scene.dialogue || '' })] }));
+        } else if (isAll) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || '' })] }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || '' })] }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || '' })] }));
+        } else {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || scene.dialogue || '' })] }));
+        }
       });
 
       children.push(new Paragraph({ text: "" }));
@@ -1665,6 +1741,10 @@ export default function App() {
       children.push(new Paragraph({ text: result.instagramPost || '' }));
 
     } else if (activeTab === 'carousel' && carouselResult) {
+      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
+      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
+      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+
       children.push(new Paragraph({ text: "CARROSSEL GERADO", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
       children.push(new Paragraph({ text: `Estilo: ${artStyle.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
 
@@ -1672,9 +1752,17 @@ export default function App() {
         children.push(new Paragraph({ text: "" }));
         children.push(new Paragraph({ text: `SLIDE ${slide.slideNumber}`, heading: HeadingLevel.HEADING_3 }));
         children.push(new Paragraph({ children: [new TextRun({ text: "Descrição: ", bold: true }), new TextRun({ text: slide.descriptionPt || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
+        if (isEn) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || slide.textInBubbles || '' })] }));
+        } else if (isEs) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || slide.textInBubbles || '' })] }));
+        } else if (isAll) {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
+        } else {
+          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
+        }
         children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem: ", bold: true }), new TextRun({ text: slide.imagePromptEn || '' })] }));
       });
 
@@ -1909,11 +1997,27 @@ export default function App() {
         Crie um prompt (em Inglês) para cada cena focado em um estilo cinematográfico e artístico.
         REGRA IMPORTANTE: No "videoPromptEn", inclua sempre no final a descrição da voz baseada na sua percepção do gênero do personagem: "The narration voice is [Male/Female]".\n\n`;
 
+        const selectedLangInfo = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
+        const langName = selectedLangInfo.name;
+
+        promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA PARA AS FALAS/NARRAÇÃO:
+        O usuário selecionou o idioma: "${langName}".
+        ${dialogueLanguage === 'pt' ? 'Gere todas as falas/narração estritamente em PORTUGUÊS (Brasil) no campo "dialoguePt".' : ''}
+        ${dialogueLanguage === 'en' ? 'Gere todas as falas/narração estritamente em INGLÊS (English) no campo "dialogueEn".' : ''}
+        ${dialogueLanguage === 'es' ? 'Gere todas as falas/narração estritamente em ESPANHOL (Español) no campo "dialogueEs".' : ''}
+        ${dialogueLanguage === 'all' ? 'Gere as falas/narração nos 3 idiomas: Português ("dialoguePt"), Inglês ("dialogueEn") e Espanhol ("dialogueEs").' : ''}\n\n`;
+
         promptText += `Para cada cena, forneça:
         1. Um "contextPt" narrando um breve contexto/observação explicando o que acontece na cena (em Português).
         2. Um Prompt de Geração de Vídeo ALTAMENTE DESCRITIVO (Estritamente em Inglês), detalhando a ação, cenário e visual.
-        3. Narração ou Diálogo para a cena em PT, EN e ES.
+        3. Narração ou Diálogo para a cena ${dialogueLanguage === 'pt' ? 'estritamente em Português ("dialoguePt")' : dialogueLanguage === 'en' ? 'estritamente em Inglês ("dialogueEn")' : dialogueLanguage === 'es' ? 'estritamente em Espanhol ("dialogueEs")' : 'em PT ("dialoguePt"), EN ("dialogueEn") e ES ("dialogueEs")'}.
         4. Um campo booleano "isVoiceOver".`;
+
+        const requiredSceneFields = ["sceneNumber", "duration", "contextPt", "videoPromptEn", "isVoiceOver"];
+        if (dialogueLanguage === 'pt') requiredSceneFields.push("dialoguePt");
+        else if (dialogueLanguage === 'en') requiredSceneFields.push("dialogueEn");
+        else if (dialogueLanguage === 'es') requiredSceneFields.push("dialogueEs");
+        else requiredSceneFields.push("dialoguePt", "dialogueEn", "dialogueEs");
 
         responseSchema = {
           type: Type.OBJECT,
@@ -1930,9 +2034,10 @@ export default function App() {
                   dialoguePt: { type: Type.STRING },
                   dialogueEn: { type: Type.STRING },
                   dialogueEs: { type: Type.STRING },
+                  dialogue: { type: Type.STRING },
                   isVoiceOver: { type: Type.BOOLEAN },
                 },
-                required: ["sceneNumber", "duration", "contextPt", "videoPromptEn", "dialoguePt", "dialogueEn", "dialogueEs", "isVoiceOver"],
+                required: requiredSceneFields,
               },
             },
             nanoBananaImagePrompt: { type: Type.STRING },
@@ -2017,15 +2122,29 @@ export default function App() {
            - As características físicas originais devem ser respeitadas em cada prompt.
            - O estilo de desenho deve ser idêntico em cada slide.`;
 
+        const selectedLangInfoCarousel = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
+        const langNameCarousel = selectedLangInfoCarousel.name;
+
+        promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA PARA OS BALÕES DE DIÁLOGO:
+        O usuário selecionou o idioma: "${langNameCarousel}".
+        ${dialogueLanguage === 'pt' ? 'Gere todos os textos dos balões estritamente em PORTUGUÊS (Brasil) no campo "textInBubblesPt".' : ''}
+        ${dialogueLanguage === 'en' ? 'Gere todos os textos dos balões estritamente em INGLÊS (English) no campo "textInBubblesEn".' : ''}
+        ${dialogueLanguage === 'es' ? 'Gere todos os textos dos balões estritamente em ESPANHOL (Español) no campo "textInBubblesEs".' : ''}
+        ${dialogueLanguage === 'all' ? 'Gere os textos dos balões nos 3 idiomas: Português ("textInBubblesPt"), Inglês ("textInBubblesEn") e Espanhol ("textInBubblesEs").' : ''}\n\n`;
+
         promptText += `Para cada slide, forneça:
         1. "slideNumber": número do slide.
         2. "imagePromptEn": Prompt altamente detalhado em Inglês para geradores de imagem, focado no cenário e personagens, descrevendo onde o balão de fala fica, mas sem o texto literal.
-        3. "textInBubblesPt": Texto no balão em Português.
-        4. "textInBubblesEn": Texto no balão em Inglês.
-        5. "textInBubblesEs": Texto no balão em Espanhol.
-        6. "descriptionPt": Breve descrição do que está acontecendo visualmente no slide em Português.
+        3. ${dialogueLanguage === 'pt' ? '"textInBubblesPt": Texto no balão em Português.' : dialogueLanguage === 'en' ? '"textInBubblesEn": Texto no balão em Inglês.' : dialogueLanguage === 'es' ? '"textInBubblesEs": Texto no balão em Espanhol.' : '"textInBubblesPt", "textInBubblesEn", "textInBubblesEs": Textos nos balões em PT, EN e ES.'}
+        4. "descriptionPt": Breve descrição do que está acontecendo visualmente no slide em Português.
         
         Também forneça "instagramPost" com a legenda engajadora e emocionante.`;
+
+        const requiredSlideFields = ["slideNumber", "imagePromptEn", "descriptionPt"];
+        if (dialogueLanguage === 'pt') requiredSlideFields.push("textInBubblesPt");
+        else if (dialogueLanguage === 'en') requiredSlideFields.push("textInBubblesEn");
+        else if (dialogueLanguage === 'es') requiredSlideFields.push("textInBubblesEs");
+        else requiredSlideFields.push("textInBubblesPt", "textInBubblesEn", "textInBubblesEs");
 
         responseSchema = {
           type: Type.OBJECT,
@@ -2040,9 +2159,10 @@ export default function App() {
                   textInBubblesPt: { type: Type.STRING },
                   textInBubblesEn: { type: Type.STRING },
                   textInBubblesEs: { type: Type.STRING },
+                  textInBubbles: { type: Type.STRING },
                   descriptionPt: { type: Type.STRING },
                 },
-                required: ["slideNumber", "imagePromptEn", "textInBubblesPt", "textInBubblesEn", "textInBubblesEs", "descriptionPt"],
+                required: requiredSlideFields,
               },
             },
             instagramPost: { type: Type.STRING },
@@ -2120,8 +2240,32 @@ export default function App() {
 
       const jsonResult = JSON.parse(cleanText);
       if (activeTab === 'script') {
+        if (jsonResult && jsonResult.scenes && Array.isArray(jsonResult.scenes)) {
+          jsonResult.language = dialogueLanguage;
+          jsonResult.scenes.forEach((scene: any) => {
+            if (dialogueLanguage === 'pt') {
+              scene.dialoguePt = scene.dialoguePt || scene.dialogue || '';
+            } else if (dialogueLanguage === 'en') {
+              scene.dialogueEn = scene.dialogueEn || scene.dialogue || '';
+            } else if (dialogueLanguage === 'es') {
+              scene.dialogueEs = scene.dialogueEs || scene.dialogue || '';
+            }
+          });
+        }
         setResult(jsonResult);
       } else {
+        if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
+          jsonResult.language = dialogueLanguage;
+          jsonResult.slides.forEach((slide: any) => {
+            if (dialogueLanguage === 'pt') {
+              slide.textInBubblesPt = slide.textInBubblesPt || slide.textInBubbles || '';
+            } else if (dialogueLanguage === 'en') {
+              slide.textInBubblesEn = slide.textInBubblesEn || slide.textInBubbles || '';
+            } else if (dialogueLanguage === 'es') {
+              slide.textInBubblesEs = slide.textInBubblesEs || slide.textInBubbles || '';
+            }
+          });
+        }
         setCarouselResult(jsonResult);
       }
     } catch (err: any) {
@@ -3470,6 +3614,50 @@ export default function App() {
                 </div>
               )}
 
+              {/* Seletor de Idioma dos Diálogos / Narração */}
+              <div className="space-y-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Idioma dos Diálogos / Narração</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 shadow-2xs">
+                    {dialogueLanguage === 'pt' ? '🇧🇷 Português' : dialogueLanguage === 'en' ? '🇺🇸 Inglês' : dialogueLanguage === 'es' ? '🇪🇸 Espanhol' : '🌐 Trilíngue'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {LANGUAGES.filter(l => l.id !== 'all').map(lang => (
+                    <button
+                      key={lang.id}
+                      type="button"
+                      onClick={() => setDialogueLanguage(lang.id as DialogueLanguage)}
+                      className={`py-2 px-2 text-xs font-bold rounded-xl border transition flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                        dialogueLanguage === lang.id
+                          ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-500/20 scale-[1.02]'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-base">{lang.flag}</span>
+                      <span>{lang.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setDialogueLanguage(dialogueLanguage === 'all' ? 'pt' : 'all')}
+                    className={`w-full py-1.5 px-2 text-[11px] font-semibold rounded-xl border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      dialogueLanguage === 'all'
+                        ? 'bg-slate-900 text-white border-slate-800 shadow-xs'
+                        : 'bg-white/80 text-slate-500 border-slate-200 hover:text-slate-800 hover:bg-white'
+                    }`}
+                  >
+                    <span>🌐</span>
+                    <span>{dialogueLanguage === 'all' ? '✓ Modo Trilíngue Ativo (PT, EN e ES)' : 'Gerar nos 3 Idiomas Simultaneamente (PT, EN e ES)'}</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold text-slate-900">Tema da História / Descrição / Texto para Adaptação</label>
@@ -3741,52 +3929,112 @@ export default function App() {
                     <p className="text-sm text-slate-300">{scene.contextPt}</p>
                   </div>
                   <div className="bg-indigo-900/20 rounded-xl p-4 border border-indigo-500/30">
-                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1">
-                      <MessageSquare className="w-3 h-3" /> Copiar Prompt + Narração
-                    </h4>
-                    <div className="space-y-2">
-                      <button 
-                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (PT): "${scene.dialoguePt}"`, `v_pt_${index}`)}
-                        className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-bold text-indigo-400/70 w-5">PT</span>
-                          <p className="text-xs text-slate-200 font-medium italic truncate max-w-[150px]">"{scene.dialoguePt}"</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                          {copiedStates[`v_pt_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                          <span>+ Prompt</span>
-                        </div>
-                      </button>
-
-                      <button 
-                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (EN): "${scene.dialogueEn}"`, `v_en_${index}`)}
-                        className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-bold text-indigo-400/70 w-5">EN</span>
-                          <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{scene.dialogueEn}"</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                          {copiedStates[`v_en_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                          <span>+ Prompt</span>
-                        </div>
-                      </button>
-
-                      <button 
-                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (ES): "${scene.dialogueEs}"`, `v_es_${index}`)}
-                        className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-bold text-indigo-400/70 w-5">ES</span>
-                          <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{scene.dialogueEs}"</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                          {copiedStates[`v_es_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                          <span>+ Prompt</span>
-                        </div>
-                      </button>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" /> Copiar Prompt + Narração
+                      </h4>
+                      {result.language && result.language !== 'all' && (
+                        <span className="text-[9px] font-bold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded border border-indigo-400/30 uppercase">
+                          {result.language === 'en' ? '🇺🇸 Inglês' : result.language === 'es' ? '🇪🇸 Espanhol' : '🇧🇷 Português'}
+                        </span>
+                      )}
                     </div>
+
+                    {/* Se foi gerado para 1 idioma específico */}
+                    {(result.language === 'pt' || (!result.language && scene.dialoguePt && !scene.dialogueEn && !scene.dialogueEs)) && (
+                      <button 
+                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (PT): "${scene.dialoguePt || scene.dialogue}"`, `v_pt_${index}`)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-indigo-500/30 group shadow-sm"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 shrink-0">🇧🇷 PT</span>
+                          <p className="text-xs text-slate-100 font-medium italic truncate">"{scene.dialoguePt || scene.dialogue}"</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 uppercase shrink-0 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20 group-hover:bg-indigo-600 group-hover:text-white transition">
+                          {copiedStates[`v_pt_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>+ Prompt</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {(result.language === 'en' || (!result.language && scene.dialogueEn && !scene.dialoguePt && !scene.dialogueEs)) && (
+                      <button 
+                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (EN): "${scene.dialogueEn || scene.dialogue}"`, `v_en_${index}`)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-indigo-500/30 group shadow-sm"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 shrink-0">🇺🇸 EN</span>
+                          <p className="text-xs text-slate-100 font-medium italic truncate">"{scene.dialogueEn || scene.dialogue}"</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 uppercase shrink-0 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20 group-hover:bg-indigo-600 group-hover:text-white transition">
+                          {copiedStates[`v_en_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>+ Prompt</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {(result.language === 'es' || (!result.language && scene.dialogueEs && !scene.dialoguePt && !scene.dialogueEn)) && (
+                      <button 
+                        onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (ES): "${scene.dialogueEs || scene.dialogue}"`, `v_es_${index}`)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-indigo-500/30 group shadow-sm"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 shrink-0">🇪🇸 ES</span>
+                          <p className="text-xs text-slate-100 font-medium italic truncate">"{scene.dialogueEs || scene.dialogue}"</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 uppercase shrink-0 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20 group-hover:bg-indigo-600 group-hover:text-white transition">
+                          {copiedStates[`v_es_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>+ Prompt</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* Modo Trilíngue (PT, EN e ES) */}
+                    {(result.language === 'all' || (scene.dialoguePt && scene.dialogueEn && scene.dialogueEs)) && (
+                      <div className="space-y-2">
+                        <button 
+                          onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (PT): "${scene.dialoguePt}"`, `v_pt_${index}`)}
+                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-indigo-400/70 w-5">PT</span>
+                            <p className="text-xs text-slate-200 font-medium italic truncate max-w-[150px]">"{scene.dialoguePt}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                            {copiedStates[`v_pt_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+
+                        <button 
+                          onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (EN): "${scene.dialogueEn}"`, `v_en_${index}`)}
+                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-indigo-400/70 w-5">EN</span>
+                            <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{scene.dialogueEn}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                            {copiedStates[`v_en_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+
+                        <button 
+                          onClick={() => handleCopy(`${scene.videoPromptEn}\n\nDialogue/Narration (ES): "${scene.dialogueEs}"`, `v_es_${index}`)}
+                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-indigo-400/70 w-5">ES</span>
+                            <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{scene.dialogueEs}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                            {copiedStates[`v_es_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="border-t border-slate-700 pt-4 mt-2">
@@ -3876,52 +4124,112 @@ export default function App() {
                       <p className="text-sm text-slate-200 leading-relaxed">{slide.descriptionPt}</p>
                     </div>
                     <div className="bg-emerald-900/20 rounded-xl p-4 border border-emerald-500/30">
-                      <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" /> Copiar Prompt + Diálogo
-                      </h4>
-                      <div className="space-y-2">
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt}"`, `cb_pt_${index}`)}
-                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-emerald-500/70 w-5">PT</span>
-                            <p className="text-xs text-slate-200 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesPt}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                            {copiedStates[`cb_pt_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
-
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (EN): "${slide.textInBubblesEn}"`, `cb_en_${index}`)}
-                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-emerald-500/70 w-5">EN</span>
-                            <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEn}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                            {copiedStates[`cb_en_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
-
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (ES): "${slide.textInBubblesEs}"`, `cb_es_${index}`)}
-                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold text-emerald-500/70 w-5">ES</span>
-                            <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEs}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                            {copiedStates[`cb_es_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3" /> Copiar Prompt + Diálogo
+                        </h4>
+                        {carouselResult.language && carouselResult.language !== 'all' && (
+                          <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 uppercase">
+                            {carouselResult.language === 'en' ? '🇺🇸 Inglês' : carouselResult.language === 'es' ? '🇪🇸 Espanhol' : '🇧🇷 Português'}
+                          </span>
+                        )}
                       </div>
+
+                      {/* Se foi gerado para 1 idioma específico */}
+                      {(carouselResult.language === 'pt' || (!carouselResult.language && slide.textInBubblesPt && !slide.textInBubblesEn && !slide.textInBubblesEs)) && (
+                        <button 
+                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt || slide.textInBubbles}"`, `cb_pt_${index}`)}
+                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇧🇷 PT</span>
+                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesPt || slide.textInBubbles}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
+                            {copiedStates[`cb_pt_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {(carouselResult.language === 'en' || (!carouselResult.language && slide.textInBubblesEn && !slide.textInBubblesPt && !slide.textInBubblesEs)) && (
+                        <button 
+                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (EN): "${slide.textInBubblesEn || slide.textInBubbles}"`, `cb_en_${index}`)}
+                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇺🇸 EN</span>
+                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesEn || slide.textInBubbles}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
+                            {copiedStates[`cb_en_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {(carouselResult.language === 'es' || (!carouselResult.language && slide.textInBubblesEs && !slide.textInBubblesPt && !slide.textInBubblesEn)) && (
+                        <button 
+                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (ES): "${slide.textInBubblesEs || slide.textInBubbles}"`, `cb_es_${index}`)}
+                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇪🇸 ES</span>
+                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesEs || slide.textInBubbles}"</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
+                            {copiedStates[`cb_es_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>+ Prompt</span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* Modo Trilíngue (PT, EN e ES) */}
+                      {(carouselResult.language === 'all' || (slide.textInBubblesPt && slide.textInBubblesEn && slide.textInBubblesEs)) && (
+                        <div className="space-y-2">
+                          <button 
+                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt}"`, `cb_pt_${index}`)}
+                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">PT</span>
+                              <p className="text-xs text-slate-200 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesPt}"</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                              {copiedStates[`cb_pt_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+
+                          <button 
+                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (EN): "${slide.textInBubblesEn}"`, `cb_en_${index}`)}
+                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">EN</span>
+                              <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEn}"</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                              {copiedStates[`cb_en_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+
+                          <button 
+                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (ES): "${slide.textInBubblesEs}"`, `cb_es_${index}`)}
+                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">ES</span>
+                              <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEs}"</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                              {copiedStates[`cb_es_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
