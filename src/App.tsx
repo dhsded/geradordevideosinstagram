@@ -73,7 +73,74 @@ interface ReferencePdfFile {
   data: string;
   mimeType: string;
   size: number;
+  text?: string;
+  docType?: 'pdf' | 'docx' | 'txt' | 'doc';
 }
+
+const optimizeImageForAi = async (
+  file: File,
+  maxDim = 1024,
+  quality = 0.85
+): Promise<{ base64: string; dataUrl: string; size: number; mimeType: string }> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rawDataUrl = e.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const mimeType = 'image/jpeg';
+          const optimizedDataUrl = canvas.toDataURL(mimeType, quality);
+          const base64 = optimizedDataUrl.split(',')[1];
+          resolve({
+            dataUrl: optimizedDataUrl,
+            base64,
+            size: Math.round((base64.length * 3) / 4),
+            mimeType
+          });
+          return;
+        }
+        const base64 = rawDataUrl.includes('base64,') ? rawDataUrl.split('base64,')[1] : rawDataUrl;
+        resolve({
+          dataUrl: rawDataUrl,
+          base64,
+          size: file.size,
+          mimeType: file.type || 'image/png'
+        });
+      };
+      img.onerror = () => {
+        const base64 = rawDataUrl.includes('base64,') ? rawDataUrl.split('base64,')[1] : rawDataUrl;
+        resolve({
+          dataUrl: rawDataUrl,
+          base64,
+          size: file.size,
+          mimeType: file.type || 'image/png'
+        });
+      };
+      img.src = rawDataUrl;
+    };
+    reader.onerror = () => {
+      resolve({ dataUrl: '', base64: '', size: 0, mimeType: 'image/png' });
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
 // Interfaces da Auditoria Visual e Organização de Imagens por Roteiro
 interface AuditImageItem {
@@ -1081,31 +1148,30 @@ export default function App() {
   };
 
   // Funções da Auditoria Visual e Organização de Imagens
-  const handleAuditImagesSelect = (files: FileList | File[]) => {
+  const handleAuditImagesSelect = async (files: FileList | File[]) => {
     setAuditError(null);
-    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name));
     if (fileArray.length === 0) return;
 
-    fileArray.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        const base64 = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+    for (const file of fileArray) {
+      try {
+        const opt = await optimizeImageForAi(file, 1024, 0.85);
         const newItem: AuditImageItem = {
           id: Math.random().toString(36).substring(2, 9),
           name: file.name,
-          size: file.size,
-          mimeType: file.type || 'image/png',
-          dataUrl,
-          base64
+          size: opt.size,
+          mimeType: opt.mimeType,
+          dataUrl: opt.dataUrl,
+          base64: opt.base64
         };
         setUploadedAuditImages(prev => {
-          const exists = prev.some(p => p.name === file.name && p.size === file.size);
+          const exists = prev.some(p => p.name === file.name);
           return exists ? prev : [...prev, newItem];
         });
-      };
-      reader.readAsDataURL(file);
-    });
+      } catch (err) {
+        console.warn('Erro ao otimizar imagem de auditoria:', err);
+      }
+    }
   };
 
   const handleRemoveAuditImage = (id: string) => {
@@ -1119,31 +1185,30 @@ export default function App() {
   };
 
   // Funções de Imagens de Referência do Personagem / Estilo
-  const handleAuditReferenceImagesSelect = (files: FileList | File[]) => {
+  const handleAuditReferenceImagesSelect = async (files: FileList | File[]) => {
     setAuditError(null);
-    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name));
     if (fileArray.length === 0) return;
 
-    fileArray.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        const base64 = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+    for (const file of fileArray) {
+      try {
+        const opt = await optimizeImageForAi(file, 1024, 0.85);
         const newItem: AuditImageItem = {
           id: Math.random().toString(36).substring(2, 9),
           name: file.name,
-          size: file.size,
-          mimeType: file.type || 'image/png',
-          dataUrl,
-          base64
+          size: opt.size,
+          mimeType: opt.mimeType,
+          dataUrl: opt.dataUrl,
+          base64: opt.base64
         };
         setAuditReferenceImages(prev => {
-          const exists = prev.some(p => p.name === file.name && p.size === file.size);
+          const exists = prev.some(p => p.name === file.name);
           return exists ? prev : [...prev, newItem];
         });
-      };
-      reader.readAsDataURL(file);
-    });
+      } catch (err) {
+        console.warn('Erro ao otimizar imagem de referência:', err);
+      }
+    }
   };
 
   const handleRemoveAuditReferenceImage = (id: string) => {
@@ -1187,8 +1252,8 @@ export default function App() {
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       
-      // Para arquivos de texto direto (.txt, .md, .json, .csv, .srt, .vtt, .log)
-      if (['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log'].includes(ext)) {
+      // Para arquivos de texto direto (.txt, .md, .json, .csv, .srt, .vtt, .log, .text, .rtf)
+      if (['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log', 'text', 'rtf'].includes(ext) || file.type.startsWith('text/')) {
         const text = await file.text();
         const clean = text.trim();
         if (!clean) {
@@ -1828,35 +1893,75 @@ export default function App() {
     setContextImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach((file: File) => {
-      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        setError('Por favor, selecione apenas arquivos em formato PDF.');
-        return;
-      }
-      if (file.size > 30 * 1024 * 1024) {
-        setError(`O arquivo "${file.name}" ultrapassa o limite de 30MB.`);
-        return;
+    for (const file of Array.from(files) as File[]) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const allowedExts = ['pdf', 'docx', 'doc', 'txt', 'md', 'json', 'csv', 'text'];
+      
+      if (!allowedExts.includes(ext) && file.type !== 'application/pdf' && !file.type.startsWith('text/')) {
+        setError(`Formato do arquivo "${file.name}" não suportado. Use PDF, DOC, DOCX ou TXT.`);
+        continue;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        const [header, base64] = dataUrl.split(',');
-        const mimeType = 'application/pdf';
-        
-        setReferencePdfs(prev => [...prev, { 
-          name: file.name, 
-          data: base64, 
-          mimeType, 
-          size: file.size 
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
+      if (file.size > 30 * 1024 * 1024) {
+        setError(`O arquivo "${file.name}" ultrapassa o limite de 30MB.`);
+        continue;
+      }
+
+      // Se for arquivo de texto direto (.txt, .md, .json, .csv)
+      if (['txt', 'md', 'json', 'csv', 'text'].includes(ext) || file.type.startsWith('text/')) {
+        try {
+          const text = await file.text();
+          const mimeType = 'text/plain';
+          setReferencePdfs(prev => [...prev, {
+            name: file.name,
+            data: Buffer.from(text).toString('base64'),
+            mimeType,
+            size: file.size,
+            text: text.trim(),
+            docType: 'txt'
+          }]);
+        } catch (err: any) {
+          setError(`Erro ao ler arquivo de texto "${file.name}": ${err.message}`);
+        }
+      } else {
+        // PDF ou Word (.docx / .doc)
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUrl = event.target?.result as string;
+          const [header, base64] = dataUrl.split(',');
+          const mimeType = ext === 'pdf' || file.type === 'application/pdf' ? 'application/pdf' : file.type || 'application/octet-stream';
+          
+          let extractedText: string | undefined;
+          if (ext === 'docx' || ext === 'doc' || ext === 'pdf') {
+            try {
+              const res = await fetch(getApiUrl('/api/extract-document-text'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: base64, filename: file.name, mimeType })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.text) extractedText = data.text;
+              }
+            } catch {}
+          }
+
+          setReferencePdfs(prev => [...prev, { 
+            name: file.name, 
+            data: base64, 
+            mimeType, 
+            size: file.size,
+            text: extractedText,
+            docType: ext === 'pdf' ? 'pdf' : ext.includes('doc') ? 'docx' : 'txt'
+          }]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
     e.target.value = '';
   };
 
@@ -2172,10 +2277,10 @@ export default function App() {
       }
 
       if (referencePdfs.length > 0 || contextImages.length > 0) {
-        promptText += `\nINSTRUÇÕES OBRIGATÓRIAS DE ANÁLISE DE DOCUMENTOS E LIVROS DE REFERÊNCIA (PDF / IMAGENS):
-        - Foram anexados ${referencePdfs.length} arquivo(s) PDF e ${contextImages.length} imagem(ns) de texto como material de estudo e embasamento teórico.
-        - Você DEVE percorrer e analisar detalhadamente o conteúdo desses PDFs e imagens anexadas.
-        ${!hasManualTopic ? '- COMO NÃO FOI DIGITADO UM TEMA MANUAL: Identifique a principal mensagem, história ou ensinamento do PDF e crie a postagem do Instagram e todo o roteiro/carrossel baseado 100% no conteúdo do PDF.' : '- Incorpore as ideias, metáforas e ensinamentos do autor de forma fiel, rica e sensível nas falas e cenas para enriquecer o tema solicitado.'}
+        promptText += `\nINSTRUÇÕES OBRIGATÓRIAS DE ANÁLISE DE DOCUMENTOS E LIVROS DE REFERÊNCIA (PDF / DOC / TXT / IMAGENS):
+        - Foram anexados ${referencePdfs.length} documento(s) e ${contextImages.length} imagem(ns) de texto como material de estudo e embasamento teórico.
+        - Você DEVE percorrer e analisar detalhadamente o conteúdo desses documentos e imagens anexadas.
+        ${!hasManualTopic ? '- COMO NÃO FOI DIGITADO UM TEMA MANUAL: Identifique a principal mensagem, história ou ensinamento dos documentos e crie a postagem do Instagram e todo o roteiro/carrossel baseado 100% no conteúdo deles.' : '- Incorpore as ideias, metáforas e ensinamentos do autor de forma fiel, rica e sensível nas falas e cenas para enriquecer o tema solicitado.'}
         - Na legenda "instagramPost", elabore uma descrição cativante que explique o tema central extraído do material, gere identificação com o público e convide a comentar.\n`;
       }
 
@@ -2190,8 +2295,16 @@ export default function App() {
         parts.push({ inlineData: { data: img.data, mimeType: img.mimeType } });
       }
 
-      for (const pdf of referencePdfs) {
-        parts.push({ inlineData: { data: pdf.data, mimeType: pdf.mimeType } });
+      for (const doc of referencePdfs) {
+        if (doc.text) {
+          parts.push({
+            text: `\n=== CONTEÚDO DO DOCUMENTO "${doc.name}" ===\n${doc.text}\n=== FIM DO DOCUMENTO ===\n`
+          });
+        } else if (doc.mimeType === 'application/pdf') {
+          parts.push({ inlineData: { data: doc.data, mimeType: doc.mimeType } });
+        } else {
+          parts.push({ inlineData: { data: doc.data, mimeType: doc.mimeType } });
+        }
       }
 
       const response = await fetch(getApiUrl('/api/generate'), {
@@ -2857,7 +2970,7 @@ export default function App() {
                           className="hidden"
                         />
                         <FileUp className="w-3 h-3 text-indigo-500" />
-                        <span>{isExtractingDoc ? 'Lendo...' : 'Carregar PDF / DOC'}</span>
+                        <span>{isExtractingDoc ? 'Lendo...' : 'Carregar PDF / DOC / TXT'}</span>
                       </label>
                       <button
                         type="button"
@@ -3718,15 +3831,15 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Reference PDFs / Books Upload */}
+              {/* Reference Documents / Books Upload */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold text-slate-900">
-                    Anexar PDFs de Livros / Artigos de Referência <span className="text-slate-400 font-normal">(Opcional)</span>
+                    Anexar Documentos de Estudo <span className="text-slate-400 font-normal">(PDF, DOC, TXT)</span>
                   </label>
                   {referencePdfs.length > 0 && (
                     <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-medium">
-                      {referencePdfs.length} PDF{referencePdfs.length !== 1 ? 's' : ''}
+                      {referencePdfs.length} doc{referencePdfs.length !== 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
@@ -3734,11 +3847,11 @@ export default function App() {
                 <div className="space-y-2">
                   <label className="cursor-pointer bg-slate-50 border border-slate-200 border-dashed rounded-xl p-3 flex items-center justify-center gap-2 hover:bg-slate-100 transition text-slate-500 group">
                     <FileText className="w-4 h-4 text-indigo-500 group-hover:scale-110 transition" />
-                    <span className="text-xs font-semibold text-slate-700">Selecionar arquivo PDF para a IA estudar</span>
+                    <span className="text-xs font-semibold text-slate-700">Selecionar PDF, DOC ou TXT para a IA estudar</span>
                     <input 
                       type="file" 
                       multiple 
-                      accept="application/pdf,.pdf" 
+                      accept=".pdf,.docx,.doc,.txt,.json,.md,.csv,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
                       className="hidden" 
                       onChange={handlePdfUpload}
                     />
@@ -3746,32 +3859,40 @@ export default function App() {
 
                   {referencePdfs.length > 0 && (
                     <div className="grid grid-cols-1 gap-2 pt-1">
-                      {referencePdfs.map((pdf, i) => (
-                        <div 
-                          key={i} 
-                          className="flex items-center justify-between p-2.5 bg-red-50/60 border border-red-100 rounded-xl text-xs"
-                        >
-                          <div className="flex items-center gap-2.5 overflow-hidden">
-                            <div className="p-1.5 bg-red-100 text-red-600 rounded-lg shrink-0 font-bold text-[10px]">
-                              PDF
-                            </div>
-                            <div className="truncate">
-                              <p className="font-semibold text-slate-800 truncate">{pdf.name}</p>
-                              <p className="text-[10px] text-slate-500">
-                                {(pdf.size / (1024 * 1024)).toFixed(2)} MB • Material de estudo da IA
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePdf(i)}
-                            className="p-1.5 hover:bg-red-200/80 text-red-600 rounded-lg transition shrink-0 ml-2"
-                            title="Remover PDF"
+                      {referencePdfs.map((doc, i) => {
+                        const isPdf = doc.docType === 'pdf' || doc.mimeType === 'application/pdf';
+                        const isDocx = doc.docType === 'docx' || doc.name.toLowerCase().endsWith('.docx') || doc.name.toLowerCase().endsWith('.doc');
+                        const badgeLabel = isPdf ? 'PDF' : isDocx ? 'DOC' : 'TXT';
+                        const badgeBg = isPdf ? 'bg-red-100 text-red-700' : isDocx ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700';
+                        const cardBg = isPdf ? 'bg-red-50/60 border-red-100' : isDocx ? 'bg-blue-50/60 border-blue-100' : 'bg-emerald-50/60 border-emerald-100';
+
+                        return (
+                          <div 
+                            key={i} 
+                            className={`flex items-center justify-between p-2.5 border rounded-xl text-xs ${cardBg}`}
                           >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <div className={`p-1.5 rounded-lg shrink-0 font-bold text-[10px] uppercase ${badgeBg}`}>
+                                {badgeLabel}
+                              </div>
+                              <div className="truncate">
+                                <p className="font-semibold text-slate-800 truncate">{doc.name}</p>
+                                <p className="text-[10px] text-slate-500">
+                                  {(doc.size / (1024 * 1024)).toFixed(2)} MB • Material de estudo da IA
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePdf(i)}
+                              className="p-1.5 hover:bg-slate-200/80 text-slate-500 hover:text-rose-600 rounded-lg transition shrink-0 ml-2 cursor-pointer"
+                              title="Remover documento"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

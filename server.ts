@@ -417,15 +417,20 @@ export async function startServer(port = 3000) {
     try {
       const parsePromise = (async () => {
         const pdfModule: any = await import("pdf-parse");
-        const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
+        const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null) || pdfModule;
         
-        if (PDFParseClass) {
-          const parser = new PDFParseClass({ data: buffer });
+        if (PDFParseClass && typeof PDFParseClass === 'function') {
+          const parser = new PDFParseClass({ data: new Uint8Array(buffer) });
           const result = await parser.getText();
           if (typeof parser.destroy === 'function') {
             await parser.destroy().catch(() => {});
           }
-          return result?.text || "";
+          if (result && result.text && result.text.trim()) {
+            return result.text
+              .replace(/-- \d+ of \d+ --/g, "")
+              .replace(/\r\n/g, "\n")
+              .trim();
+          }
         }
 
         const parseFn = typeof pdfModule === 'function' 
@@ -434,16 +439,11 @@ export async function startServer(port = 3000) {
 
         if (typeof parseFn === 'function') {
           const pdfData = await parseFn(buffer);
-          return pdfData?.text || "";
-        }
-
-        if (typeof pdfModule.default === 'function') {
-          const instance = new pdfModule.default({ data: buffer });
-          if (typeof instance.getText === 'function') {
-            const res = await instance.getText();
-            return res?.text || "";
+          if (pdfData && pdfData.text && pdfData.text.trim()) {
+            return pdfData.text.trim();
           }
         }
+
         return "";
       })();
 
@@ -459,30 +459,49 @@ export async function startServer(port = 3000) {
       console.warn("[PDF Parser] Aviso no extrator principal:", err.message);
     }
 
-    // Fallback de varredura direta de texto em objetos/streams de PDF
+    // Fallback de descompressão de streams FlateDecode com zlib
     try {
+      const zlib = await import("zlib");
       const raw = buffer.toString("latin1");
-      const matches: string[] = [];
-      
-      // Capturar operadores Tj diretos: (Texto) Tj
-      const tjRegex = /\(([^()]{1,800})\)\s*T[jJ]/g;
-      let match: RegExpExecArray | null;
-      while ((match = tjRegex.exec(raw)) !== null) {
-        if (match[1]) matches.push(match[1]);
-      }
+      const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+      let streamMatch: RegExpExecArray | null;
+      const extractedChunks: string[] = [];
 
-      // Capturar matrizes TJ: [(Texto) -10 (Mais)] TJ
-      const tjArrayRegex = /\[([^\[\]]{1,1500})\]\s*TJ/g;
-      while ((match = tjArrayRegex.exec(raw)) !== null) {
-        const inner = match[1];
-        const innerMatches = inner.match(/\(([^()]+)\)/g);
-        if (innerMatches) {
-          matches.push(innerMatches.map(m => m.slice(1, -1)).join(""));
+      while ((streamMatch = streamRegex.exec(raw)) !== null) {
+        const streamData = Buffer.from(streamMatch[1], "latin1");
+        let decompressed: string = "";
+        try {
+          decompressed = zlib.inflateSync(streamData).toString("utf-8");
+        } catch {
+          try {
+            decompressed = zlib.inflateRawSync(streamData).toString("utf-8");
+          } catch {
+            decompressed = streamData.toString("latin1");
+          }
+        }
+
+        if (decompressed) {
+          // Capturar operadores Tj diretos: (Texto) Tj
+          const tjRegex = /\(([^()]{1,800})\)\s*T[jJ]/g;
+          let m: RegExpExecArray | null;
+          while ((m = tjRegex.exec(decompressed)) !== null) {
+            if (m[1]) extractedChunks.push(m[1]);
+          }
+
+          // Capturar matrizes TJ: [(Texto) -10 (Mais)] TJ
+          const tjArrayRegex = /\[([^\[\]]{1,1500})\]\s*TJ/g;
+          while ((m = tjArrayRegex.exec(decompressed)) !== null) {
+            const inner = m[1];
+            const innerMatches = inner.match(/\(([^()]+)\)/g);
+            if (innerMatches) {
+              extractedChunks.push(innerMatches.map(im => im.slice(1, -1)).join(""));
+            }
+          }
         }
       }
 
-      if (matches.length > 0) {
-        const decoded = matches
+      if (extractedChunks.length > 0) {
+        const decoded = extractedChunks
           .join(" ")
           .replace(/\\([0-9]{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
           .replace(/\\[rnbtf]/g, " ")

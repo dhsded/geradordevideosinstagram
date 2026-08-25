@@ -51,15 +51,20 @@ export class AIService {
       const pdfModule: any = await import("pdf-parse");
 
       // 1. Tentar como classe PDFParse (pdf-parse v2)
-      const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
-      if (PDFParseClass) {
+      const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null) || pdfModule;
+      if (PDFParseClass && typeof PDFParseClass === 'function') {
         try {
-          const parser = new PDFParseClass({ data: buffer });
+          const parser = new PDFParseClass({ data: new Uint8Array(buffer) });
           const result = await parser.getText();
           if (typeof parser.destroy === 'function') {
             await parser.destroy().catch(() => {});
           }
-          if (result?.text) return result.text.trim();
+          if (result && result.text && result.text.trim()) {
+            return result.text
+              .replace(/-- \d+ of \d+ --/g, "")
+              .replace(/\r\n/g, "\n")
+              .trim();
+          }
         } catch (v2Err: any) {
           console.warn('[AIService] Aviso PDFParse v2:', v2Err.message);
         }
@@ -72,19 +77,61 @@ export class AIService {
 
       if (typeof parseFn === 'function') {
         const data = await parseFn(buffer);
-        return data?.text?.trim() || '';
+        if (data && data.text && data.text.trim()) {
+          return data.text.trim();
+        }
       }
 
-      // 3. Tentar instanciar se pdfModule.default for construtor
-      if (typeof pdfModule.default === 'function') {
-        try {
-          const instance = new pdfModule.default({ data: buffer });
-          if (typeof instance.getText === 'function') {
-            const res = await instance.getText();
-            return res?.text?.trim() || '';
+      // 3. Fallback de descompressão de streams FlateDecode com zlib
+      try {
+        const zlib = await import("zlib");
+        const raw = buffer.toString("latin1");
+        const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+        let streamMatch: RegExpExecArray | null;
+        const extractedChunks: string[] = [];
+
+        while ((streamMatch = streamRegex.exec(raw)) !== null) {
+          const streamData = Buffer.from(streamMatch[1], "latin1");
+          let decompressed: string = "";
+          try {
+            decompressed = zlib.inflateSync(streamData).toString("utf-8");
+          } catch {
+            try {
+              decompressed = zlib.inflateRawSync(streamData).toString("utf-8");
+            } catch {
+              decompressed = streamData.toString("latin1");
+            }
           }
-        } catch {}
-      }
+
+          if (decompressed) {
+            const tjRegex = /\(([^()]{1,800})\)\s*T[jJ]/g;
+            let m: RegExpExecArray | null;
+            while ((m = tjRegex.exec(decompressed)) !== null) {
+              if (m[1]) extractedChunks.push(m[1]);
+            }
+
+            const tjArrayRegex = /\[([^\[\]]{1,1500})\]\s*TJ/g;
+            while ((m = tjArrayRegex.exec(decompressed)) !== null) {
+              const inner = m[1];
+              const innerMatches = inner.match(/\(([^()]+)\)/g);
+              if (innerMatches) {
+                extractedChunks.push(innerMatches.map(im => im.slice(1, -1)).join(""));
+              }
+            }
+          }
+        }
+
+        if (extractedChunks.length > 0) {
+          const clean = extractedChunks
+            .join(" ")
+            .replace(/\\([0-9]{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+            .replace(/\\[rnbtf]/g, " ")
+            .replace(/\\/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (clean.length > 10) return clean;
+        }
+      } catch {}
 
       return '';
     } catch (err: any) {
