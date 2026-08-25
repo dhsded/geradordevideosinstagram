@@ -62,6 +62,7 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/pdf-parse": "^1.1.5",
     "@vitejs/plugin-react": "^5.0.4",
     "docx": "^9.6.1",
     "dotenv": "^17.2.3",
@@ -71,6 +72,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdf-parse": "^2.4.5",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3"
