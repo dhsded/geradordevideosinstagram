@@ -1015,19 +1015,30 @@ export default function App() {
     setCarouselResult(null);
 
     try {
-      const temaFinal = topic.trim() || "Utilize com profundidade as informações, conceitos e ensinamentos contidos nos PDFs e imagens de referência anexados.";
+      const hasManualTopic = topic.trim().length > 0;
+      const temaFinal = hasManualTopic 
+        ? topic.trim() 
+        : (referencePdfs.length > 0 || contextImages.length > 0)
+          ? "Tema e ensinamento central extraídos diretamente do(s) documento(s) PDF e imagens de referência anexados."
+          : "Reflexão profunda sobre autoconhecimento e vida cotidiana.";
       
       let promptText = "";
       let responseSchema: any = {};
 
       if (activeTab === 'script') {
+        const topicInstruction = hasManualTopic
+          ? `O tema do vídeo é: "${temaFinal}".`
+          : (referencePdfs.length > 0 || contextImages.length > 0)
+            ? `ATENÇÃO: O usuário NÃO forneceu um tema manual por texto, mas anexou arquivo(s) PDF de referência. Você DEVE ler e analisar profundamente o PDF anexado, extrair dele a principal lição, insight, história ou conceito transformador, e usá-lo como o TEMA CENTRAL e a narrativa deste roteiro.`
+            : `O tema do vídeo é: "${temaFinal}".`;
+
         promptText = `Você é um diretor de cinema e roteirista premiado, especialista em vídeos curtos e virais que geram identificação profunda e emocional.
         O nicho do canal é: "${niche}".
         O estilo de animação DEVE ser estritamente "${animationStyle}". Descreva isso claramente em todos os prompts de vídeo.
         O estilo visual dos enquadramentos deve seguir: "${visualDynamism}".
         ${mixedOffs ? '- DINAMISMO CRIATIVO: Alterne cenas com o personagem em cena e cenas de corte/transição (b-roll, foco no ambiente ou detalhes visuais) com narração em off (isVoiceOver: true).' : ''}
         ${niche !== 'Top 10 Filmes e Séries' ? `O tom da narrativa deve ser estritamente: "${scriptTone}".` : ''}
-        O tema do vídeo é: "${temaFinal}".
+        ${topicInstruction}
         ${includeHook ? 'A primeira cena (CENA 1) DEVE conter um "HOOK" (gancho) poderoso que prenda a atenção nos primeiros 3 segundos e gere identificação instantânea.' : 'Não é necessário um gancho comercial na primeira cena; foque no fluxo emocional natural e profundo.'}
         
         INSTRUÇÕES PARA O DIÁLOGO/NARRAÇÃO:
@@ -1087,12 +1098,18 @@ export default function App() {
         };
       } else {
         // CAROUSEL LOGIC
+        const topicInstruction = hasManualTopic
+          ? `O tema base é: "${temaFinal}".`
+          : (referencePdfs.length > 0 || contextImages.length > 0)
+            ? `ATENÇÃO: O usuário NÃO forneceu um tema manual por texto, mas anexou arquivo(s) PDF de referência. Você DEVE extrair a essência, ensinamentos práticos ou reflexões centrais do PDF anexado e utilizá-los como base de todo este carrossel.`
+            : `O tema base é: "${temaFinal}".`;
+
         promptText = `Você é um engenheiro de prompts especialista em Carrosséis do Instagram e geração de imagens por IA.
         O usuário quer um Carrossel com ${sceneCount} imagens (slides).
         O estilo de arte DEVE ser estritamente "${artStyle}".
         O nicho do canal é: "${niche}".
         O tom do diálogo dos slides deve ser focado em: "${carouselTone}".
-        O tema base é: "${temaFinal}".\n`;
+        ${topicInstruction}\n`;
 
         if (characterCount > 1) {
           if (characterDescription.trim()) {
@@ -1191,11 +1208,11 @@ export default function App() {
       }
 
       if (referencePdfs.length > 0 || contextImages.length > 0) {
-        promptText += `\nINSTRUÇÕES DE ANÁLISE DE DOCUMENTOS E LIVROS DE REFERÊNCIA (PDF / IMAGENS):
+        promptText += `\nINSTRUÇÕES OBRIGATÓRIAS DE ANÁLISE DE DOCUMENTOS E LIVROS DE REFERÊNCIA (PDF / IMAGENS):
         - Foram anexados ${referencePdfs.length} arquivo(s) PDF e ${contextImages.length} imagem(ns) de texto como material de estudo e embasamento teórico.
         - Você DEVE percorrer e analisar detalhadamente o conteúdo desses PDFs e imagens anexadas.
-        - Aprenda com o material: identifique os principais conceitos, reflexões de autocompaixão/autodesenvolvimento, dinâmicas mentais, metáforas e ensinamentos do autor.
-        - Incorpore essas ideias e lições de forma fiel, rica e sensível nas falas, narrações e na condução das cenas, traduzindo o conhecimento com clareza e impacto para o formato do Instagram.\n`;
+        ${!hasManualTopic ? '- COMO NÃO FOI DIGITADO UM TEMA MANUAL: Identifique a principal mensagem, história ou ensinamento do PDF e crie a postagem do Instagram e todo o roteiro/carrossel baseado 100% no conteúdo do PDF.' : '- Incorpore as ideias, metáforas e ensinamentos do autor de forma fiel, rica e sensível nas falas e cenas para enriquecer o tema solicitado.'}
+        - Na legenda "instagramPost", elabore uma descrição cativante que explique o tema central extraído do material, gere identificação com o público e convide a comentar.\n`;
       }
 
       const parts: any[] = [{ text: promptText }];
@@ -1896,14 +1913,29 @@ export default function App() {
               )}
 
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-900">Tema da História / Descrição / Texto para Adaptação</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-900">Tema da História / Descrição / Texto para Adaptação</label>
+                  {referencePdfs.length > 0 && !topic.trim() && (
+                    <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium border border-emerald-200">
+                      Modo PDF Automático Ativo
+                    </span>
+                  )}
+                </div>
                 <textarea 
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  placeholder="Ex: Como lidar com a ansiedade... Ou cole aqui o seu próprio texto para ser adaptado em roteiro."
+                  placeholder={referencePdfs.length > 0 
+                    ? "Opcional: O PDF anexado será a fonte principal. Ou insira instruções adicionais aqui..." 
+                    : "Ex: Como lidar com a ansiedade... Ou cole aqui o seu próprio texto para ser adaptado em roteiro."}
                   rows={4}
                   className="w-full p-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition resize-none"
                 />
+                {referencePdfs.length > 0 && !topic.trim() && (
+                  <p className="text-[11px] text-indigo-600 bg-indigo-50/80 border border-indigo-100 px-3 py-2 rounded-xl flex items-center gap-2 font-medium">
+                    <span>💡</span>
+                    <span><strong>PDF anexado:</strong> Como o tema está em branco, a IA lerá o PDF e criará o roteiro/carrossel e a legenda baseados no conteúdo do documento.</span>
+                  </p>
+                )}
               </div>
 
               {/* Context/Scenario Images Upload */}
@@ -2057,9 +2089,18 @@ export default function App() {
           )}
 
           {isLoading && (
-            <div className="bg-slate-900 rounded-2xl shadow-inner h-full min-h-[400px] flex flex-col items-center justify-center text-indigo-400 p-8">
+            <div className="bg-slate-900 rounded-2xl shadow-inner h-full min-h-[400px] flex flex-col items-center justify-center text-indigo-400 p-8 text-center">
               <Loader2 className="w-10 h-10 animate-spin mb-4 text-indigo-500" />
-              <p className="font-medium animate-pulse tracking-wide text-slate-300">Processando com Inteligência Artificial...</p>
+              <p className="font-medium animate-pulse tracking-wide text-slate-200 text-base">
+                {referencePdfs.length > 0
+                  ? 'Analisando documento PDF e gerando postagem com IA...'
+                  : 'Processando com Inteligência Artificial...'}
+              </p>
+              {referencePdfs.length > 0 && !topic.trim() && (
+                <p className="text-xs text-slate-400 mt-2 max-w-sm">
+                  Extraindo o tema central, metáforas e ensinamentos do seu PDF para criar o conteúdo completo.
+                </p>
+              )}
             </div>
           )}
 

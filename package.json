@@ -9,6 +9,7 @@
   "author": "Diego Dutra",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:electron": "electron .",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "node -e \"try{fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('release',{recursive:true,force:true});}catch(e){}\"",

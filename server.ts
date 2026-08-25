@@ -57,9 +57,12 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
     const modelsToTry = [...new Set([
       preferredModel,
       "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro"
+      "gemini-3.6-flash",
+      "gemini-3.7-flash",
+      "gemini-3.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-flash-latest",
+      "gemini-2.5-pro"
     ])];
 
     let success = false;
@@ -67,9 +70,7 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
     let keyIsExhaustedOrInvalid = false;
 
     for (const currentModel of modelsToTry) {
-      let modelFailedPermanently = false;
-
-      for (let i = 0; i < 3; i++) { // Máximo de 3 tentativas por modelo em caso de 503
+      for (let i = 0; i < 2; i++) { // Máximo de 2 tentativas em caso de 503 temporário
         try {
           console.log(`[Rotation] Tentando modelo ${currentModel} (Tentativa ${i + 1}) com chave ${maskedKey}...`);
           result = await dynamicAi.models.generateContent({
@@ -83,37 +84,37 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
           const errMsg = error?.message || String(error);
           console.error(`[Rotation] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, errMsg);
 
-          // 1. Verificar erro de COTA (429 / RESOURCE_EXHAUSTED)
+          // 1. Verificar erro de COTA (429 / RESOURCE_EXHAUSTED / Rate Limit)
           const isQuota = 
             error?.status === 429 || 
             errMsg.includes("429") || 
             errMsg.includes("RESOURCE_EXHAUSTED") || 
-            errMsg.toLowerCase().includes("quota exceeded");
+            errMsg.toLowerCase().includes("quota exceeded") ||
+            errMsg.toLowerCase().includes("rate limit");
 
-          // 2. Verificar erro de AUTENTICAÇÃO / CHAVE INVÁLIDA (401 / 403 / API_KEY_INVALID)
+          // 2. Verificar erro de AUTENTICAÇÃO / CHAVE INVÁLIDA (400 com API_KEY_INVALID / 401 / 403)
           const isInvalidKey = 
             error?.status === 401 || 
             error?.status === 403 ||
+            (error?.status === 400 && (errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key not valid"))) ||
             errMsg.includes("API key not valid") || 
             errMsg.includes("API_KEY_INVALID") ||
             errMsg.includes("API key expired");
 
           if (isQuota || isInvalidKey) {
             keyIsExhaustedOrInvalid = true;
-            break; // Chave não tem mais cota ou é inválida, rotacionar chave imediatamente
+            break; // Chave esgotou cota gratuita ou é inválida, rotacionar chave imediatamente
           }
 
-          // 3. Se for indisponibilidade temporária de serviço (503), aguarda com exponencial back-off
+          // 3. Se for indisponibilidade temporária (503), retenta 1x rapidamente
           const isUnavailable = error?.status === 503 || errMsg.includes("503") || errMsg.includes("UNAVAILABLE");
-          if (isUnavailable && i < 2) {
-            const delay = Math.pow(2, i) * 1000;
-            console.log(`[Rotation] Servidor instável (503). Retentando modelo em ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
+          if (isUnavailable && i < 1) {
+            console.log(`[Rotation] Servidor instável (503). Retentando modelo em 1000ms...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
           }
 
-          // Erro específico do modelo (404 modelo inexistente, ou erro 400 de parâmetros), tentar próximo modelo da lista
-          modelFailedPermanently = true;
+          // Modelo 404 (indisponível para esta chave) ou outro erro de modelo: testar próximo modelo imediatamente
           break;
         }
       }
@@ -121,7 +122,7 @@ async function executeWithKeyRotation(preferredModel: string, args: any) {
       if (success) break;
 
       if (keyIsExhaustedOrInvalid) {
-        // Se a chave esgotou cota ou é inválida, não adianta testar outros modelos com essa chave.
+        // Se a chave esgotou a cota ou é inválida, rotacionar para a próxima chave
         break;
       }
     }
