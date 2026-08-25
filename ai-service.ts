@@ -458,8 +458,19 @@ export class AIService {
     const configuredModel = providersManager.getOpenRouterModel();
     const primaryModel = options.model || configuredModel || "minimax/minimax-m3:free";
 
-    // Lista de modelos gratuitos com foco em alta capacidade e escrita
-    const modelsToTry = [...new Set([
+    const hasImages = (options.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/'));
+
+    // Lista de modelos especializados para visão vs texto puro
+    const visionModels = [
+      "google/gemini-2.0-flash-exp:free",
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.2-11b-vision-instruct:free",
+      "qwen/qwen-2-vl-72b-instruct:free",
+      "openai/gpt-4o-mini",
+      "anthropic/claude-3.5-sonnet"
+    ];
+
+    const textModels = [
       primaryModel,
       "minimax/minimax-m3:free",
       "google/gemma-4-26b-a4b-it:free",
@@ -470,7 +481,11 @@ export class AIService {
       "deepseek/deepseek-r1:free",
       "google/gemini-2.0-flash-exp:free",
       "qwen/qwen-2.5-coder-32b-instruct:free"
-    ])];
+    ];
+
+    const modelsToTry = hasImages
+      ? [...new Set([primaryModel, ...visionModels])]
+      : [...new Set([primaryModel, ...textModels])];
 
     let schemaInstruction = "";
     if (options.responseSchema) {
@@ -529,6 +544,7 @@ export class AIService {
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
             },
+            signal: AbortSignal.timeout(35000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],

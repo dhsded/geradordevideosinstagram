@@ -273,7 +273,8 @@ export async function startServer(port = 3000) {
             "Authorization": `Bearer ${rawKey}`,
             "HTTP-Referer": "https://postforge.app",
             "X-Title": "PostForge"
-          }
+          },
+          signal: AbortSignal.timeout(8000)
         });
 
         const keyText = await keyRes.text();
@@ -291,7 +292,7 @@ export async function startServer(port = 3000) {
         }
       } catch (fetchErr: any) {
         console.warn("[OpenRouter Quota] Falha ao consultar /auth/key:", fetchErr.message);
-        authErrorMessage = fetchErr.message || 'Falha de conexão com a API OpenRouter';
+        authErrorMessage = fetchErr.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar OpenRouter (8s)' : (fetchErr.message || 'Falha de conexão com a API OpenRouter');
       }
 
       // 2. Se /auth/key não retornou, tentar /key como fallback
@@ -303,7 +304,8 @@ export async function startServer(port = 3000) {
               "Authorization": `Bearer ${rawKey}`,
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
-            }
+            },
+            signal: AbortSignal.timeout(8000)
           });
           if (altKeyRes.ok) {
             const altText = await altKeyRes.text();
@@ -324,7 +326,8 @@ export async function startServer(port = 3000) {
             "Authorization": `Bearer ${rawKey}`,
             "HTTP-Referer": "https://postforge.app",
             "X-Title": "PostForge"
-          }
+          },
+          signal: AbortSignal.timeout(8000)
         });
         if (creditsRes.ok) {
           const creditsText = await creditsRes.text();

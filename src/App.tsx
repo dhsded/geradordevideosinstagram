@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -174,6 +174,15 @@ interface AuditResult {
   imagens_sobressalentes?: AuditSurplusImage[];
 }
 
+export interface ExecutionLogItem {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'success' | 'warning' | 'error' | 'ai' | 'image' | 'doc';
+  category: string;
+  message: string;
+  details?: string;
+}
+
 const NICHES = ['Fitness', 'Psicologia', 'Psiquiatria', 'Neuropsicologia', 'Top 10 Filmes e Séries'];
 const ANIMATION_STYLES = [
   'Stop Motion',
@@ -301,6 +310,60 @@ export default function App() {
 
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
+  // Console de Logs de Execução em Tempo Real (Rodapé Global)
+  const [executionLogs, setExecutionLogs] = useState<ExecutionLogItem[]>([
+    {
+      id: 'init-0',
+      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      level: 'info',
+      category: 'SISTEMA',
+      message: 'PostForge inicializado. Monitor de execução em tempo real ativo.'
+    }
+  ]);
+  const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
+  const [isLogPanelVisible, setIsLogPanelVisible] = useState(true);
+  const [logFilter, setLogFilter] = useState<'all' | 'ai' | 'audit' | 'doc' | 'error'>('all');
+  const [autoScrollLogs, setAutoScrollLogs] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const addLog = (
+    level: 'info' | 'success' | 'warning' | 'error' | 'ai' | 'image' | 'doc',
+    category: string,
+    message: string,
+    details?: string
+  ) => {
+    const timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const item: ExecutionLogItem = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp,
+      level,
+      category,
+      message,
+      details
+    };
+    setExecutionLogs(prev => {
+      const next = [...prev, item];
+      if (next.length > 500) return next.slice(next.length - 500);
+      return next;
+    });
+  };
+
+  const handleClearLogs = () => {
+    setExecutionLogs([]);
+  };
+
+  const handleCopyLogs = () => {
+    const text = executionLogs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.category}] ${l.message}${l.details ? `\n  Det: ${l.details}` : ''}`).join('\n');
+    navigator.clipboard.writeText(text);
+    handleCopy(text, 'all_logs');
+  };
+
+  React.useEffect(() => {
+    if (autoScrollLogs && isLogPanelOpen && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [executionLogs, isLogPanelOpen, autoScrollLogs]);
+
   // Abort controller ref para cancelamento real das requisições
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -410,12 +473,15 @@ export default function App() {
     const keyToUse = (keyOverride !== undefined ? keyOverride : openrouterKeyInput.trim()).trim();
     setIsLoadingQuota(true);
     setQuotaError(null);
+    addLog('info', 'COTA', 'Consultando saldo e limites na API OpenRouter...');
     try {
       const url = keyToUse 
         ? getApiUrl(`/api/providers/openrouter/quota?apiKey=${encodeURIComponent(keyToUse)}`)
         : getApiUrl('/api/providers/openrouter/quota');
 
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(10000)
+      });
       const text = await res.text();
       let data: any = null;
       try {
@@ -428,7 +494,7 @@ export default function App() {
         throw new Error(data?.error || `Não foi possível obter a cota do OpenRouter (Status ${res.status})`);
       }
 
-      setOpenrouterQuota({
+      const quotaObj = {
         label: data.keyInfo?.label,
         usage: typeof data.keyInfo?.usage === 'number' ? data.keyInfo?.usage : (typeof data.creditsInfo?.total_usage === 'number' ? data.creditsInfo?.total_usage : 0),
         limit: data.keyInfo?.limit ?? null,
@@ -436,10 +502,15 @@ export default function App() {
         rate_limit: data.keyInfo?.rate_limit,
         credits: typeof data.creditsInfo?.total_credits === 'number' ? data.creditsInfo?.total_credits : (data.keyInfo?.limit ?? undefined),
         lastUpdated: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
+      };
+
+      setOpenrouterQuota(quotaObj);
+      addLog('success', 'COTA', `Métricas OpenRouter: Uso $${quotaObj.usage.toFixed(4)} USD | Conta ${quotaObj.is_free_tier ? 'Free Tier' : 'Padrão'} | Limite: ${quotaObj.limit ? `$${quotaObj.limit}` : 'Ilimitado'}`);
     } catch (err: any) {
+      const errorMsg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao consultar OpenRouter (10s).' : (err.message || 'Erro ao carregar cota da chave.');
       console.warn('Erro ao carregar cota OpenRouter:', err);
-      setQuotaError(err.message || 'Erro ao carregar cota da chave.');
+      setQuotaError(errorMsg);
+      addLog('error', 'COTA', `Falha ao consultar cota OpenRouter: ${errorMsg}`);
     } finally {
       setIsLoadingQuota(false);
     }
@@ -480,6 +551,7 @@ export default function App() {
   const handleVerifyAllKeys = async () => {
     setIsVerifyingKeys(true);
     setKeyManagerError(null);
+    addLog('info', 'CHAVES', 'Iniciando teste de saúde de todas as chaves Gemini...');
     try {
       const res = await fetch(getApiUrl('/api/keys/verify-all'), { method: 'POST' });
       const text = await res.text();
@@ -496,6 +568,7 @@ export default function App() {
         free: data.free,
         exhausted: data.exhausted
       });
+      addLog('success', 'CHAVES', `Saúde das chaves: ${data.free} livres / com cota, ${data.exhausted} esgotadas (total: ${data.total}).`);
       await fetchProvidersAndStats();
       if (openrouterConfig.hasKey || openrouterKeyInput.trim()) {
         fetchOpenRouterQuota();
@@ -503,6 +576,7 @@ export default function App() {
     } catch (err: any) {
       console.error('Erro na verificação de chaves:', err);
       setKeyManagerError(err.message || 'Erro ao verificar saúde das chaves.');
+      addLog('error', 'CHAVES', `Falha ao testar chaves: ${err.message}`);
     } finally {
       setIsVerifyingKeys(false);
     }
@@ -1153,6 +1227,8 @@ export default function App() {
     const fileArray = Array.from(files).filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name));
     if (fileArray.length === 0) return;
 
+    addLog('image', 'AUDITORIA', `Processando ${fileArray.length} imagem(ns) para auditoria...`);
+
     for (const file of fileArray) {
       try {
         const opt = await optimizeImageForAi(file, 1024, 0.85);
@@ -1168,20 +1244,25 @@ export default function App() {
           const exists = prev.some(p => p.name === file.name);
           return exists ? prev : [...prev, newItem];
         });
-      } catch (err) {
+        addLog('image', 'AUDITORIA', `Imagem "${file.name}" otimizada: ${Math.round(file.size / 1024)} KB -> ${Math.round(opt.size / 1024)} KB (Canvas 1024px JPEG).`);
+      } catch (err: any) {
         console.warn('Erro ao otimizar imagem de auditoria:', err);
+        addLog('warning', 'AUDITORIA', `Aviso na otimização de "${file.name}": ${err.message}`);
       }
     }
   };
 
   const handleRemoveAuditImage = (id: string) => {
-    setUploadedAuditImages(prev => prev.filter(item => item.id !== id));
+    const item = uploadedAuditImages.find(i => i.id === id);
+    setUploadedAuditImages(prev => prev.filter(i => i.id !== id));
+    if (item) addLog('info', 'AUDITORIA', `Imagem "${item.name}" removida.`);
   };
 
   const handleClearAllAuditImages = () => {
     setUploadedAuditImages([]);
     setAuditResult(null);
     setAuditError(null);
+    addLog('info', 'AUDITORIA', 'Todas as imagens de auditoria foram limpas.');
   };
 
   // Funções de Imagens de Referência do Personagem / Estilo
@@ -1189,6 +1270,8 @@ export default function App() {
     setAuditError(null);
     const fileArray = Array.from(files).filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name));
     if (fileArray.length === 0) return;
+
+    addLog('image', 'AUDITORIA', `Processando ${fileArray.length} imagem(ns) de referência do personagem...`);
 
     for (const file of fileArray) {
       try {
@@ -1205,8 +1288,10 @@ export default function App() {
           const exists = prev.some(p => p.name === file.name);
           return exists ? prev : [...prev, newItem];
         });
-      } catch (err) {
+        addLog('image', 'AUDITORIA', `Referência de personagem "${file.name}" carregada (${Math.round(opt.size / 1024)} KB).`);
+      } catch (err: any) {
         console.warn('Erro ao otimizar imagem de referência:', err);
+        addLog('warning', 'AUDITORIA', `Aviso ao carregar referência "${file.name}": ${err.message}`);
       }
     }
   };
@@ -1217,12 +1302,14 @@ export default function App() {
 
   const handleClearAllAuditReferenceImages = () => {
     setAuditReferenceImages([]);
+    addLog('info', 'AUDITORIA', 'Imagens de referência do personagem limpas.');
   };
 
   const handlePullReferenceCharactersFromSession = () => {
     const validExisting = characterImages.filter((img): img is { data: string; mimeType: string } => !!img && !!img.data);
     if (validExisting.length === 0) {
       setAuditError('Nenhuma imagem de personagem encontrada no Gerador. Carregue imagens de personagem na aba Vídeo/Carrossel ou adicione diretamente aqui.');
+      addLog('warning', 'AUDITORIA', 'Nenhum personagem de referência encontrado no Gerador para importar.');
       return;
     }
     const newItems: AuditImageItem[] = validExisting.map((img, idx) => ({
@@ -1238,12 +1325,14 @@ export default function App() {
       const filtered = newItems.filter(item => !existingNames.has(item.name));
       return [...prev, ...filtered];
     });
+    addLog('success', 'AUDITORIA', `${validExisting.length} imagem(ns) de personagem importada(s) do Gerador para a Auditoria.`);
   };
 
   const handleAuditDocumentUpload = async (file: File) => {
     if (!file) return;
     setAuditError(null);
     setIsExtractingDoc(true);
+    addLog('doc', 'DOCUMENTO', `Carregando arquivo de roteiro "${file.name}" (${Math.round(file.size / 1024)} KB)...`);
 
     const safetyTimeout = setTimeout(() => {
       setIsExtractingDoc(false);
@@ -1259,14 +1348,17 @@ export default function App() {
         if (!clean) {
           throw new Error('O arquivo de texto selecionado está vazio.');
         }
+        const words = clean.split(/\s+/).filter(Boolean).length;
         setAuditScriptInput(clean);
         setAuditDocumentInfo({
           filename: file.name,
           size: file.size,
-          wordCount: clean.split(/\s+/).filter(Boolean).length
+          wordCount: words
         });
+        addLog('success', 'DOCUMENTO', `Arquivo de texto "${file.name}" lido instantaneamente (${words} palavras).`);
       } else {
         // Para PDF, Word (.docx, .doc), etc. enviamos para o backend de extração
+        addLog('doc', 'DOCUMENTO', `Enviando "${file.name}" para extração via PDFParse/Mammoth no backend...`);
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve, reject) => {
           reader.onload = (e) => {
@@ -1316,6 +1408,7 @@ export default function App() {
             size: file.size,
             wordCount: data.wordCount
           });
+          addLog('success', 'DOCUMENTO', `Texto extraído com sucesso de "${file.name}": ${data.wordCount || 0} palavras.`);
         } catch (fetchErr: any) {
           clearTimeout(fetchTimeout);
           if (fetchErr.name === 'AbortError') {
@@ -1327,6 +1420,7 @@ export default function App() {
     } catch (err: any) {
       console.error('Erro ao processar documento de roteiro:', err);
       setAuditError(`Erro ao carregar documento "${file.name}": ${err.message}`);
+      addLog('error', 'DOCUMENTO', `Falha ao processar "${file.name}": ${err.message}`);
     } finally {
       clearTimeout(safetyTimeout);
       setIsExtractingDoc(false);
@@ -1388,16 +1482,21 @@ export default function App() {
   const handleRunAudit = async () => {
     if (uploadedAuditImages.length === 0) {
       setAuditError('Por favor, faça o upload de pelo menos 1 imagem para auditoria.');
+      addLog('warning', 'AUDITORIA', 'Tentativa de auditoria sem imagens.');
       return;
     }
     if (!auditScriptInput.trim()) {
       setAuditError('Por favor, informe ou puxe o roteiro dos slides para ordenar as imagens.');
+      addLog('warning', 'AUDITORIA', 'Tentativa de auditoria sem texto de roteiro.');
       return;
     }
 
     setIsAuditing(true);
     setAuditError(null);
     setAuditResult(null);
+
+    const modelToUse = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
+    addLog('ai', 'AUDITORIA', `Iniciando Auditoria Visual com IA: ${uploadedAuditImages.length} imagens geradas + ${auditReferenceImages.length} refs de personagem via ${activeProvider.toUpperCase()} (${modelToUse})...`);
 
     try {
       const controller = new AbortController();
@@ -1417,7 +1516,7 @@ export default function App() {
         scriptContext: auditScriptInput,
         characterNotes: auditCharacterNotes,
         provider: activeProvider,
-        model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
+        model: modelToUse
       };
 
       const response = await fetch(getApiUrl('/api/audit-images'), {
@@ -1436,6 +1535,7 @@ export default function App() {
       if (!data.text) throw new Error('A IA não retornou resposta válida.');
 
       if (data.failoverUsed) {
+        addLog('warning', 'FAILOVER', `Failover ativado na auditoria: alternado de ${data.originalProvider} para ${data.provider} (${data.failoverReason})`);
         setLastGenerationMeta({
           provider: data.provider,
           model: data.model,
@@ -1460,10 +1560,15 @@ export default function App() {
 
       const parsed: AuditResult = JSON.parse(cleanText);
       setAuditResult(parsed);
+      addLog('success', 'AUDITORIA', `Auditoria concluída com sucesso! ${parsed.auditoria_imagens?.length || 0} slide(s) mapeado(s) e ordenado(s). Consistência média: ${parsed.pontuacao_media_geral || 'N/A'}`);
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        addLog('warning', 'AUDITORIA', 'Auditoria cancelada pelo usuário.');
+        return;
+      }
       console.error('Erro na auditoria de imagens:', err);
       setAuditError(err.message || 'Ocorreu um erro ao processar a auditoria de imagens.');
+      addLog('error', 'AUDITORIA', `Falha na auditoria visual: ${err.message}`);
     } finally {
       setIsAuditing(false);
       abortControllerRef.current = null;
@@ -1473,6 +1578,7 @@ export default function App() {
   const handleDownloadOrderedImagesZip = async () => {
     if (!auditResult || !auditResult.auditoria_imagens || auditResult.auditoria_imagens.length === 0) return;
     setIsGeneratingZip(true);
+    addLog('info', 'EXPORTAÇÃO', 'Gerando arquivo .ZIP com as imagens ordenadas por slide...');
     try {
       const zip = new JSZip();
       const imagesFolder = zip.folder("imagens_ordenadas");
@@ -1543,9 +1649,11 @@ export default function App() {
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
       saveAs(zipBlob, `PostForge_Imagens_Sequenciais_${Date.now()}.zip`);
+      addLog('success', 'EXPORTAÇÃO', 'Arquivo ZIP com as imagens ordenadas e relatório baixado com sucesso!');
     } catch (err: any) {
       console.error('Erro ao gerar ZIP:', err);
       alert('Ocorreu um erro ao gerar o arquivo ZIP: ' + err.message);
+      addLog('error', 'EXPORTAÇÃO', `Falha ao gerar arquivo ZIP: ${err.message}`);
     } finally {
       setIsGeneratingZip(false);
     }
@@ -2002,6 +2110,7 @@ export default function App() {
     setError(null);
 
     try {
+      addLog('ai', 'ANÁLISE', `Enviando vídeo (${videoFile.mimeType}) para análise da IA...`);
       const response = await fetch(getApiUrl('/api/analyze'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2016,17 +2125,22 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || 'Erro ao analisar vídeo.');
       }
 
       const data = await response.json();
       if (!data.text) throw new Error('Sem resposta da análise.');
       setAnalysisResult(data.text);
+      addLog('success', 'ANÁLISE', 'Análise de vídeo concluída com sucesso!');
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        addLog('warning', 'ANÁLISE', 'Análise cancelada pelo usuário.');
+        return;
+      }
       console.error(err);
       setError(err.message || 'Erro ao analisar vídeo.');
+      addLog('error', 'ANÁLISE', `Falha na análise: ${err.message}`);
     } finally {
       setIsAnalyzing(false);
       abortControllerRef.current = null;
@@ -2037,6 +2151,7 @@ export default function App() {
     e.preventDefault();
     if (!topic.trim() && contextImages.length === 0 && referencePdfs.length === 0) {
       setError('Por favor, insira o tema da história ou anexe PDFs/imagens de referência.');
+      addLog('warning', 'GERADOR', 'Tentativa de geração sem tema nem referências.');
       return;
     }
 
@@ -2050,6 +2165,9 @@ export default function App() {
     setError(null);
     setResult(null);
     setCarouselResult(null);
+
+    const modelName = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
+    addLog('ai', 'GERADOR', `Iniciando geração de ${activeTab === 'script' ? 'Roteiro de Vídeo' : 'Carrossel'} (Nicho: ${niche}, Idioma: ${dialogueLanguage.toUpperCase()}) via ${activeProvider.toUpperCase()} (${modelName})...`);
 
     try {
       const hasManualTopic = topic.trim().length > 0;
@@ -2329,6 +2447,7 @@ export default function App() {
       if (!data.text) throw new Error('Sem resposta da API.');
 
       if (data.failoverUsed) {
+        addLog('warning', 'FAILOVER', `Failover ativado: alternado automaticamente de ${data.originalProvider} para ${data.provider} (${data.failoverReason})`);
         setLastGenerationMeta({
           provider: data.provider,
           model: data.model,
@@ -2366,6 +2485,7 @@ export default function App() {
           });
         }
         setResult(jsonResult);
+        addLog('success', 'GERADOR', `Roteiro de vídeo gerado com sucesso (${jsonResult.scenes?.length || 0} cenas) via ${data.provider.toUpperCase()} (${data.model})!`);
       } else {
         if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
           jsonResult.language = dialogueLanguage;
@@ -2380,11 +2500,16 @@ export default function App() {
           });
         }
         setCarouselResult(jsonResult);
+        addLog('success', 'GERADOR', `Carrossel gerado com sucesso (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        addLog('warning', 'GERADOR', 'Geração cancelada pelo usuário.');
+        return;
+      }
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao gerar.');
+      addLog('error', 'GERADOR', `Falha na geração: ${err.message}`);
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
@@ -2479,7 +2604,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className={`flex-grow w-full ${activeTab === 'spy' ? 'max-w-none px-4 pb-4 lg:px-6 lg:pb-6 pt-2' : 'max-w-7xl mx-auto p-4 lg:p-6'} grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-64px)] overflow-hidden`}>
+      <main className={`flex-grow w-full ${activeTab === 'spy' ? 'max-w-none px-4 pb-4 lg:px-6 lg:pb-6 pt-2' : 'max-w-7xl mx-auto p-4 lg:p-6'} grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-64px)] overflow-hidden ${isLogPanelVisible ? (isLogPanelOpen ? 'pb-72' : 'pb-10') : ''}`}>
         
 
         {activeTab === 'spy' ? (
@@ -5184,6 +5309,233 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Console Global de Logs e Execução no Rodapé */}
+      {isLogPanelVisible ? (
+        <div 
+          className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-950 border-t border-slate-800 text-slate-300 shadow-2xl backdrop-blur-md transition-all duration-300 flex flex-col ${
+            isLogPanelOpen ? 'h-64 sm:h-72' : 'h-8.5'
+          }`}
+        >
+          {/* Barra de Título / Status Bar */}
+          <div 
+            onClick={() => setIsLogPanelOpen(prev => !prev)}
+            className="h-8.5 px-4 bg-slate-900/90 hover:bg-slate-900 flex items-center justify-between cursor-pointer select-none transition border-b border-slate-800/60"
+          >
+            {/* Lado Esquerdo: Indicador e Última Mensagem */}
+            <div className="flex items-center gap-2.5 overflow-hidden pr-2">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="text-[11px] font-bold text-slate-200 tracking-wide font-mono">
+                  LOGS
+                </span>
+                {executionLogs.some(l => l.level === 'error') ? (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                ) : isAuditing || isLoading || isExtractingDoc || isLoadingQuota ? (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                )}
+              </div>
+
+              {/* Última linha de log resumida */}
+              {executionLogs.length > 0 && (
+                <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 truncate">
+                  <span className="text-slate-500 text-[10px]">[{executionLogs[executionLogs.length - 1].timestamp}]</span>
+                  <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 text-[9px] rounded font-bold uppercase tracking-wider">
+                    {executionLogs[executionLogs.length - 1].category}
+                  </span>
+                  <span className={`truncate ${
+                    executionLogs[executionLogs.length - 1].level === 'error' ? 'text-rose-400 font-semibold' :
+                    executionLogs[executionLogs.length - 1].level === 'warning' ? 'text-amber-300' :
+                    executionLogs[executionLogs.length - 1].level === 'success' ? 'text-emerald-400' :
+                    'text-slate-300'
+                  }`}>
+                    {executionLogs[executionLogs.length - 1].message}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Lado Direito: Contadores e Ações */}
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 shrink-0 text-slate-400 text-xs"
+            >
+              {/* Badge de Contagem */}
+              <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                <span className="px-1.5 py-0.5 bg-slate-800/80 rounded text-slate-300">
+                  {executionLogs.length} logs
+                </span>
+                {executionLogs.filter(l => l.level === 'error').length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-rose-950/80 border border-rose-800/60 rounded text-rose-400 font-bold">
+                    {executionLogs.filter(l => l.level === 'error').length} erros
+                  </span>
+                )}
+              </div>
+
+              {/* Botão Copiar */}
+              <button
+                onClick={handleCopyLogs}
+                title="Copiar todos os logs"
+                className="p-1 hover:text-white hover:bg-slate-800 rounded transition cursor-pointer"
+              >
+                {copiedStates['all_logs'] ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Botão Limpar */}
+              <button
+                onClick={handleClearLogs}
+                title="Limpar logs"
+                className="p-1 hover:text-rose-400 hover:bg-slate-800 rounded transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Botão Alternar Abrir/Fechar Gaveta */}
+              <button
+                onClick={() => setIsLogPanelOpen(prev => !prev)}
+                title={isLogPanelOpen ? "Recolher Console" : "Expandir Console"}
+                className="p-1 hover:text-white hover:bg-slate-800 rounded transition cursor-pointer"
+              >
+                {isLogPanelOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+
+              {/* Botão Ocultar Barra Completamente */}
+              <button
+                onClick={() => setIsLogPanelVisible(false)}
+                title="Ocultar console do rodapé"
+                className="p-1 hover:text-rose-400 hover:bg-slate-800 rounded transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Conteúdo Expandido do Terminal */}
+          {isLogPanelOpen && (
+            <div className="flex-1 flex flex-col min-h-0 bg-slate-950">
+              {/* Filtros e Opções */}
+              <div className="px-4 py-1.5 bg-slate-900/60 border-b border-slate-800/80 flex items-center justify-between gap-3 text-xs">
+                {/* Abas de Filtro */}
+                <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                  <button
+                    onClick={() => setLogFilter('all')}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono transition cursor-pointer ${
+                      logFilter === 'all' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    Todos ({executionLogs.length})
+                  </button>
+                  <button
+                    onClick={() => setLogFilter('ai')}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono transition cursor-pointer ${
+                      logFilter === 'ai' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    🤖 IA & Modelos ({executionLogs.filter(l => ['IA', 'GERADOR', 'ANÁLISE', 'COTA', 'FAILOVER', 'CHAVES', 'CONFIG'].includes(l.category)).length})
+                  </button>
+                  <button
+                    onClick={() => setLogFilter('audit')}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono transition cursor-pointer ${
+                      logFilter === 'audit' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    🔍 Auditoria ({executionLogs.filter(l => l.category === 'AUDITORIA').length})
+                  </button>
+                  <button
+                    onClick={() => setLogFilter('doc')}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono transition cursor-pointer ${
+                      logFilter === 'doc' ? 'bg-sky-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    📄 Documentos & Imagens ({executionLogs.filter(l => ['DOCUMENTO', 'IMAGEM', 'EXPORTAÇÃO'].includes(l.category)).length})
+                  </button>
+                  <button
+                    onClick={() => setLogFilter('error')}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono transition cursor-pointer ${
+                      logFilter === 'error' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800'
+                    }`}
+                  >
+                    🚨 Erros ({executionLogs.filter(l => l.level === 'error').length})
+                  </button>
+                </div>
+
+                {/* Auto Scroll Checkbox */}
+                <label className="flex items-center gap-1.5 text-[10px] text-slate-400 select-none cursor-pointer hover:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={autoScrollLogs}
+                    onChange={(e) => setAutoScrollLogs(e.target.checked)}
+                    className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 w-3 h-3 cursor-pointer"
+                  />
+                  <span>Auto-scroll</span>
+                </label>
+              </div>
+
+              {/* Lista de Linhas do Console Monospace */}
+              <div className="flex-1 p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-1.5 select-text">
+                {executionLogs
+                  .filter(item => {
+                    if (logFilter === 'all') return true;
+                    if (logFilter === 'ai') return ['IA', 'GERADOR', 'ANÁLISE', 'COTA', 'FAILOVER', 'CHAVES', 'CONFIG'].includes(item.category);
+                    if (logFilter === 'audit') return item.category === 'AUDITORIA';
+                    if (logFilter === 'doc') return ['DOCUMENTO', 'IMAGEM', 'EXPORTAÇÃO'].includes(item.category);
+                    if (logFilter === 'error') return item.level === 'error';
+                    return true;
+                  })
+                  .map((log) => {
+                    let badgeColor = 'bg-slate-800 text-slate-300';
+                    if (log.category === 'AUDITORIA') badgeColor = 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40';
+                    else if (['IA', 'GERADOR', 'ANÁLISE'].includes(log.category)) badgeColor = 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/40';
+                    else if (log.category === 'COTA') badgeColor = 'bg-amber-950/80 text-amber-300 border border-amber-800/40';
+                    else if (log.category === 'DOCUMENTO') badgeColor = 'bg-sky-950/80 text-sky-300 border border-sky-800/40';
+                    else if (log.category === 'IMAGEM') badgeColor = 'bg-violet-950/80 text-violet-300 border border-violet-800/40';
+                    else if (log.category === 'FAILOVER') badgeColor = 'bg-yellow-950/80 text-yellow-300 border border-yellow-800/40';
+                    else if (log.category === 'EXPORTAÇÃO') badgeColor = 'bg-fuchsia-950/80 text-fuchsia-300 border border-fuchsia-800/40';
+                    else if (log.category === 'ESPIAO') badgeColor = 'bg-orange-950/80 text-orange-300 border border-orange-800/40';
+
+                    let textColor = 'text-slate-300';
+                    if (log.level === 'error') textColor = 'text-rose-400 font-medium';
+                    else if (log.level === 'warning') textColor = 'text-amber-300';
+                    else if (log.level === 'success') textColor = 'text-emerald-300';
+
+                    return (
+                      <div key={log.id} className="flex items-start gap-2 hover:bg-slate-900/60 p-0.5 rounded transition">
+                        <span className="text-slate-500 text-[10px] shrink-0 select-none">[{log.timestamp}]</span>
+                        <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded shrink-0 uppercase tracking-wider ${badgeColor}`}>
+                          {log.category}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className={`${textColor} break-all`}>{log.message}</span>
+                          {log.details && (
+                            <pre className="mt-1 p-2 bg-slate-900/90 border border-slate-800 rounded text-[10px] text-slate-400 overflow-x-auto whitespace-pre-wrap">
+                              {log.details}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                <div ref={logsEndRef} />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Botão Flutuante para Reabrir os Logs */
+        <button
+          onClick={() => { setIsLogPanelVisible(true); setIsLogPanelOpen(true); }}
+          className="fixed bottom-3 right-4 z-40 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-850 border border-slate-700 text-slate-200 hover:text-white rounded-full shadow-xl text-xs font-mono flex items-center gap-2 backdrop-blur-sm transition cursor-pointer group"
+          title="Exibir Console de Execução e Logs"
+        >
+          <Terminal className="w-3.5 h-3.5 text-indigo-400 group-hover:rotate-12 transition-transform" />
+          <span>Logs ({executionLogs.length})</span>
+          {executionLogs.some(l => l.level === 'error') && (
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+          )}
+        </button>
       )}
     </div>
   );
