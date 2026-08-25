@@ -231,7 +231,7 @@ export async function startServer(port = 3000) {
   });
 
   // Rota para consulta de cota, saldo e limites da chave OpenRouter
-  app.all(["/api/providers/openrouter/quota", "/api/providers/openrouter-quota"], async (req, res) => {
+  const handleOpenRouterQuota = async (req: express.Request, res: express.Response) => {
     try {
       const queryKey = (req.query.apiKey as string) || (req.body?.apiKey as string);
       const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
@@ -239,6 +239,7 @@ export async function startServer(port = 3000) {
 
       if (!apiKey) {
         return res.status(400).json({ 
+          success: false,
           error: "Chave da API OpenRouter não configurada. Cole sua chave sk-or-v1-... acima e salve para consultar a cota." 
         });
       }
@@ -254,16 +255,18 @@ export async function startServer(port = 3000) {
         }
       });
 
+      const keyText = await keyRes.text();
+      let keyData: any = null;
+      try {
+        keyData = JSON.parse(keyText);
+      } catch {}
+
       if (!keyRes.ok) {
-        const errText = await keyRes.text();
-        let errJson: any = null;
-        try { errJson = JSON.parse(errText); } catch {}
         return res.status(keyRes.status).json({ 
-          error: errJson?.error?.message || errText || `Erro HTTP ${keyRes.status} ao consultar chave na OpenRouter` 
+          success: false,
+          error: keyData?.error?.message || keyText || `Erro HTTP ${keyRes.status} ao consultar chave na OpenRouter` 
         });
       }
-
-      const keyData: any = await keyRes.json();
 
       // Consultar saldo de créditos
       let creditsData: any = null;
@@ -276,22 +279,33 @@ export async function startServer(port = 3000) {
           }
         });
         if (creditsRes.ok) {
-          creditsData = await creditsRes.json();
+          const creditsText = await creditsRes.text();
+          try {
+            creditsData = JSON.parse(creditsText);
+          } catch {}
         }
       } catch (err: any) {
         console.warn("[OpenRouter Quota] Aviso ao consultar créditos:", err.message);
       }
 
-      res.json({
+      return res.json({
         success: true,
         keyInfo: keyData?.data,
         creditsInfo: creditsData?.data
       });
     } catch (error: any) {
       console.error("OpenRouter Quota Error:", error);
-      res.status(500).json({ error: error.message || "Erro ao consultar cota do OpenRouter" });
+      return res.status(500).json({ 
+        success: false,
+        error: error.message || "Erro ao consultar cota do OpenRouter" 
+      });
     }
-  });
+  };
+
+  app.get("/api/providers/openrouter/quota", handleOpenRouterQuota);
+  app.post("/api/providers/openrouter/quota", handleOpenRouterQuota);
+  app.get("/api/providers/openrouter-quota", handleOpenRouterQuota);
+  app.post("/api/providers/openrouter-quota", handleOpenRouterQuota);
 
   // API Routes - Modular Multi-Provider Generate & Analyze
   app.post("/api/generate", async (req, res) => {

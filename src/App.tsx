@@ -285,9 +285,19 @@ export default function App() {
         : getApiUrl('/api/providers/openrouter/quota');
 
       const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Erro ao consultar cota (HTTP ${res.status})`);
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        if (!res.ok) {
+          throw new Error(`Erro na conexão com o servidor (Status HTTP ${res.status}).`);
+        }
+        throw new Error(`Resposta inesperada do servidor: ${text.slice(0, 120)}`);
+      }
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data?.error || `Erro ao consultar cota (HTTP ${res.status})`);
       }
 
       if (data.success) {
