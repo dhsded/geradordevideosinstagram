@@ -370,8 +370,8 @@ export class AIService {
             headers: {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${apiKey}`,
-              "HTTP-Referer": "https://prompter-nano-banana.app",
-              "X-Title": "Prompter Nano Banana"
+              "HTTP-Referer": "https://postforge.app",
+              "X-Title": "PostForge"
             },
             body: JSON.stringify({
               model: currentModel,

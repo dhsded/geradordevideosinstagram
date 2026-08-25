@@ -180,8 +180,8 @@ export async function startServer(port = 3000) {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${keyToUse}`,
-            "HTTP-Referer": "https://prompter-nano-banana.app",
-            "X-Title": "Prompter Nano Banana"
+            "HTTP-Referer": "https://postforge.app",
+            "X-Title": "PostForge"
           },
           body: JSON.stringify({
             model: modelToUse,
@@ -227,6 +227,59 @@ export async function startServer(port = 3000) {
     } catch (error: any) {
       console.error("Provider Test Error:", error);
       res.status(500).json({ error: error.message || "Erro ao testar provedor" });
+    }
+  });
+
+  // Rota para consulta de cota, saldo e limites da chave OpenRouter
+  app.get("/api/providers/openrouter/quota", async (req, res) => {
+    try {
+      const apiKey = providersManager.getOpenRouterKey();
+      if (!apiKey) {
+        return res.status(400).json({ error: "Chave OpenRouter não configurada." });
+      }
+      const baseUrl = providersManager.getOpenRouterBaseUrl();
+
+      // Consultar status e limites da chave
+      const keyRes = await fetch(`${baseUrl}/auth/key`, {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`
+        }
+      });
+
+      if (!keyRes.ok) {
+        const errText = await keyRes.text();
+        let errJson: any = null;
+        try { errJson = JSON.parse(errText); } catch {}
+        return res.status(keyRes.status).json({ 
+          error: errJson?.error?.message || errText || `Erro HTTP ${keyRes.status}` 
+        });
+      }
+
+      const keyData: any = await keyRes.json();
+
+      // Consultar saldo de créditos
+      let creditsData: any = null;
+      try {
+        const creditsRes = await fetch(`${baseUrl}/credits`, {
+          headers: {
+            "Authorization": `Bearer ${apiKey}`
+          }
+        });
+        if (creditsRes.ok) {
+          creditsData = await creditsRes.json();
+        }
+      } catch (err: any) {
+        console.warn("[OpenRouter Quota] Aviso ao consultar créditos:", err.message);
+      }
+
+      res.json({
+        success: true,
+        keyInfo: keyData?.data,
+        creditsInfo: creditsData?.data
+      });
+    } catch (error: any) {
+      console.error("OpenRouter Quota Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao consultar cota do OpenRouter" });
     }
   });
 
@@ -293,7 +346,7 @@ export async function startServer(port = 3000) {
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
-        res.send("Prompter Nano Banana API is online.");
+        res.send("PostForge API is online.");
       }
     });
   }

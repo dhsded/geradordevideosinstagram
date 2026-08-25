@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
@@ -260,6 +260,43 @@ export default function App() {
 
   // Estados e manipuladores do Gerenciador de Chaves Rotativas Gemini
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
+  const [openrouterQuota, setOpenrouterQuota] = useState<{
+    label?: string;
+    usage?: number;
+    limit?: number | null;
+    is_free_tier?: boolean;
+    rate_limit?: {
+      requests: number;
+      interval: string;
+    };
+    credits?: number;
+  } | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  const fetchOpenRouterQuota = async () => {
+    setIsLoadingQuota(true);
+    try {
+      const res = await fetch(getApiUrl('/api/providers/openrouter/quota'));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setOpenrouterQuota({
+            label: data.keyInfo?.label,
+            usage: data.keyInfo?.usage ?? data.creditsInfo?.total_usage,
+            limit: data.keyInfo?.limit,
+            is_free_tier: data.keyInfo?.is_free_tier,
+            rate_limit: data.keyInfo?.rate_limit,
+            credits: data.creditsInfo?.total_credits
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar cota OpenRouter:', err);
+    } finally {
+      setIsLoadingQuota(false);
+    }
+  };
+
   const [keysStats, setKeysStats] = useState<{
     total: number;
     free: number;
@@ -291,6 +328,9 @@ export default function App() {
           setOpenrouterConfig(data.openrouter);
           setOpenrouterBaseUrlInput(data.openrouter.baseUrl || 'https://openrouter.ai/api/v1');
           setOpenrouterModelInput(data.openrouter.model || 'nvidia/nemotron-3-ultra-550b-a55b:free');
+          if (data.openrouter.hasKey) {
+            fetchOpenRouterQuota();
+          }
         }
         if (data.geminiStats) {
           setKeysStats(data.geminiStats);
@@ -914,7 +954,7 @@ export default function App() {
 
   const exportAsTXT = () => {
     if (activeTab === 'script' && result) {
-      let content = `--- NANO BANANA COMPONENT ---\n\n`;
+      let content = `--- PROMPT CAPA DO POST (POSTFORGE) ---\n\n`;
       content += `${result.nanoBananaImagePrompt}\n\n`;
       content += `=========================================\n\n`;
       
@@ -937,11 +977,11 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `roteiro_gerado.txt`;
+      link.download = `roteiro_postforge.txt`;
       link.click();
       URL.revokeObjectURL(url);
     } else if (activeTab === 'carousel' && carouselResult) {
-      let content = `--- CARROSSEL INSTAGRAM ---\n\n`;
+      let content = `--- CARROSSEL INSTAGRAM (POSTFORGE) ---\n\n`;
       
       carouselResult.slides?.forEach((slide) => {
         content += `SLIDE ${slide.slideNumber}\n`;
@@ -961,7 +1001,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `carrossel_gerado.txt`;
+      link.download = `carrossel_postforge.txt`;
       link.click();
       URL.revokeObjectURL(url);
     }
@@ -996,10 +1036,10 @@ export default function App() {
     };
 
     if (activeTab === 'script' && result) {
-      addText("ROTEIRO GERADO", 18, true);
+      addText("ROTEIRO GERADO - POSTFORGE", 18, true);
       yPos += 3;
       
-      addText("NANO BANANA COMPONENT", 12, true, [100, 100, 200]);
+      addText("PROMPT DA IMAGEM DE CAPA", 12, true, [100, 100, 200]);
       addText(result.nanoBananaImagePrompt, 10);
       yPos += 5;
 
@@ -1018,10 +1058,10 @@ export default function App() {
 
       addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
       addText(result.instagramPost, 10);
-      doc.save("roteiro_gerado.pdf");
+      doc.save("roteiro_postforge.pdf");
 
     } else if (activeTab === 'carousel' && carouselResult) {
-      addText("CARROSSEL INSTAGRAM", 18, true);
+      addText("CARROSSEL INSTAGRAM - POSTFORGE", 18, true);
       addText(`ESTILO: ${artStyle}`, 12, true, [100, 100, 100]);
       yPos += 3;
 
@@ -1040,7 +1080,7 @@ export default function App() {
 
       addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
       addText(carouselResult.instagramPost, 10);
-      doc.save("carrossel_gerado.pdf");
+      doc.save("carrossel_postforge.pdf");
     }
   };
 
@@ -1048,9 +1088,9 @@ export default function App() {
     const children: any[] = [];
 
     if (activeTab === 'script' && result) {
-      children.push(new Paragraph({ text: "ROTEIRO GERADO", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
+      children.push(new Paragraph({ text: "ROTEIRO GERADO - POSTFORGE", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
       children.push(new Paragraph({ text: `Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Nano Banana: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
+      children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem de Capa: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
       
       result.scenes?.forEach((scene) => {
         children.push(new Paragraph({ text: "" }));
@@ -1524,10 +1564,13 @@ export default function App() {
     <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 flex flex-col font-sans">
       <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 lg:px-8 flex-shrink-0 z-10">
         <div className="flex items-center gap-3 text-indigo-600">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">
-            <Sparkles className="w-5 h-5" />
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-xs">
+            <Layers className="w-5 h-5" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Prompter <span className="text-slate-400 font-normal">Nano Banana</span></h1>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">PostForge</h1>
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-md border border-indigo-200/70 uppercase tracking-wider">v1.0.0</span>
+          </div>
         </div>
         
         <div className="flex items-center gap-3 sm:gap-4">
@@ -2387,18 +2430,20 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Nano Banana Image Prompt */}
+              {/* Cover Image Prompt */}
               <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 flex flex-col relative overflow-hidden">
                 <div className="flex justify-between items-center mb-3 relative z-10">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-yellow-400 rounded-md flex items-center justify-center text-xs">🍌</div>
-                    <h3 className="text-indigo-900 font-bold text-sm uppercase">Capinha Nano Banana</h3>
+                    <div className="w-6 h-6 bg-indigo-600 rounded-md flex items-center justify-center text-white">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                    </div>
+                    <h3 className="text-indigo-900 font-bold text-sm uppercase">Prompt Capa de Vídeo (PostForge)</h3>
                   </div>
                   <button 
-                    onClick={() => handleCopy(result.nanoBananaImagePrompt || '', 'nano_banana')}
+                    onClick={() => handleCopy(result.nanoBananaImagePrompt || '', 'cover_prompt')}
                     className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-600 bg-white px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition shadow-sm border border-indigo-200"
                   >
-                    {copiedStates['nano_banana'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedStates['cover_prompt'] || copiedStates['nano_banana'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     Copiar Prompt
                   </button>
                 </div>
@@ -3061,6 +3106,76 @@ export default function App() {
                       <span className="text-[10px] text-slate-400">Salva no arquivo de configuração e .env</span>
                     </div>
                   </div>
+
+                  {/* Card do Medidor de Cota e Limites da Chave OpenRouter */}
+                  {openrouterConfig.hasKey && (
+                    <div className="p-4 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-sm border border-slate-700/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                            <Gauge className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h5 className="text-xs font-bold text-slate-200">Medidor de Cota & Uso OpenRouter</h5>
+                            <p className="text-[10px] text-slate-400">Métricas em tempo real da chave na API OpenRouter</p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={fetchOpenRouterQuota}
+                          disabled={isLoadingQuota}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-[10px] font-bold text-amber-400 flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isLoadingQuota ? 'animate-spin' : ''}`} />
+                          <span>Atualizar Cota</span>
+                        </button>
+                      </div>
+
+                      {openrouterQuota ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Tipo da Conta</span>
+                            <span className="text-xs font-bold text-emerald-400 mt-0.5 flex items-center gap-1">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              {openrouterQuota.is_free_tier ? 'Free Tier (Gratuito)' : 'Paga / Padrão'}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Uso Acumulado</span>
+                            <span className="text-xs font-bold text-amber-300 mt-0.5 block font-mono">
+                              {typeof openrouterQuota.usage === 'number' ? `$${openrouterQuota.usage.toFixed(4)} USD` : 'Sem consumo'}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Limite da Chave</span>
+                            <span className="text-xs font-bold text-slate-200 mt-0.5 block font-mono">
+                              {openrouterQuota.limit ? `$${openrouterQuota.limit.toFixed(2)} USD` : 'Ilimitado'}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Rate Limit</span>
+                            <span className="text-xs font-bold text-slate-200 mt-0.5 block font-mono">
+                              {openrouterQuota.rate_limit ? `${openrouterQuota.rate_limit.requests} req / ${openrouterQuota.rate_limit.interval}` : 'Automático'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-slate-800/50 rounded-xl text-center text-xs text-slate-400">
+                          {isLoadingQuota ? (
+                            <span className="flex items-center justify-center gap-1.5 text-[11px] text-amber-400 font-bold">
+                              <Loader2 className="w-3 h-3 animate-spin" /> Consultando limites da chave...
+                            </span>
+                          ) : (
+                            <span className="text-[11px]">Clique em "Atualizar Cota" para visualizar o consumo e saldo atual.</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Seleção de Modelos Gratuitos */}
                   <div className="space-y-3">

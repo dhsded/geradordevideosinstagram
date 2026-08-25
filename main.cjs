@@ -88,7 +88,7 @@ function createWindow() {
       webviewTag: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    title: 'Prompter Nano Banana Desktop',
+    title: 'PostForge v1.0.0',
   });
 
   if (!isDev) {

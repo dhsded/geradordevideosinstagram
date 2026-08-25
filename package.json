@@ -1,8 +1,8 @@
 {
-  "name": "prompter-nano-banana",
-  "productName": "Prompter Nano Banana",
+  "name": "postforge",
+  "productName": "PostForge",
   "version": "1.0.0",
-  "description": "Gerador de Roteiros e Carrosséis Instagram",
+  "description": "PostForge - Gerador de Roteiros e Carrosséis Instagram",
   "private": true,
   "type": "module",
   "main": "main.cjs",
@@ -21,8 +21,8 @@
     "electron:build:dir": "npm run build && electron-builder --win --dir"
   },
   "build": {
-    "appId": "com.diegodutra.prompternanobanana",
-    "productName": "Prompter Nano Banana",
+    "appId": "com.diegodutra.postforge",
+    "productName": "PostForge",
     "directories": {
       "output": "release"
     },
@@ -53,7 +53,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Prompter Nano Banana",
+      "shortcutName": "PostForge",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
