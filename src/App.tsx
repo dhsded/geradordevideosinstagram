@@ -330,10 +330,57 @@ export default function App() {
       successCount: number;
       errorCount: number;
       addedAt: string;
+      lastVerified?: string;
+      lastError?: string;
     }>;
   }>({ total: 0, free: 0, exhausted: 0, keysList: [] });
   const [isUploadingKeys, setIsUploadingKeys] = useState(false);
+  const [isVerifyingKeys, setIsVerifyingKeys] = useState(false);
+  const [keyVerificationReport, setKeyVerificationReport] = useState<{
+    verifiedAt: string;
+    total: number;
+    free: number;
+    exhausted: number;
+  } | null>(null);
+  const [lastGenerationMeta, setLastGenerationMeta] = useState<{
+    provider?: string;
+    model?: string;
+    failoverUsed?: boolean;
+    originalProvider?: string;
+    failoverReason?: string;
+  } | null>(null);
   const [keyManagerError, setKeyManagerError] = useState<string | null>(null);
+
+  const handleVerifyAllKeys = async () => {
+    setIsVerifyingKeys(true);
+    setKeyManagerError(null);
+    try {
+      const res = await fetch(getApiUrl('/api/keys/verify-all'), { method: 'POST' });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
+      }
+
+      setKeyVerificationReport({
+        verifiedAt: data.verifiedAt,
+        total: data.total,
+        free: data.free,
+        exhausted: data.exhausted
+      });
+      await fetchProvidersAndStats();
+      if (openrouterConfig.hasKey || openrouterKeyInput.trim()) {
+        fetchOpenRouterQuota();
+      }
+    } catch (err: any) {
+      console.error('Erro na verificação de chaves:', err);
+      setKeyManagerError(err.message || 'Erro ao verificar saúde das chaves.');
+    } finally {
+      setIsVerifyingKeys(false);
+    }
+  };
 
   const fetchProvidersAndStats = async () => {
     try {
@@ -1569,6 +1616,22 @@ export default function App() {
       const data = await response.json();
       if (!data.text) throw new Error('Sem resposta da API.');
 
+      if (data.failoverUsed) {
+        setLastGenerationMeta({
+          provider: data.provider,
+          model: data.model,
+          failoverUsed: true,
+          originalProvider: data.originalProvider,
+          failoverReason: data.failoverReason
+        });
+      } else {
+        setLastGenerationMeta({
+          provider: data.provider,
+          model: data.model,
+          failoverUsed: false
+        });
+      }
+
       let cleanText = data.text.trim();
       if (cleanText.startsWith('```json')) {
         cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -2449,6 +2512,24 @@ export default function App() {
 
           {activeTab === 'script' && result && !isLoading && (
             <div className="flex flex-col gap-4 animate-in fade-in duration-500 h-full overflow-y-auto pb-4 pr-1">
+              {/* Notificação de Failover Automático / Alta Disponibilidade */}
+              {lastGenerationMeta?.failoverUsed && (
+                <div className="p-4 bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white rounded-2xl border border-amber-500/40 flex items-start gap-3 text-left shadow-lg animate-in fade-in">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 border border-amber-400/30">
+                    <RefreshCw className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-amber-200">Alternância Automática de I.A Executada com Sucesso!</h4>
+                      <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded-full border border-amber-500/30 uppercase">Failover Ativo</span>
+                    </div>
+                    <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                      A cota do provedor inicial ({lastGenerationMeta.originalProvider === 'gemini' ? 'Google Gemini' : 'OpenRouter'}) estava esgotada no momento. O PostForge alternou automaticamente para <strong>{lastGenerationMeta.provider === 'gemini' ? 'Google Gemini' : 'OpenRouter'}</strong> (modelo <code>{lastGenerationMeta.model}</code>) e entregou seu roteiro completo sem travar sua produção.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Export Actions for Video */}
               <div className="flex flex-wrap items-center justify-end gap-2 px-1">
                 <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition">
@@ -2582,6 +2663,24 @@ export default function App() {
           {activeTab === 'carousel' && carouselResult && !isLoading && (
             <div className="flex flex-col gap-6 animate-in fade-in duration-500 h-full overflow-y-auto pb-4 pr-1">
               
+              {/* Notificação de Failover Automático / Alta Disponibilidade */}
+              {lastGenerationMeta?.failoverUsed && (
+                <div className="p-4 bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white rounded-2xl border border-amber-500/40 flex items-start gap-3 text-left shadow-lg animate-in fade-in">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 border border-amber-400/30">
+                    <RefreshCw className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-amber-200">Alternância Automática de I.A Executada com Sucesso!</h4>
+                      <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded-full border border-amber-500/30 uppercase">Failover Ativo</span>
+                    </div>
+                    <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                      A cota do provedor inicial ({lastGenerationMeta.originalProvider === 'gemini' ? 'Google Gemini' : 'OpenRouter'}) estava esgotada no momento. O PostForge alternou automaticamente para <strong>{lastGenerationMeta.provider === 'gemini' ? 'Google Gemini' : 'OpenRouter'}</strong> (modelo <code>{lastGenerationMeta.model}</code>) e entregou seu carrossel completo sem travar sua produção.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Export Actions for Carousel */}
               <div className="flex flex-wrap items-center justify-end gap-2 px-1">
                 <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition">
@@ -2870,6 +2969,35 @@ export default function App() {
             {/* Conteúdo da Aba (Scrollable) */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               
+              {/* Banner de Alta Disponibilidade e Failover Automático Multi-Provedor */}
+              <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-left shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-400/20">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                      <span>Alta Disponibilidade & Failover Bidirecional</span>
+                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[9px] font-black rounded-full border border-emerald-500/30">ATIVO</span>
+                    </h5>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Se as cotas do Gemini esgotarem (429), o PostForge alterna instantaneamente para OpenRouter (e vice-versa) sem parar sua produção.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleVerifyAllKeys}
+                  disabled={isVerifyingKeys}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50 self-end sm:self-center"
+                  title="Testar e medir a cota de todas as chaves cadastradas na API"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingKeys ? 'animate-spin' : ''}`} />
+                  <span>{isVerifyingKeys ? 'Verificando...' : 'Verificar Saúde das Chaves'}</span>
+                </button>
+              </div>
+
               {/* Feedback de Erro Geral */}
               {keyManagerError && (
                 <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-left flex items-start gap-2 animate-in fade-in">
@@ -2896,6 +3024,24 @@ export default function App() {
                     <p className="font-bold">{testResult.success ? 'Conexão Estabelecida!' : 'Erro na Conexão:'}</p>
                     <p className="mt-0.5 text-slate-600">{testResult.message}</p>
                   </div>
+                </div>
+              )}
+
+              {/* Relatório de Verificação de Saúde das Chaves */}
+              {keyVerificationReport && (
+                <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 text-emerald-900 text-xs rounded-2xl flex items-center justify-between gap-2 text-left">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      <strong>Verificação concluída às {keyVerificationReport.verifiedAt}:</strong> {keyVerificationReport.free} chaves ativas com cota disponível, {keyVerificationReport.exhausted} esgotadas/inválidas.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setKeyVerificationReport(null)}
+                    className="text-emerald-700 hover:text-emerald-900 text-[10px] font-bold p-1 hover:bg-emerald-100 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
               )}
 
@@ -2957,19 +3103,44 @@ export default function App() {
                     <p className="text-[10px] text-slate-400">O sistema rotaciona automaticamente entre os modelos e suas chaves gratuitas em caso de 429 ou sobrecarga.</p>
                   </div>
 
-                  {/* Cards de Resumo de Chaves */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Chaves</p>
-                      <p className="text-2xl font-black text-slate-800 mt-1">{keysStats.total}</p>
+                  {/* Cards de Resumo de Chaves com Ações de Verificação */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status das Cotas Gemini</h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleResetKeys}
+                          className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                          title="Restaurar status de todas as chaves para Livres"
+                        >
+                          Resetar Status
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleVerifyAllKeys}
+                          disabled={isVerifyingKeys}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isVerifyingKeys ? 'animate-spin' : ''}`} />
+                          <span>{isVerifyingKeys ? 'Verificando...' : 'Medir Cotas'}</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="p-4 bg-emerald-50/50 border border-emerald-100/80 rounded-2xl text-center">
-                      <p className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wider">Chaves Livres</p>
-                      <p className="text-2xl font-black text-emerald-600 mt-1">{keysStats.free}</p>
-                    </div>
-                    <div className="p-4 bg-amber-50/50 border border-amber-100/80 rounded-2xl text-center">
-                      <p className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wider">Esgotadas (429)</p>
-                      <p className="text-2xl font-black text-amber-600 mt-1">{keysStats.exhausted}</p>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Chaves</p>
+                        <p className="text-2xl font-black text-slate-800 mt-1">{keysStats.total}</p>
+                      </div>
+                      <div className="p-3.5 bg-emerald-50/50 border border-emerald-100/80 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wider">Chaves Livres</p>
+                        <p className="text-2xl font-black text-emerald-600 mt-1">{keysStats.free}</p>
+                      </div>
+                      <div className="p-3.5 bg-amber-50/50 border border-amber-100/80 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wider">Esgotadas (429)</p>
+                        <p className="text-2xl font-black text-amber-600 mt-1">{keysStats.exhausted}</p>
+                      </div>
                     </div>
                   </div>
 
@@ -2996,7 +3167,7 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Tabela de Chaves Carregadas */}
+                  {/* Tabela de Chaves Carregadas com Status Detalhado */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chaves Rotativas Cadastradas</h4>
@@ -3011,12 +3182,12 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-xs">
-                        <div className="max-h-44 overflow-y-auto">
+                        <div className="max-h-52 overflow-y-auto">
                           <table className="w-full text-left text-xs border-collapse">
                             <thead>
                               <tr className="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
                                 <th className="p-3">Chave</th>
-                                <th className="p-3">Status</th>
+                                <th className="p-3">Status & Cota</th>
                                 <th className="p-3 text-center">Sucessos</th>
                                 <th className="p-3 text-center">Falhas</th>
                                 <th className="p-3 text-right">Ações</th>
@@ -3025,11 +3196,21 @@ export default function App() {
                             <tbody className="divide-y divide-slate-100 text-slate-700">
                               {keysStats.keysList.map((keyObj) => (
                                 <tr key={keyObj.id} className="hover:bg-slate-50/50 transition">
-                                  <td className="p-3 font-mono text-[11px] text-slate-600">{keyObj.keyMasked}</td>
+                                  <td className="p-3 font-mono text-[11px] text-slate-600">
+                                    <div className="font-bold">{keyObj.keyMasked}</div>
+                                    {keyObj.lastVerified && (
+                                      <div className="text-[9px] text-slate-400 font-sans mt-0.5">Verificada: {keyObj.lastVerified}</div>
+                                    )}
+                                  </td>
                                   <td className="p-3">
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${keyObj.status === 'free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                                      {keyObj.status === 'free' ? 'Ativa' : 'Esgotada'}
+                                      {keyObj.status === 'free' ? 'Ativa / Livre' : 'Cota Esgotada (429)'}
                                     </span>
+                                    {keyObj.lastError && (
+                                      <div className="text-[9px] text-amber-700/80 mt-0.5 max-w-[140px] truncate" title={keyObj.lastError}>
+                                        {keyObj.lastError}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="p-3 text-center text-emerald-600 font-bold">{keyObj.successCount}</td>
                                   <td className="p-3 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>

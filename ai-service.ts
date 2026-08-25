@@ -30,6 +30,9 @@ export interface AIGenerateResult {
   text: string;
   provider: 'gemini' | 'openrouter';
   model: string;
+  failoverUsed?: boolean;
+  originalProvider?: 'gemini' | 'openrouter';
+  failoverReason?: string;
 }
 
 function maskKeyForLog(key: string): string {
@@ -88,6 +91,7 @@ export class AIService {
 
   /**
    * Ponto de entrada unificado para geração de conteúdo (Roteiros de Vídeo e Carrosséis)
+   * Com alternância bidirecional inteligente entre Gemini e OpenRouter caso as cotas se esgotem
    */
   public async generate(options: AIGenerateOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
@@ -103,32 +107,56 @@ export class AIService {
       });
     }
 
+    const execOptions = {
+      ...options,
+      parts: partsWithPdf
+    };
+
     if (activeProvider === 'openrouter') {
-      return this.generateWithOpenRouter({
-        ...options,
-        parts: partsWithPdf
-      });
+      try {
+        return await this.generateWithOpenRouter(execOptions);
+      } catch (openrouterErr: any) {
+        console.warn(`[Failover] Falha no OpenRouter (${openrouterErr.message}). Verificando disponibilidade do Gemini para failover...`);
+        const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+        if (geminiKeyAvailable) {
+          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para Gemini após esgotamento do OpenRouter...`);
+          const geminiResult = await this.generateWithGemini(execOptions);
+          return {
+            ...geminiResult,
+            failoverUsed: true,
+            originalProvider: 'openrouter',
+            failoverReason: `Cota do OpenRouter esgotada / modelos ocupados (${openrouterErr.message})`
+          };
+        }
+        throw openrouterErr;
+      }
     } else {
-      return this.generateWithGemini({
-        ...options,
-        parts: partsWithPdf
-      });
+      try {
+        return await this.generateWithGemini(execOptions);
+      } catch (geminiErr: any) {
+        console.warn(`[Failover] Falha no Gemini (${geminiErr.message}). Verificando disponibilidade do OpenRouter para failover...`);
+        const openrouterKeyAvailable = providersManager.getOpenRouterKey();
+        if (openrouterKeyAvailable) {
+          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para OpenRouter após esgotamento de todas as chaves do Gemini...`);
+          const openrouterResult = await this.generateWithOpenRouter(execOptions);
+          return {
+            ...openrouterResult,
+            failoverUsed: true,
+            originalProvider: 'gemini',
+            failoverReason: `Todas as cotas de chaves do Gemini foram esgotadas (${geminiErr.message})`
+          };
+        }
+        throw geminiErr;
+      }
     }
   }
 
   /**
-   * Ponto de entrada unificado para análise de vídeos
+   * Ponto de entrada unificado para análise de vídeos e posts
+   * Com alternância bidirecional inteligente em caso de esgotamento de cotas
    */
   public async analyze(options: AIAnalyzeOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
-
-    if (activeProvider === 'openrouter') {
-      return this.generateWithOpenRouter({
-        prompt: options.prompt,
-        parts: [{ text: options.prompt }],
-        model: options.model
-      });
-    }
 
     const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
     const parts: AIContentPart[] = [{ text: options.prompt }];
@@ -142,10 +170,55 @@ export class AIService {
       });
     }
 
-    return this.generateWithGemini({
-      parts,
-      model: preferredModel
-    });
+    if (activeProvider === 'openrouter') {
+      try {
+        return await this.generateWithOpenRouter({
+          prompt: options.prompt,
+          parts: [{ text: options.prompt }],
+          model: options.model
+        });
+      } catch (openrouterErr: any) {
+        console.warn(`[Failover Análise] Falha no OpenRouter (${openrouterErr.message}). Tentando failover com Gemini...`);
+        const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+        if (geminiKeyAvailable) {
+          const geminiResult = await this.generateWithGemini({
+            parts,
+            model: preferredModel
+          });
+          return {
+            ...geminiResult,
+            failoverUsed: true,
+            originalProvider: 'openrouter',
+            failoverReason: `Cota do OpenRouter esgotada (${openrouterErr.message})`
+          };
+        }
+        throw openrouterErr;
+      }
+    } else {
+      try {
+        return await this.generateWithGemini({
+          parts,
+          model: preferredModel
+        });
+      } catch (geminiErr: any) {
+        console.warn(`[Failover Análise] Falha no Gemini (${geminiErr.message}). Tentando failover com OpenRouter...`);
+        const openrouterKeyAvailable = providersManager.getOpenRouterKey();
+        if (openrouterKeyAvailable) {
+          const openrouterResult = await this.generateWithOpenRouter({
+            prompt: options.prompt,
+            parts: [{ text: options.prompt }],
+            model: options.model
+          });
+          return {
+            ...openrouterResult,
+            failoverUsed: true,
+            originalProvider: 'gemini',
+            failoverReason: `Cotas do Gemini esgotadas (${geminiErr.message})`
+          };
+        }
+        throw geminiErr;
+      }
+    }
   }
 
   /**

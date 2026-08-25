@@ -8,6 +8,8 @@ export interface GeminiKey {
   successCount: number;
   errorCount: number;
   addedAt: string;
+  lastVerified?: string;
+  lastError?: string;
 }
 
 function getKeysFilePath(): string {
@@ -17,7 +19,7 @@ function getKeysFilePath(): string {
   }
 
   const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library/Preferences') : path.join(process.env.HOME || '', '.config'));
-  const writableDir = appData ? path.join(appData, 'prompter-nano-banana') : process.cwd();
+  const writableDir = appData ? path.join(appData, 'postforge') : process.cwd();
   const targetFile = path.join(writableDir, 'keys.json');
 
   if (fs.existsSync(targetFile)) {
@@ -82,7 +84,9 @@ export class KeysManager {
             status: k.status || 'free',
             successCount: typeof k.successCount === 'number' ? k.successCount : 0,
             errorCount: typeof k.errorCount === 'number' ? k.errorCount : 0,
-            addedAt: k.addedAt || new Date().toISOString()
+            addedAt: k.addedAt || new Date().toISOString(),
+            lastVerified: k.lastVerified,
+            lastError: k.lastError
           }));
         } else {
           this.keys = [];
@@ -138,11 +142,13 @@ export class KeysManager {
     return this.getActiveKey();
   }
 
-  public markExhausted(keyOrId: string) {
+  public markExhausted(keyOrId: string, reason?: string) {
     const item = this.keys.find(k => k.key === keyOrId || k.id === keyOrId);
     if (item) {
       item.status = 'exhausted';
       item.errorCount += 1;
+      if (reason) item.lastError = reason;
+      item.lastVerified = new Date().toISOString();
       this.save();
     }
   }
@@ -150,15 +156,20 @@ export class KeysManager {
   public recordSuccess(key: string) {
     const item = this.keys.find(k => k.key === key);
     if (item) {
+      item.status = 'free';
       item.successCount += 1;
+      item.lastVerified = new Date().toISOString();
+      item.lastError = undefined;
       this.save();
     }
   }
 
-  public recordError(key: string) {
+  public recordError(key: string, errorMsg?: string) {
     const item = this.keys.find(k => k.key === key);
     if (item) {
       item.errorCount += 1;
+      if (errorMsg) item.lastError = errorMsg;
+      item.lastVerified = new Date().toISOString();
       this.save();
     }
   }
@@ -198,6 +209,7 @@ export class KeysManager {
     this.keys.forEach(k => {
       k.status = 'free';
       k.errorCount = 0;
+      k.lastError = undefined;
     });
     this.save();
   }
@@ -205,6 +217,117 @@ export class KeysManager {
   public clearAll() {
     this.keys = [];
     this.save();
+  }
+
+  /**
+   * Testa e verifica a cota de uma chave Gemini individual via API REST leve
+   */
+  public async verifySingleKey(key: string): Promise<{
+    active: boolean;
+    status: 'free' | 'exhausted';
+    message: string;
+    statusCode: number;
+  }> {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      const statusCode = res.status;
+
+      if (res.ok) {
+        return {
+          active: true,
+          status: 'free',
+          message: 'Chave ativa e com cota disponível',
+          statusCode
+        };
+      }
+
+      const text = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch {}
+      const errMsg = json?.error?.message || text || `HTTP ${statusCode}`;
+
+      if (statusCode === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('resource_exhausted')) {
+        return {
+          active: false,
+          status: 'exhausted',
+          message: `Cota esgotada (429): ${errMsg.slice(0, 100)}`,
+          statusCode
+        };
+      }
+
+      if (statusCode === 400 || statusCode === 403 || errMsg.toLowerCase().includes('api key not valid')) {
+        return {
+          active: false,
+          status: 'exhausted',
+          message: `Chave inválida ou sem permissão (${statusCode}): ${errMsg.slice(0, 100)}`,
+          statusCode
+        };
+      }
+
+      return {
+        active: false,
+        status: 'exhausted',
+        message: `Status HTTP ${statusCode}: ${errMsg.slice(0, 100)}`,
+        statusCode
+      };
+    } catch (err: any) {
+      return {
+        active: false,
+        status: 'exhausted',
+        message: `Falha na conexão: ${err.message || 'Erro de rede'}`,
+        statusCode: 0
+      };
+    }
+  }
+
+  /**
+   * Verifica em paralelo a saúde e cota de TODAS as chaves Gemini cadastradas
+   */
+  public async verifyAllKeys(): Promise<{
+    total: number;
+    free: number;
+    exhausted: number;
+    verifiedAt: string;
+    results: Array<{
+      id: string;
+      keyMasked: string;
+      status: 'free' | 'exhausted';
+      message: string;
+      statusCode: number;
+    }>;
+  }> {
+    console.log(`[KeysManager] Iniciando verificação de cota para ${this.keys.length} chaves Gemini...`);
+    const verifiedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const checks = this.keys.map(async (k) => {
+      const check = await this.verifySingleKey(k.key);
+      k.status = check.status;
+      k.lastVerified = verifiedAt;
+      k.lastError = check.active ? undefined : check.message;
+      return {
+        id: k.id,
+        keyMasked: k.key.length > 10 ? `${k.key.substring(0, 6)}...${k.key.substring(k.key.length - 4)}` : 'Chave inválida',
+        status: check.status,
+        message: check.message,
+        statusCode: check.statusCode
+      };
+    });
+
+    const results = await Promise.all(checks);
+    this.save();
+
+    const freeCount = this.keys.filter(k => k.status === 'free').length;
+    const exhaustedCount = this.keys.filter(k => k.status === 'exhausted').length;
+
+    console.log(`[KeysManager] Verificação concluída: ${freeCount} ativas, ${exhaustedCount} esgotadas/inválidas.`);
+
+    return {
+      total: this.keys.length,
+      free: freeCount,
+      exhausted: exhaustedCount,
+      verifiedAt,
+      results
+    };
   }
 
   public getStats() {
@@ -219,7 +342,9 @@ export class KeysManager {
       status: k.status,
       successCount: k.successCount,
       errorCount: k.errorCount,
-      addedAt: k.addedAt
+      addedAt: k.addedAt,
+      lastVerified: k.lastVerified,
+      lastError: k.lastError
     }));
 
     return {

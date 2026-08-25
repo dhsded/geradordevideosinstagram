@@ -74,6 +74,16 @@ export async function startServer(port = 3000) {
     }
   });
 
+  app.all(["/api/keys/verify-all", "/api/keys/check-all"], async (req, res) => {
+    try {
+      const results = await keysManager.verifyAllKeys();
+      res.json(results);
+    } catch (error: any) {
+      console.error("Erro ao verificar chaves:", error);
+      res.status(500).json({ error: error.message || "Erro ao verificar cotas das chaves" });
+    }
+  });
+
   app.post("/api/keys/clear", (req, res) => {
     try {
       keysManager.clearAll();
@@ -318,7 +328,14 @@ export async function startServer(port = 3000) {
         provider: reqProvider,
         model: reqModel
       });
-      res.json({ text: result.text, provider: result.provider, model: result.model });
+      res.json({ 
+        text: result.text, 
+        provider: result.provider, 
+        model: result.model,
+        failoverUsed: result.failoverUsed,
+        originalProvider: result.originalProvider,
+        failoverReason: result.failoverReason
+      });
     } catch (error: any) {
       console.error("Generate Error:", error);
       res.status(500).json({ error: error.message || "Internal Server Error" });
@@ -335,7 +352,14 @@ export async function startServer(port = 3000) {
         provider: reqProvider,
         model: reqModel
       });
-      res.json({ text: result.text, provider: result.provider, model: result.model });
+      res.json({ 
+        text: result.text, 
+        provider: result.provider, 
+        model: result.model,
+        failoverUsed: result.failoverUsed,
+        originalProvider: result.originalProvider,
+        failoverReason: result.failoverReason
+      });
     } catch (error: any) {
       console.error("Analyze Error:", error);
       res.status(500).json({ error: error.message || "Internal Server Error" });
