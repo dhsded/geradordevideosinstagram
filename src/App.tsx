@@ -338,27 +338,22 @@ export default function App() {
       try {
         data = JSON.parse(text);
       } catch {
-        if (!res.ok) {
-          throw new Error(`Erro na conexão com o servidor (Status HTTP ${res.status}).`);
-        }
-        throw new Error(`Resposta inesperada do servidor: ${text.slice(0, 120)}`);
+        throw new Error(`Resposta inesperada do servidor (Status HTTP ${res.status}): ${text.slice(0, 100)}`);
       }
 
-      if (!res.ok || data.success === false) {
-        throw new Error(data?.error || `Erro ao consultar cota (HTTP ${res.status})`);
+      if (!data || data.success === false) {
+        throw new Error(data?.error || `Não foi possível obter a cota do OpenRouter (Status ${res.status})`);
       }
 
-      if (data.success) {
-        setOpenrouterQuota({
-          label: data.keyInfo?.label,
-          usage: typeof data.keyInfo?.usage === 'number' ? data.keyInfo?.usage : (data.creditsInfo?.total_usage ?? 0),
-          limit: data.keyInfo?.limit,
-          is_free_tier: data.keyInfo?.is_free_tier,
-          rate_limit: data.keyInfo?.rate_limit,
-          credits: data.creditsInfo?.total_credits,
-          lastUpdated: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        });
-      }
+      setOpenrouterQuota({
+        label: data.keyInfo?.label,
+        usage: typeof data.keyInfo?.usage === 'number' ? data.keyInfo?.usage : (typeof data.creditsInfo?.total_usage === 'number' ? data.creditsInfo?.total_usage : 0),
+        limit: data.keyInfo?.limit ?? null,
+        is_free_tier: data.keyInfo?.is_free_tier ?? true,
+        rate_limit: data.keyInfo?.rate_limit,
+        credits: typeof data.creditsInfo?.total_credits === 'number' ? data.creditsInfo?.total_credits : (data.keyInfo?.limit ?? undefined),
+        lastUpdated: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
     } catch (err: any) {
       console.warn('Erro ao carregar cota OpenRouter:', err);
       setQuotaError(err.message || 'Erro ao carregar cota da chave.');

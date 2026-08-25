@@ -245,45 +245,83 @@ export async function startServer(port = 3000) {
     try {
       const queryKey = (req.query.apiKey as string) || (req.body?.apiKey as string);
       const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-      const apiKey = (queryKey || authHeader || providersManager.getOpenRouterKey()).trim();
+      let rawKey = (queryKey || authHeader || providersManager.getOpenRouterKey() || '').trim();
+      rawKey = rawKey.replace(/^["']+|["']+$/g, '').trim();
 
-      if (!apiKey) {
-        return res.status(400).json({ 
+      if (!rawKey) {
+        return res.json({ 
           success: false,
           error: "Chave da API OpenRouter não configurada. Cole sua chave sk-or-v1-... acima e salve para consultar a cota." 
         });
       }
 
-      const baseUrl = providersManager.getOpenRouterBaseUrl();
-
-      // Consultar status e limites da chave
-      const keyRes = await fetch(`${baseUrl}/auth/key`, {
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://postforge.app",
-          "X-Title": "PostForge"
-        }
-      });
-
-      const keyText = await keyRes.text();
-      let keyData: any = null;
-      try {
-        keyData = JSON.parse(keyText);
-      } catch {}
-
-      if (!keyRes.ok) {
-        return res.status(keyRes.status).json({ 
-          success: false,
-          error: keyData?.error?.message || keyText || `Erro HTTP ${keyRes.status} ao consultar chave na OpenRouter` 
-        });
+      let baseUrl = (providersManager.getOpenRouterBaseUrl() || 'https://openrouter.ai/api/v1').trim();
+      if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+      if (!baseUrl.includes('/api/v1')) {
+        baseUrl = `${baseUrl}/api/v1`;
       }
 
-      // Consultar saldo de créditos
+      let keyData: any = null;
       let creditsData: any = null;
+      let authErrorMessage = '';
+
+      // 1. Consultar status e limites da chave (/auth/key)
+      try {
+        const keyRes = await fetch(`${baseUrl}/auth/key`, {
+          method: 'GET',
+          headers: {
+            "Authorization": `Bearer ${rawKey}`,
+            "HTTP-Referer": "https://postforge.app",
+            "X-Title": "PostForge"
+          }
+        });
+
+        const keyText = await keyRes.text();
+        try {
+          const parsed = JSON.parse(keyText);
+          if (keyRes.ok) {
+            keyData = parsed.data || parsed;
+          } else {
+            authErrorMessage = parsed?.error?.message || parsed?.message || `Erro HTTP ${keyRes.status} no OpenRouter`;
+          }
+        } catch {
+          if (!keyRes.ok) {
+            authErrorMessage = `Erro HTTP ${keyRes.status} ao consultar chave`;
+          }
+        }
+      } catch (fetchErr: any) {
+        console.warn("[OpenRouter Quota] Falha ao consultar /auth/key:", fetchErr.message);
+        authErrorMessage = fetchErr.message || 'Falha de conexão com a API OpenRouter';
+      }
+
+      // 2. Se /auth/key não retornou, tentar /key como fallback
+      if (!keyData) {
+        try {
+          const altKeyRes = await fetch(`${baseUrl}/key`, {
+            method: 'GET',
+            headers: {
+              "Authorization": `Bearer ${rawKey}`,
+              "HTTP-Referer": "https://postforge.app",
+              "X-Title": "PostForge"
+            }
+          });
+          if (altKeyRes.ok) {
+            const altText = await altKeyRes.text();
+            try {
+              const parsed = JSON.parse(altText);
+              keyData = parsed.data || parsed;
+              authErrorMessage = '';
+            } catch {}
+          }
+        } catch {}
+      }
+
+      // 3. Consultar saldo de créditos (/credits)
       try {
         const creditsRes = await fetch(`${baseUrl}/credits`, {
+          method: 'GET',
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
+            "Authorization": `Bearer ${rawKey}`,
             "HTTP-Referer": "https://postforge.app",
             "X-Title": "PostForge"
           }
@@ -291,22 +329,30 @@ export async function startServer(port = 3000) {
         if (creditsRes.ok) {
           const creditsText = await creditsRes.text();
           try {
-            creditsData = JSON.parse(creditsText);
+            const parsed = JSON.parse(creditsText);
+            creditsData = parsed.data || parsed;
           } catch {}
         }
       } catch (err: any) {
         console.warn("[OpenRouter Quota] Aviso ao consultar créditos:", err.message);
       }
 
+      if (!keyData && !creditsData) {
+        return res.json({
+          success: false,
+          error: authErrorMessage || 'Não foi possível validar a chave junto ao OpenRouter. Verifique se a chave sk-or-v1-... está correta e ativa.'
+        });
+      }
+
       return res.json({
         success: true,
-        keyInfo: keyData?.data,
-        creditsInfo: creditsData?.data
+        keyInfo: keyData,
+        creditsInfo: creditsData
       });
     } catch (error: any) {
-      console.error("OpenRouter Quota Error:", error);
-      return res.status(500).json({ 
-        success: false,
+      console.error("OpenRouter Quota Handler Error:", error);
+      return res.json({ 
+        success: false, 
         error: error.message || "Erro ao consultar cota do OpenRouter" 
       });
     }
