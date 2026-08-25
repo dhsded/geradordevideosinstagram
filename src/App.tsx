@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -206,6 +206,9 @@ export default function App() {
   const [uploadedAuditImages, setUploadedAuditImages] = useState<AuditImageItem[]>([]);
   const [auditScriptInput, setAuditScriptInput] = useState<string>('');
   const [auditCharacterNotes, setAuditCharacterNotes] = useState<string>('');
+  const [auditDocumentInfo, setAuditDocumentInfo] = useState<{ filename: string; size: number; wordCount?: number } | null>(null);
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+  const [isDragOverDoc, setIsDragOverDoc] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -1104,8 +1107,83 @@ export default function App() {
     setAuditError(null);
   };
 
+  const handleAuditDocumentUpload = async (file: File) => {
+    if (!file) return;
+    setAuditError(null);
+    setIsExtractingDoc(true);
+
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      
+      // Para arquivos de texto (.txt, .md, .json, .csv, .srt, .vtt, .log)
+      if (['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log'].includes(ext)) {
+        const text = await file.text();
+        const clean = text.trim();
+        if (!clean) {
+          throw new Error('O arquivo de texto selecionado está vazio.');
+        }
+        setAuditScriptInput(clean);
+        setAuditDocumentInfo({
+          filename: file.name,
+          size: file.size,
+          wordCount: clean.split(/\s+/).filter(Boolean).length
+        });
+      } else {
+        // Para PDF, Word (.docx, .doc), etc. enviamos para o backend de extração
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = (e) => {
+            const dataUrl = e.target?.result as string;
+            const b64 = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+            resolve(b64);
+          };
+          reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
+          reader.readAsDataURL(file);
+        });
+
+        const base64Data = await base64Promise;
+        const res = await fetch(getApiUrl('/api/extract-document-text'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: base64Data,
+            filename: file.name,
+            mimeType: file.type
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Falha ao extrair texto do documento.');
+        }
+
+        if (!data.text || !data.text.trim()) {
+          throw new Error('Nenhum texto legível pôde ser extraído deste documento.');
+        }
+
+        setAuditScriptInput(data.text);
+        setAuditDocumentInfo({
+          filename: file.name,
+          size: file.size,
+          wordCount: data.wordCount
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro ao processar documento de roteiro:', err);
+      setAuditError(`Erro ao carregar documento "${file.name}": ${err.message}`);
+    } finally {
+      setIsExtractingDoc(false);
+    }
+  };
+
+  const handleClearAuditDocument = () => {
+    setAuditDocumentInfo(null);
+    setAuditScriptInput('');
+  };
+
   const handlePullScriptFromGeneration = () => {
     setAuditError(null);
+    setAuditDocumentInfo(null);
     if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
       let scriptText = `=== CARROSSEL GERADO: ${topic || 'Carrossel Sem Título'} ===\n\n`;
       carouselResult.slides.forEach((s) => {
@@ -1144,7 +1222,7 @@ export default function App() {
 
       setAuditCharacterNotes(charNotes);
     } else {
-      setAuditError('Nenhum roteiro ou carrossel gerado foi encontrado na sessão. Gere um na aba Vídeo/Carrossel ou cole o texto dos seus slides diretamente.');
+      setAuditError('Nenhum roteiro ou carrossel gerado foi encontrado na sessão. Gere um na aba Vídeo/Carrossel ou carregue um arquivo .PDF / .DOC / .TXT diretamente.');
     }
   };
 
@@ -1295,6 +1373,9 @@ export default function App() {
       }
 
       zip.file("relatorio_auditoria_postforge.txt", reportText);
+      if (auditScriptInput) {
+        zip.file("roteiro_referencia.txt", auditScriptInput);
+      }
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
       saveAs(zipBlob, `PostForge_Imagens_Sequenciais_${Date.now()}.zip`);
@@ -2525,31 +2606,101 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Bloco 2: Campo de Entrada do Roteiro / Slides */}
+                {/* Bloco 2: Campo de Entrada do Roteiro / Documentos */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <FileText className="w-3.5 h-3.5 text-indigo-500" />
                       <span>Roteiro / Slides Esperados</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={handlePullScriptFromGeneration}
-                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
-                      title="Puxar o roteiro ou carrossel gerado anteriormente na aplicação"
-                    >
-                      <Sparkles className="w-3 h-3 text-indigo-500" />
-                      <span>Puxar Roteiro Gerado</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <label 
+                        className={`px-2.5 py-1 bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs ${isExtractingDoc ? 'opacity-50 pointer-events-none' : ''}`}
+                        title="Carregar roteiro direto de arquivo .PDF, .DOC, .DOCX, .TXT, .JSON ou .MD"
+                      >
+                        <input 
+                          type="file" 
+                          accept=".pdf,.docx,.doc,.txt,.json,.md,.csv,.rtf,.odt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleAuditDocumentUpload(e.target.files[0]);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <FileUp className="w-3 h-3 text-indigo-500" />
+                        <span>{isExtractingDoc ? 'Lendo...' : 'Carregar PDF / DOC'}</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handlePullScriptFromGeneration}
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Puxar o roteiro ou carrossel gerado anteriormente na aplicação"
+                      >
+                        <Sparkles className="w-3 h-3 text-indigo-500" />
+                        <span>Puxar Roteiro</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <textarea
-                    rows={5}
-                    value={auditScriptInput}
-                    onChange={(e) => setAuditScriptInput(e.target.value)}
-                    placeholder={`Cole aqui o roteiro ou clique em "Puxar Roteiro Gerado" acima.\nExemplo:\nSlide 1: Coração vermelho olhando com tristeza para o horizonte...\nSlide 2: Cérebro azul examinando um mapa de pensamentos...`}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
-                  />
+                  {/* Informação do Documento Carregado */}
+                  {auditDocumentInfo && (
+                    <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                          <FileText className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="truncate text-slate-800 text-[11px]">
+                          <span className="font-bold">{auditDocumentInfo.filename}</span>
+                          <span className="text-slate-400 text-[10px] ml-1.5">
+                            ({Math.round(auditDocumentInfo.size / 1024)} KB • ~{auditDocumentInfo.wordCount || 0} palavras)
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearAuditDocument}
+                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition cursor-pointer"
+                        title="Remover documento e limpar texto"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Dropzone / Textarea de Roteiro */}
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOverDoc(true); }}
+                    onDragLeave={() => setIsDragOverDoc(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDragOverDoc(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleAuditDocumentUpload(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    className={`relative rounded-xl transition ${isDragOverDoc ? 'ring-2 ring-indigo-500 bg-indigo-50/50' : ''}`}
+                  >
+                    <textarea
+                      rows={5}
+                      value={auditScriptInput}
+                      onChange={(e) => {
+                        setAuditScriptInput(e.target.value);
+                        if (auditDocumentInfo && !e.target.value.trim()) {
+                          setAuditDocumentInfo(null);
+                        }
+                      }}
+                      placeholder={`Cole aqui o roteiro, arraste um arquivo (.PDF, .DOC, .TXT) aqui dentro, ou clique em "Carregar PDF / DOC".\n\nExemplo:\nSlide 1: Coração vermelho olhando com tristeza para o horizonte...\nSlide 2: Cérebro azul examinando um mapa de pensamentos...`}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
+                    />
+                    {isExtractingDoc && (
+                      <div className="absolute inset-0 bg-white/80 backdrop-blur-2xs rounded-xl flex items-center justify-center gap-2 text-indigo-600 text-xs font-bold">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Extraindo texto do documento...</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Bloco 3: Diretrizes de Personagem / Estilo (Opcional) */}

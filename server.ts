@@ -366,6 +366,57 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // API Route - Extração de Texto de Documentos (.pdf, .docx, .doc, .txt, .json, etc.)
+  app.post("/api/extract-document-text", async (req, res) => {
+    try {
+      const { data, filename, mimeType } = req.body;
+      if (!data) {
+        return res.status(400).json({ success: false, error: "Nenhum dado de arquivo fornecido." });
+      }
+
+      const cleanBase64 = data.includes("base64,") ? data.split("base64,")[1] : data;
+      const buffer = Buffer.from(cleanBase64, "base64");
+      const name = (filename || "").toLowerCase();
+      let extractedText = "";
+
+      if (name.endsWith(".pdf") || mimeType === "application/pdf") {
+        const pdfModule: any = await import("pdf-parse");
+        const parseFn = pdfModule.default || pdfModule;
+        const pdfData = await parseFn(buffer);
+        extractedText = pdfData?.text || "";
+      } else if (name.endsWith(".docx") || name.endsWith(".doc") || mimeType?.includes("wordprocessingml") || mimeType?.includes("msword")) {
+        try {
+          const mammothModule: any = await import("mammoth");
+          const mammoth = mammothModule.default || mammothModule;
+          const result = await mammoth.extractRawText({ buffer });
+          extractedText = result.value || "";
+        } catch (docxErr: any) {
+          console.warn("[Document Extract] Fallback mammoth:", docxErr.message);
+          extractedText = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t\u00C0-\u00FF]/g, " ");
+        }
+      } else {
+        // Arquivos de texto (.txt, .md, .json, .csv, .srt, .vtt, etc.)
+        extractedText = buffer.toString("utf-8");
+      }
+
+      extractedText = extractedText.trim();
+      const wordCount = extractedText ? extractedText.split(/\s+/).filter(Boolean).length : 0;
+
+      res.json({
+        success: true,
+        text: extractedText,
+        filename: filename || "documento",
+        wordCount
+      });
+    } catch (error: any) {
+      console.error("Extract Document Error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || "Erro ao extrair texto do documento." 
+      });
+    }
+  });
+
   // API Route - Auditoria e Organização Sequencial de Imagens por Roteiro
   app.post("/api/audit-images", async (req, res) => {
     try {
