@@ -165,6 +165,8 @@ async function executeWithOpenRouter(args: {
   const modelsToTry = [...new Set([
     primaryModel,
     "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "minimax/minimax-m3:free",
+    "google/gemma-4-26b-a4b-it:free",
     "nvidia/nemotron-3.5-lightning:free",
     "nvidia/nemotron-3-super:free",
     "meta-llama/llama-3.3-70b-instruct:free",

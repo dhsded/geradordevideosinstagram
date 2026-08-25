@@ -176,38 +176,50 @@ export default function App() {
   // Constantes de Modelos de I.A
   const POPULAR_OPENROUTER_MODELS = [
     {
+      id: 'minimax/minimax-m3:free',
+      name: 'MiniMax M3 (Free)',
+      tag: 'Criatividade & Roteiros • Gratuito',
+      desc: 'Excelente capacidade para escrita criativa e ganchos em português'
+    },
+    {
+      id: 'google/gemma-4-26b-a4b-it:free',
+      name: 'Google Gemma 4 26B Instruct (Free)',
+      tag: 'Alta Precisão • Gratuito',
+      desc: 'Modelo avançado do Google com raciocínio e síntese rápidos'
+    },
+    {
       id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-      name: 'NVIDIA Nemotron 3 Ultra 550B',
+      name: 'NVIDIA Nemotron 3 Ultra 550B (Free)',
       tag: '550B Parâmetros • Gratuito',
       desc: 'Ultra alta capacidade para narrativas complexas e adaptações profundas'
     },
     {
       id: 'nvidia/nemotron-3.5-lightning:free',
-      name: 'NVIDIA Nemotron 3.5 Lightning',
+      name: 'NVIDIA Nemotron 3.5 Lightning (Free)',
       tag: 'Ultrarrápido • Gratuito',
       desc: 'Velocidade instantânea para geração de roteiros dinâmicos'
     },
     {
       id: 'nvidia/nemotron-3-super:free',
-      name: 'NVIDIA Nemotron 3 Super',
+      name: 'NVIDIA Nemotron 3 Super (Free)',
       tag: 'Alta Performance • Gratuito',
       desc: 'Equilíbrio ideal entre inteligência de escrita e tempo de resposta'
     },
     {
       id: 'deepseek/deepseek-r1:free',
-      name: 'DeepSeek R1',
+      name: 'DeepSeek R1 (Free)',
       tag: 'Raciocínio Lógico • Gratuito',
       desc: 'Excelente para análises e estruturação de carrosséis educativos'
     },
     {
       id: 'meta-llama/llama-3.3-70b-instruct:free',
-      name: 'Meta Llama 3.3 70B Instruct',
+      name: 'Meta Llama 3.3 70B Instruct (Free)',
       tag: 'Robusto & Criativo • Gratuito',
       desc: 'Muito criativo para ganchos virais e copywriting de engajamento'
     },
     {
       id: 'google/gemini-2.0-flash-exp:free',
-      name: 'Google Gemini 2.0 Flash Exp',
+      name: 'Google Gemini 2.0 Flash Exp (Free)',
       tag: 'Experimental • Gratuito',
       desc: 'Modelo ágil do Google via gateway OpenRouter'
     }
@@ -781,6 +793,53 @@ export default function App() {
       setTestResult({ success: true, message: 'Configurações do OpenRouter salvas com sucesso!' });
     } catch (err: any) {
       setKeyManagerError(err.message || 'Erro ao salvar configurações.');
+    } finally {
+      setIsSavingProviderSettings(false);
+    }
+  };
+
+  const handleSelectOpenRouterModel = async (modelId: string) => {
+    setOpenrouterModelInput(modelId);
+    try {
+      await fetch(getApiUrl('/api/providers/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openrouter: { model: modelId }
+        })
+      });
+      setOpenrouterConfig(prev => ({ ...prev, model: modelId }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveOpenRouterKeyOnly = async () => {
+    if (!openrouterKeyInput.trim()) return;
+    setIsSavingProviderSettings(true);
+    setKeyManagerError(null);
+    try {
+      const res = await fetch(getApiUrl('/api/providers/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openrouter: {
+            apiKey: openrouterKeyInput.trim(),
+            baseUrl: openrouterBaseUrlInput.trim() || 'https://openrouter.ai/api/v1',
+            model: openrouterModelInput.trim() || 'minimax/minimax-m3:free'
+          }
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erro ao salvar chave.');
+      }
+      const data = await res.json();
+      setOpenrouterConfig(data.openrouter);
+      setOpenrouterKeyInput('');
+      setTestResult({ success: true, message: 'Chave universal do OpenRouter salva com sucesso!' });
+    } catch (err: any) {
+      setKeyManagerError(err.message || 'Erro ao salvar chave.');
     } finally {
       setIsSavingProviderSettings(false);
     }
@@ -2950,12 +3009,18 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Campo de Chave API OpenRouter */}
-                  <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                  {/* Informação e Campo de Chave API Universal OpenRouter */}
+                  <div className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
+                    <div className="p-3 bg-amber-50/80 border border-amber-200/60 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
+                      <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Chave Universal OpenRouter:</span> Uma única chave de API funciona para todos os modelos abaixo (MiniMax, Gemma, Nemotron, DeepSeek, etc.). Cole sua chave abaixo e ela ficará salva automaticamente.
+                      </div>
+                    </div>
+
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Chave da API OpenRouter (OPENROUTER_API_KEY)</span>
+                        <span>Chave da API OpenRouter (sk-or-v1-...)</span>
                       </label>
                       <a 
                         href="https://openrouter.ai/keys" 
@@ -2963,38 +3028,46 @@ export default function App() {
                         rel="noreferrer"
                         className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1 font-bold"
                       >
-                        <span>Obter chave no OpenRouter</span>
+                        <span>Obter chave gratuita no OpenRouter</span>
                         <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     </div>
 
-                    <div className="relative">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="password"
                         value={openrouterKeyInput}
                         onChange={(e) => setOpenrouterKeyInput(e.target.value)}
                         placeholder={openrouterConfig.hasKey ? `Chave salva: ${openrouterConfig.apiKeyMasked}` : 'Cole sua chave: sk-or-v1-...'}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                       />
+                      <button
+                        onClick={handleSaveOpenRouterKeyOnly}
+                        disabled={!openrouterKeyInput.trim() || isSavingProviderSettings}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>Salvar Chave</span>
+                      </button>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500">
                       <span className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${openrouterConfig.hasKey || openrouterKeyInput ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${openrouterConfig.hasKey ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
                         {openrouterConfig.hasKey 
-                          ? `Chave configurada no servidor (${openrouterConfig.apiKeyMasked})` 
-                          : 'Nenhuma chave salva no momento.'}
+                          ? `Chave salva e ativa: ${openrouterConfig.apiKeyMasked}` 
+                          : 'Nenhuma chave salva. Cole e clique em Salvar Chave.'}
                       </span>
-                      <span className="text-[10px] text-slate-400">Você também pode definir via arquivo .env</span>
+                      <span className="text-[10px] text-slate-400">Salva no arquivo de configuração e .env</span>
                     </div>
                   </div>
 
-                  {/* Seleção de Modelos Gratuitos Recomendados */}
+                  {/* Seleção de Modelos Gratuitos */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h4 className="text-xs font-bold text-slate-800">Modelos Gratuitos Recomendados (Free Tier)</h4>
-                        <p className="text-[10px] text-slate-400">Modelos com alta capacidade de contexto e sem custo de hardware</p>
+                        <h4 className="text-xs font-bold text-slate-800">Selecione o Modelo Desejado (Clique para Ativar)</h4>
+                        <p className="text-[10px] text-slate-400">Todos os modelos abaixo utilizam sua mesma chave OpenRouter configurada</p>
                       </div>
                       <button
                         onClick={() => setIsCustomOpenRouterModel(!isCustomOpenRouterModel)}
@@ -3012,10 +3085,10 @@ export default function App() {
                             <button
                               key={m.id}
                               type="button"
-                              onClick={() => setOpenrouterModelInput(m.id)}
-                              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                              onClick={() => handleSelectOpenRouterModel(m.id)}
+                              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                                 isSelected
-                                  ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-500/20 shadow-xs'
+                                  ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-500/20 shadow-xs'
                                   : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
                               }`}
                             >
@@ -3026,9 +3099,15 @@ export default function App() {
                                 </span>
                               </div>
                               <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">{m.desc}</p>
-                              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400">
+                              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400">
                                 <span className="font-semibold text-amber-700/90">{m.tag}</span>
-                                {isSelected && <span className="font-bold text-amber-600 flex items-center gap-0.5"><Check className="w-3 h-3" /> Selecionado</span>}
+                                {isSelected ? (
+                                  <span className="font-bold text-amber-700 flex items-center gap-0.5 bg-amber-100 px-2 py-0.5 rounded-md">
+                                    <Check className="w-3 h-3" /> Ativo
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 group-hover:text-slate-600">Clique para Usar</span>
+                                )}
                               </div>
                             </button>
                           );
@@ -3040,8 +3119,8 @@ export default function App() {
                         <input
                           type="text"
                           value={openrouterModelInput}
-                          onChange={(e) => setOpenrouterModelInput(e.target.value)}
-                          placeholder="ex: nvidia/nemotron-3-ultra-550b-a55b:free ou anthropic/claude-3.5-sonnet"
+                          onChange={(e) => handleSelectOpenRouterModel(e.target.value)}
+                          placeholder="ex: minimax/minimax-m3:free ou google/gemma-4-26b-a4b-it:free"
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                         />
                         <p className="text-[10px] text-slate-400">Consulte os identificadores em openrouter.ai/models.</p>
