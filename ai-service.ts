@@ -46,11 +46,47 @@ export class AIService {
    */
   public async extractPdfText(base64Data: string): Promise<string> {
     try {
-      const buffer = Buffer.from(base64Data, 'base64');
+      const cleanBase64 = base64Data.includes("base64,") ? base64Data.split("base64,")[1] : base64Data;
+      const buffer = Buffer.from(cleanBase64, 'base64');
       const pdfModule: any = await import("pdf-parse");
-      const parseFn = pdfModule.default || pdfModule;
-      const data = await parseFn(buffer);
-      return data?.text?.trim() || '';
+
+      // 1. Tentar como classe PDFParse (pdf-parse v2)
+      const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
+      if (PDFParseClass) {
+        try {
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          if (typeof parser.destroy === 'function') {
+            await parser.destroy().catch(() => {});
+          }
+          if (result?.text) return result.text.trim();
+        } catch (v2Err: any) {
+          console.warn('[AIService] Aviso PDFParse v2:', v2Err.message);
+        }
+      }
+
+      // 2. Tentar como função direta (pdf-parse v1)
+      const parseFn = typeof pdfModule === 'function' 
+        ? pdfModule 
+        : (typeof pdfModule.default === 'function' ? pdfModule.default : (pdfModule.pdf || pdfModule.default?.pdf));
+
+      if (typeof parseFn === 'function') {
+        const data = await parseFn(buffer);
+        return data?.text?.trim() || '';
+      }
+
+      // 3. Tentar instanciar se pdfModule.default for construtor
+      if (typeof pdfModule.default === 'function') {
+        try {
+          const instance = new pdfModule.default({ data: buffer });
+          if (typeof instance.getText === 'function') {
+            const res = await instance.getText();
+            return res?.text?.trim() || '';
+          }
+        } catch {}
+      }
+
+      return '';
     } catch (err: any) {
       console.warn('[AIService] Aviso ao extrair texto do PDF:', err.message);
       return '';

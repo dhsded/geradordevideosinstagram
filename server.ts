@@ -426,10 +426,36 @@ export async function startServer(port = 3000) {
       let extractedText = "";
 
       if (name.endsWith(".pdf") || mimeType === "application/pdf") {
-        const pdfModule: any = await import("pdf-parse");
-        const parseFn = pdfModule.default || pdfModule;
-        const pdfData = await parseFn(buffer);
-        extractedText = pdfData?.text || "";
+        try {
+          const pdfModule: any = await import("pdf-parse");
+          const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
+          
+          if (PDFParseClass) {
+            const parser = new PDFParseClass({ data: buffer });
+            const result = await parser.getText();
+            if (typeof parser.destroy === 'function') {
+              await parser.destroy().catch(() => {});
+            }
+            extractedText = result?.text || "";
+          } else {
+            const parseFn = typeof pdfModule === 'function' 
+              ? pdfModule 
+              : (typeof pdfModule.default === 'function' ? pdfModule.default : (pdfModule.pdf || pdfModule.default?.pdf));
+
+            if (typeof parseFn === 'function') {
+              const pdfData = await parseFn(buffer);
+              extractedText = pdfData?.text || "";
+            } else if (typeof pdfModule.default === 'function') {
+              const instance = new pdfModule.default({ data: buffer });
+              if (typeof instance.getText === 'function') {
+                const res = await instance.getText();
+                extractedText = res?.text || "";
+              }
+            }
+          }
+        } catch (pdfErr: any) {
+          console.warn("[Document Extract] Erro PDF:", pdfErr.message);
+        }
       } else if (name.endsWith(".docx") || name.endsWith(".doc") || mimeType?.includes("wordprocessingml") || mimeType?.includes("msword")) {
         try {
           const mammothModule: any = await import("mammoth");

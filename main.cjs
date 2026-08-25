@@ -14,11 +14,11 @@ const isDev = !app.isPackaged;
 function startBackend() {
   if (isDev) {
     console.log('Starting backend server in development mode (using Vite middleware)...');
-    backendProcess = spawn('cmd.exe', ['/c', 'npm', 'run', 'dev'], {
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    backendProcess = spawn(npmCmd, ['run', 'dev'], {
       cwd: __dirname,
       env: { ...process.env, FORCE_COLOR: 'true' },
-      stdio: 'inherit',
-      shell: true
+      stdio: 'inherit'
     });
 
     backendProcess.on('error', (err) => {
