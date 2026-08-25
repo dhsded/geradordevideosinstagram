@@ -204,6 +204,8 @@ export default function App() {
   
   // Auditoria Visual e Organização de Imagens por Roteiro states
   const [uploadedAuditImages, setUploadedAuditImages] = useState<AuditImageItem[]>([]);
+  const [auditReferenceImages, setAuditReferenceImages] = useState<AuditImageItem[]>([]);
+  const [isDragOverRefImages, setIsDragOverRefImages] = useState(false);
   const [auditScriptInput, setAuditScriptInput] = useState<string>('');
   const [auditCharacterNotes, setAuditCharacterNotes] = useState<string>('');
   const [auditDocumentInfo, setAuditDocumentInfo] = useState<{ filename: string; size: number; wordCount?: number } | null>(null);
@@ -1102,15 +1104,76 @@ export default function App() {
     setAuditError(null);
   };
 
+  // Funções de Imagens de Referência do Personagem / Estilo
+  const handleAuditReferenceImagesSelect = (files: FileList | File[]) => {
+    setAuditError(null);
+    const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+    if (fileArray.length === 0) return;
+
+    fileArray.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const base64 = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+        const newItem: AuditImageItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || 'image/png',
+          dataUrl,
+          base64
+        };
+        setAuditReferenceImages(prev => {
+          const exists = prev.some(p => p.name === file.name && p.size === file.size);
+          return exists ? prev : [...prev, newItem];
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveAuditReferenceImage = (id: string) => {
+    setAuditReferenceImages(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleClearAllAuditReferenceImages = () => {
+    setAuditReferenceImages([]);
+  };
+
+  const handlePullReferenceCharactersFromSession = () => {
+    const validExisting = characterImages.filter((img): img is { data: string; mimeType: string } => !!img && !!img.data);
+    if (validExisting.length === 0) {
+      setAuditError('Nenhuma imagem de personagem encontrada no Gerador. Carregue imagens de personagem na aba Vídeo/Carrossel ou adicione diretamente aqui.');
+      return;
+    }
+    const newItems: AuditImageItem[] = validExisting.map((img, idx) => ({
+      id: Math.random().toString(36).substring(2, 9),
+      name: `Personagem_Ref_${idx + 1}.${img.mimeType.includes('jpeg') || img.mimeType.includes('jpg') ? 'jpg' : 'png'}`,
+      size: Math.round((img.data.length * 3) / 4),
+      mimeType: img.mimeType || 'image/png',
+      dataUrl: `data:${img.mimeType || 'image/png'};base64,${img.data}`,
+      base64: img.data
+    }));
+    setAuditReferenceImages(prev => {
+      const existingNames = new Set(prev.map(p => p.name));
+      const filtered = newItems.filter(item => !existingNames.has(item.name));
+      return [...prev, ...filtered];
+    });
+  };
+
   const handleAuditDocumentUpload = async (file: File) => {
     if (!file) return;
     setAuditError(null);
     setIsExtractingDoc(true);
 
+    const safetyTimeout = setTimeout(() => {
+      setIsExtractingDoc(false);
+    }, 25000);
+
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       
-      // Para arquivos de texto (.txt, .md, .json, .csv, .srt, .vtt, .log)
+      // Para arquivos de texto direto (.txt, .md, .json, .csv, .srt, .vtt, .log)
       if (['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log'].includes(ext)) {
         const text = await file.text();
         const clean = text.trim();
@@ -1137,36 +1200,56 @@ export default function App() {
         });
 
         const base64Data = await base64Promise;
-        const res = await fetch(getApiUrl('/api/extract-document-text'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: base64Data,
+        const controller = new AbortController();
+        const fetchTimeout = setTimeout(() => controller.abort(), 20000);
+
+        try {
+          const res = await fetch(getApiUrl('/api/extract-document-text'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              data: base64Data,
+              filename: file.name,
+              mimeType: file.type
+            })
+          });
+
+          clearTimeout(fetchTimeout);
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Erro HTTP ${res.status} ao extrair documento.`);
+          }
+
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error || 'Falha ao extrair texto do documento.');
+          }
+
+          if (!data.text || !data.text.trim()) {
+            throw new Error('Nenhum texto legível pôde ser extraído deste documento.');
+          }
+
+          setAuditScriptInput(data.text);
+          setAuditDocumentInfo({
             filename: file.name,
-            mimeType: file.type
-          })
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Falha ao extrair texto do documento.');
+            size: file.size,
+            wordCount: data.wordCount
+          });
+        } catch (fetchErr: any) {
+          clearTimeout(fetchTimeout);
+          if (fetchErr.name === 'AbortError') {
+            throw new Error('Tempo limite excedido ao processar o documento (timeout de 20s).');
+          }
+          throw fetchErr;
         }
-
-        if (!data.text || !data.text.trim()) {
-          throw new Error('Nenhum texto legível pôde ser extraído deste documento.');
-        }
-
-        setAuditScriptInput(data.text);
-        setAuditDocumentInfo({
-          filename: file.name,
-          size: file.size,
-          wordCount: data.wordCount
-        });
       }
     } catch (err: any) {
       console.error('Erro ao processar documento de roteiro:', err);
       setAuditError(`Erro ao carregar documento "${file.name}": ${err.message}`);
     } finally {
+      clearTimeout(safetyTimeout);
       setIsExtractingDoc(false);
     }
   };
@@ -1241,6 +1324,11 @@ export default function App() {
 
       const payload = {
         images: uploadedAuditImages.map(img => ({
+          name: img.name,
+          mimeType: img.mimeType,
+          data: img.base64
+        })),
+        characterReferenceImages: auditReferenceImages.map(img => ({
           name: img.name,
           mimeType: img.mimeType,
           data: img.base64
@@ -2690,26 +2778,153 @@ export default function App() {
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
                     />
                     {isExtractingDoc && (
-                      <div className="absolute inset-0 bg-white/80 backdrop-blur-2xs rounded-xl flex items-center justify-center gap-2 text-indigo-600 text-xs font-bold">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Extraindo texto do documento...</span>
+                      <div className="absolute inset-0 bg-white/90 backdrop-blur-2xs rounded-xl flex flex-col items-center justify-center gap-2 text-indigo-600 text-xs font-bold z-10 p-3 text-center shadow-xs">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                          <span>Extraindo texto do documento...</span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-normal">Processando estrutura e camadas de texto do arquivo</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsExtractingDoc(false)}
+                          className="mt-1 px-2.5 py-0.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-md text-[10px] font-semibold transition cursor-pointer"
+                        >
+                          Cancelar Extração
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Bloco 3: Diretrizes de Personagem / Estilo (Opcional) */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Critérios de Personagem & Estilo (Opcional)</span>
-                  </label>
+                {/* Bloco 3: Critérios & Imagens de Referência do Personagem / Estilo (Opcional) */}
+                <div className="space-y-3 bg-slate-50/80 p-3.5 border border-slate-200/80 rounded-2xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Critérios & Imagens do Personagem (Opcional)</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <label 
+                        className="px-2.5 py-1 bg-white hover:bg-slate-50 text-indigo-600 border border-slate-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Fazer upload de uma ou mais imagens do personagem de referência"
+                      >
+                        <input 
+                          type="file" 
+                          multiple 
+                          accept="image/*"
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              handleAuditReferenceImagesSelect(e.target.files);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <Images className="w-3 h-3 text-indigo-500" />
+                        <span>+ Add Personagem Ref</span>
+                      </label>
+                      {characterImages.some(img => img && img.data) && (
+                        <button
+                          type="button"
+                          onClick={handlePullReferenceCharactersFromSession}
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          title="Importar imagens de personagens já carregadas na aba do Gerador"
+                        >
+                          <Sparkles className="w-3 h-3 text-indigo-500" />
+                          <span>Puxar do Gerador</span>
+                        </button>
+                      )}
+                      {auditReferenceImages.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearAllAuditReferenceImages}
+                          className="px-2 py-1 text-slate-400 hover:text-rose-600 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          title="Remover todas as imagens de referência"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Limpar Refs</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid de Imagens de Referência do Personagem */}
+                  {auditReferenceImages.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium px-0.5">
+                        <span className="font-bold text-indigo-600">
+                          {auditReferenceImages.length} {auditReferenceImages.length === 1 ? 'referência carregada' : 'referências carregadas'}
+                        </span>
+                        <span className="text-[10px] text-slate-400">A I.A comparará a consistência contra estas referências</span>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-[140px] overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-xl">
+                        {auditReferenceImages.map((img, idx) => (
+                          <div 
+                            key={img.id}
+                            className="group relative bg-slate-50 border border-slate-200 rounded-lg overflow-hidden flex flex-col items-center justify-center p-1 hover:border-indigo-400 transition shadow-2xs"
+                          >
+                            <div 
+                              className="relative w-full aspect-square rounded-md overflow-hidden bg-slate-100 cursor-pointer"
+                              onClick={() => setAuditImageModalUrl({ url: img.dataUrl, title: `Personagem Ref #${idx + 1} - ${img.name}` })}
+                            >
+                              <img 
+                                src={img.dataUrl} 
+                                alt={img.name} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-200" 
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                                <ZoomIn className="w-3.5 h-3.5" />
+                              </div>
+                              <span className="absolute top-1 left-1 bg-indigo-600/90 text-white text-[8px] font-bold px-1 py-0.5 rounded-sm shadow-xs">
+                                Ref #{idx + 1}
+                              </span>
+                            </div>
+                            <div className="w-full mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-600 px-0.5">
+                              <span className="truncate max-w-[55px]" title={img.name}>{img.name}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveAuditReferenceImage(img.id);
+                                }}
+                                className="text-slate-400 hover:text-rose-600 p-0.5 rounded-sm transition cursor-pointer"
+                                title="Remover esta referência"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dropzone de Imagens de Referência caso esteja vazio */}
+                  {auditReferenceImages.length === 0 && (
+                    <div 
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOverRefImages(true); }}
+                      onDragLeave={() => setIsDragOverRefImages(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOverRefImages(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          handleAuditReferenceImagesSelect(e.dataTransfer.files);
+                        }
+                      }}
+                      className={`border border-dashed rounded-xl p-3 text-center transition flex items-center justify-center gap-2 text-slate-400 text-xs ${isDragOverRefImages ? 'border-indigo-500 bg-indigo-50/60 text-indigo-600' : 'border-slate-300 bg-white/60 hover:bg-white'}`}
+                    >
+                      <Images className="w-4 h-4 text-indigo-400" />
+                      <span>Arraste imagens de referência do personagem aqui ou use <strong>+ Add Personagem Ref</strong></span>
+                    </div>
+                  )}
+
+                  {/* Textarea de Diretrizes Textuais */}
                   <textarea
                     rows={2}
                     value={auditCharacterNotes}
                     onChange={(e) => setAuditCharacterNotes(e.target.value)}
                     placeholder="Ex: Cérebro Azul estilo 3D Clay, Coração Vermelho, traços suaves, iluminação cinematográfica quente..."
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 leading-relaxed resize-y"
                   />
                 </div>
 

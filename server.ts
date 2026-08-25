@@ -412,6 +412,122 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // Funções Auxiliares de Extração Resiliente de Documentos
+  async function extractPdfTextSafe(buffer: Buffer): Promise<string> {
+    try {
+      const parsePromise = (async () => {
+        const pdfModule: any = await import("pdf-parse");
+        const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
+        
+        if (PDFParseClass) {
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          if (typeof parser.destroy === 'function') {
+            await parser.destroy().catch(() => {});
+          }
+          return result?.text || "";
+        }
+
+        const parseFn = typeof pdfModule === 'function' 
+          ? pdfModule 
+          : (typeof pdfModule.default === 'function' ? pdfModule.default : (pdfModule.pdf || pdfModule.default?.pdf));
+
+        if (typeof parseFn === 'function') {
+          const pdfData = await parseFn(buffer);
+          return pdfData?.text || "";
+        }
+
+        if (typeof pdfModule.default === 'function') {
+          const instance = new pdfModule.default({ data: buffer });
+          if (typeof instance.getText === 'function') {
+            const res = await instance.getText();
+            return res?.text || "";
+          }
+        }
+        return "";
+      })();
+
+      const timeoutPromise = new Promise<string>((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout ao processar PDF via pdf-parse (8s)")), 8000)
+      );
+
+      const parsedText = await Promise.race([parsePromise, timeoutPromise]);
+      if (parsedText && parsedText.trim().length > 0) {
+        return parsedText.trim();
+      }
+    } catch (err: any) {
+      console.warn("[PDF Parser] Aviso no extrator principal:", err.message);
+    }
+
+    // Fallback de varredura direta de texto em objetos/streams de PDF
+    try {
+      const raw = buffer.toString("latin1");
+      const matches: string[] = [];
+      
+      // Capturar operadores Tj diretos: (Texto) Tj
+      const tjRegex = /\(([^()]{1,800})\)\s*T[jJ]/g;
+      let match: RegExpExecArray | null;
+      while ((match = tjRegex.exec(raw)) !== null) {
+        if (match[1]) matches.push(match[1]);
+      }
+
+      // Capturar matrizes TJ: [(Texto) -10 (Mais)] TJ
+      const tjArrayRegex = /\[([^\[\]]{1,1500})\]\s*TJ/g;
+      while ((match = tjArrayRegex.exec(raw)) !== null) {
+        const inner = match[1];
+        const innerMatches = inner.match(/\(([^()]+)\)/g);
+        if (innerMatches) {
+          matches.push(innerMatches.map(m => m.slice(1, -1)).join(""));
+        }
+      }
+
+      if (matches.length > 0) {
+        const decoded = matches
+          .join(" ")
+          .replace(/\\([0-9]{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+          .replace(/\\[rnbtf]/g, " ")
+          .replace(/\\/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (decoded.length > 10) {
+          return decoded;
+        }
+      }
+    } catch (rawErr: any) {
+      console.warn("[PDF Parser] Falha no fallback direto:", rawErr.message);
+    }
+
+    return "";
+  }
+
+  async function extractDocxTextSafe(buffer: Buffer): Promise<string> {
+    try {
+      const mammothModule: any = await import("mammoth");
+      const mammoth = mammothModule.default || mammothModule;
+      const result = await mammoth.extractRawText({ buffer });
+      if (result && result.value && result.value.trim()) {
+        return result.value.trim();
+      }
+    } catch (docxErr: any) {
+      console.warn("[DOCX Parser] Fallback mammoth:", docxErr.message);
+    }
+
+    try {
+      const jszipModule: any = await import("jszip");
+      const JSZip = jszipModule.default || jszipModule;
+      const zip = await JSZip.loadAsync(buffer);
+      const docXml = await zip.file("word/document.xml")?.async("string");
+      if (docXml) {
+        const text = docXml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        if (text) return text;
+      }
+    } catch (zipErr: any) {
+      console.warn("[DOCX Parser] Fallback jszip:", zipErr.message);
+    }
+
+    return buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t\u00C0-\u00FF]/g, " ").trim();
+  }
+
   // API Route - Extração de Texto de Documentos (.pdf, .docx, .doc, .txt, .json, etc.)
   app.post("/api/extract-document-text", async (req, res) => {
     try {
@@ -426,46 +542,9 @@ export async function startServer(port = 3000) {
       let extractedText = "";
 
       if (name.endsWith(".pdf") || mimeType === "application/pdf") {
-        try {
-          const pdfModule: any = await import("pdf-parse");
-          const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null);
-          
-          if (PDFParseClass) {
-            const parser = new PDFParseClass({ data: buffer });
-            const result = await parser.getText();
-            if (typeof parser.destroy === 'function') {
-              await parser.destroy().catch(() => {});
-            }
-            extractedText = result?.text || "";
-          } else {
-            const parseFn = typeof pdfModule === 'function' 
-              ? pdfModule 
-              : (typeof pdfModule.default === 'function' ? pdfModule.default : (pdfModule.pdf || pdfModule.default?.pdf));
-
-            if (typeof parseFn === 'function') {
-              const pdfData = await parseFn(buffer);
-              extractedText = pdfData?.text || "";
-            } else if (typeof pdfModule.default === 'function') {
-              const instance = new pdfModule.default({ data: buffer });
-              if (typeof instance.getText === 'function') {
-                const res = await instance.getText();
-                extractedText = res?.text || "";
-              }
-            }
-          }
-        } catch (pdfErr: any) {
-          console.warn("[Document Extract] Erro PDF:", pdfErr.message);
-        }
+        extractedText = await extractPdfTextSafe(buffer);
       } else if (name.endsWith(".docx") || name.endsWith(".doc") || mimeType?.includes("wordprocessingml") || mimeType?.includes("msword")) {
-        try {
-          const mammothModule: any = await import("mammoth");
-          const mammoth = mammothModule.default || mammothModule;
-          const result = await mammoth.extractRawText({ buffer });
-          extractedText = result.value || "";
-        } catch (docxErr: any) {
-          console.warn("[Document Extract] Fallback mammoth:", docxErr.message);
-          extractedText = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t\u00C0-\u00FF]/g, " ");
-        }
+        extractedText = await extractDocxTextSafe(buffer);
       } else {
         // Arquivos de texto (.txt, .md, .json, .csv, .srt, .vtt, etc.)
         extractedText = buffer.toString("utf-8");
@@ -473,6 +552,13 @@ export async function startServer(port = 3000) {
 
       extractedText = extractedText.trim();
       const wordCount = extractedText ? extractedText.split(/\s+/).filter(Boolean).length : 0;
+
+      if (!extractedText) {
+        return res.status(400).json({
+          success: false,
+          error: `Não foi possível extrair texto legível de "${filename || 'documento'}". Certifique-se de que o documento não esteja protegido por senha ou contenha apenas imagens escaneadas sem camada de texto.`
+        });
+      }
 
       res.json({
         success: true,
@@ -492,7 +578,7 @@ export async function startServer(port = 3000) {
   // API Route - Auditoria e Organização Sequencial de Imagens por Roteiro
   app.post("/api/audit-images", async (req, res) => {
     try {
-      const { images, scriptContext, characterNotes, provider: reqProvider, model: reqModel } = req.body;
+      const { images, characterReferenceImages, scriptContext, characterNotes, provider: reqProvider, model: reqModel } = req.body;
       
       if (!Array.isArray(images) || images.length === 0) {
         return res.status(400).json({ error: "Nenhuma imagem foi fornecida para auditoria." });
@@ -503,9 +589,10 @@ export async function startServer(port = 3000) {
       }
 
       const parts: any[] = [];
+      const hasReferenceImages = Array.isArray(characterReferenceImages) && characterReferenceImages.length > 0;
 
       const promptText = `Você é um Diretor de Arte, Auditor Visual e Especialista em Continuidade Cinematográfica e Consistência de Personagens para Instagram.
-Sua missão é realizar uma Auditoria Visual e Organização Sequencial das imagens enviadas com base no roteiro/slides fornecido.
+Sua missão é realizar uma Auditoria Visual e Organização Sequencial das imagens geradas enviadas, mapeando-as rigorosamente de acordo com o roteiro/slides fornecido${hasReferenceImages ? ' e comparando a fidelidade física/estilística contra as IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM enviadas' : ''}.
 
 === ROTEIRO / SEQUÊNCIA DE SLIDES ESPERADA ===
 ${scriptContext.trim()}
@@ -513,7 +600,7 @@ ${scriptContext.trim()}
 ${characterNotes ? `=== DIRETRIZES DE CONSISTÊNCIA DE PERSONAGEM E ESTILO ===\n${characterNotes.trim()}\n` : ''}
 
 === SUAS TAREFAS DE AUDITORIA ===
-1. Examine com atenção cada uma das ${images.length} imagens fornecidas abaixo.
+1. Examine com atenção cada uma das imagens geradas fornecidas abaixo${hasReferenceImages ? ', comparando minuciosamente os traços anatômicos, cores, proporções e vestimentas contra as IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM' : ''}.
 2. Identifique os traços do personagem, estilo visual, paleta de cores, expressão emocional e elementos de cena em cada imagem.
 3. Para CADA SLIDE do roteiro (Slide 1, Slide 2, etc.), selecione a melhor imagem correspondente entre as enviadas (identificada exatamente pelo nome do arquivo correspondente).
 4. Avalie a consistência visual em porcentagem (ex: "95%", "90%", "85%").
@@ -525,9 +612,35 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
 
       parts.push({ text: promptText });
 
+      // Se houver imagens de referência do personagem, adicioná-las primeiro
+      if (hasReferenceImages) {
+        parts.push({
+          text: `\n=== IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM / ESTILO ===\nEstas são as imagens modelo de referência OFICIAL fornecidas pelo criador para balizar o personagem principal:\n`
+        });
+        characterReferenceImages.forEach((refImg: { name: string; mimeType: string; data: string }, rIdx: number) => {
+          parts.push({
+            text: `\n--- [PERSONAGEM DE REFERÊNCIA OFICIAL ${rIdx + 1}: ARQUIVO "${refImg.name}"] ---`
+          });
+          parts.push({
+            inlineData: {
+              mimeType: refImg.mimeType || 'image/png',
+              data: refImg.data.includes('base64,') ? refImg.data.split('base64,')[1] : refImg.data
+            }
+          });
+          parts.push({
+            text: `--- [FIM DO PERSONAGEM DE REFERÊNCIA ${rIdx + 1}] ---\n`
+          });
+        });
+      }
+
+      // Imagens do lote a serem auditadas e organizadas
+      parts.push({
+        text: `\n=== LOTE DE IMAGENS GERADAS A SEREM AUDITADAS E MAPEADAS (${images.length} IMAGENS) ===\n`
+      });
+
       images.forEach((img: { name: string; mimeType: string; data: string }, index: number) => {
         parts.push({
-          text: `\n--- [INÍCIO DA IMAGEM ${index + 1}: ARQUIVO "${img.name}"] ---`
+          text: `\n--- [INÍCIO DA IMAGEM GERADA ${index + 1}: ARQUIVO "${img.name}"] ---`
         });
         parts.push({
           inlineData: {
@@ -536,7 +649,7 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
           }
         });
         parts.push({
-          text: `--- [FIM DA IMAGEM: ARQUIVO "${img.name}"] ---\n`
+          text: `--- [FIM DA IMAGEM GERADA: ARQUIVO "${img.name}"] ---\n`
         });
       });
 
