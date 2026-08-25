@@ -270,28 +270,40 @@ export default function App() {
       interval: string;
     };
     credits?: number;
+    lastUpdated?: string;
   } | null>(null);
   const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
 
-  const fetchOpenRouterQuota = async () => {
+  const fetchOpenRouterQuota = async (keyOverride?: string) => {
+    const keyToUse = (keyOverride !== undefined ? keyOverride : openrouterKeyInput.trim()).trim();
     setIsLoadingQuota(true);
+    setQuotaError(null);
     try {
-      const res = await fetch(getApiUrl('/api/providers/openrouter/quota'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setOpenrouterQuota({
-            label: data.keyInfo?.label,
-            usage: data.keyInfo?.usage ?? data.creditsInfo?.total_usage,
-            limit: data.keyInfo?.limit,
-            is_free_tier: data.keyInfo?.is_free_tier,
-            rate_limit: data.keyInfo?.rate_limit,
-            credits: data.creditsInfo?.total_credits
-          });
-        }
+      const url = keyToUse 
+        ? getApiUrl(`/api/providers/openrouter/quota?apiKey=${encodeURIComponent(keyToUse)}`)
+        : getApiUrl('/api/providers/openrouter/quota');
+
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Erro ao consultar cota (HTTP ${res.status})`);
       }
-    } catch (err) {
+
+      if (data.success) {
+        setOpenrouterQuota({
+          label: data.keyInfo?.label,
+          usage: typeof data.keyInfo?.usage === 'number' ? data.keyInfo?.usage : (data.creditsInfo?.total_usage ?? 0),
+          limit: data.keyInfo?.limit,
+          is_free_tier: data.keyInfo?.is_free_tier,
+          rate_limit: data.keyInfo?.rate_limit,
+          credits: data.creditsInfo?.total_credits,
+          lastUpdated: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+      }
+    } catch (err: any) {
       console.warn('Erro ao carregar cota OpenRouter:', err);
+      setQuotaError(err.message || 'Erro ao carregar cota da chave.');
     } finally {
       setIsLoadingQuota(false);
     }
@@ -344,6 +356,12 @@ export default function App() {
   React.useEffect(() => {
     fetchProvidersAndStats();
   }, []);
+
+  React.useEffect(() => {
+    if (isKeyManagerOpen && selectedProviderTab === 'openrouter') {
+      fetchOpenRouterQuota();
+    }
+  }, [isKeyManagerOpen, selectedProviderTab]);
 
   // Buscar caminho do preload do espião
   React.useEffect(() => {
@@ -805,6 +823,7 @@ export default function App() {
     setIsSavingProviderSettings(true);
     setKeyManagerError(null);
     setTestResult(null);
+    const key = openrouterKeyInput.trim();
     try {
       const payload: any = {
         activeProvider: makeActive ? 'openrouter' : activeProvider,
@@ -813,8 +832,8 @@ export default function App() {
           model: openrouterModelInput.trim() || 'nvidia/nemotron-3-ultra-550b-a55b:free',
         }
       };
-      if (openrouterKeyInput.trim()) {
-        payload.openrouter.apiKey = openrouterKeyInput.trim();
+      if (key) {
+        payload.openrouter.apiKey = key;
       }
 
       const res = await fetch(getApiUrl('/api/providers/settings'), {
@@ -831,6 +850,7 @@ export default function App() {
       setOpenrouterConfig(data.openrouter);
       setOpenrouterKeyInput('');
       setTestResult({ success: true, message: 'Configurações do OpenRouter salvas com sucesso!' });
+      fetchOpenRouterQuota(key || undefined);
     } catch (err: any) {
       setKeyManagerError(err.message || 'Erro ao salvar configurações.');
     } finally {
@@ -855,7 +875,8 @@ export default function App() {
   };
 
   const handleSaveOpenRouterKeyOnly = async () => {
-    if (!openrouterKeyInput.trim()) return;
+    const key = openrouterKeyInput.trim();
+    if (!key) return;
     setIsSavingProviderSettings(true);
     setKeyManagerError(null);
     try {
@@ -864,7 +885,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           openrouter: {
-            apiKey: openrouterKeyInput.trim(),
+            apiKey: key,
             baseUrl: openrouterBaseUrlInput.trim() || 'https://openrouter.ai/api/v1',
             model: openrouterModelInput.trim() || 'minimax/minimax-m3:free'
           }
@@ -878,6 +899,7 @@ export default function App() {
       setOpenrouterConfig(data.openrouter);
       setOpenrouterKeyInput('');
       setTestResult({ success: true, message: 'Chave universal do OpenRouter salva com sucesso!' });
+      fetchOpenRouterQuota(key);
     } catch (err: any) {
       setKeyManagerError(err.message || 'Erro ao salvar chave.');
     } finally {
@@ -3108,31 +3130,31 @@ export default function App() {
                   </div>
 
                   {/* Card do Medidor de Cota e Limites da Chave OpenRouter */}
-                  {openrouterConfig.hasKey && (
-                    <div className="p-4 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-sm border border-slate-700/60 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                            <Gauge className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h5 className="text-xs font-bold text-slate-200">Medidor de Cota & Uso OpenRouter</h5>
-                            <p className="text-[10px] text-slate-400">Métricas em tempo real da chave na API OpenRouter</p>
-                          </div>
+                  <div className="p-4 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-sm border border-slate-700/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                          <Gauge className="w-4 h-4" />
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={fetchOpenRouterQuota}
-                          disabled={isLoadingQuota}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-[10px] font-bold text-amber-400 flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isLoadingQuota ? 'animate-spin' : ''}`} />
-                          <span>Atualizar Cota</span>
-                        </button>
+                        <div>
+                          <h5 className="text-xs font-bold text-slate-200">Medidor de Cota & Uso OpenRouter</h5>
+                          <p className="text-[10px] text-slate-400">Métricas em tempo real da chave na API OpenRouter</p>
+                        </div>
                       </div>
 
-                      {openrouterQuota ? (
+                      <button
+                        type="button"
+                        onClick={() => fetchOpenRouterQuota()}
+                        disabled={isLoadingQuota}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-[10px] font-bold text-amber-400 flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingQuota ? 'animate-spin' : ''}`} />
+                        <span>Atualizar Cota</span>
+                      </button>
+                    </div>
+
+                    {openrouterQuota ? (
+                      <div className="space-y-2.5">
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                           <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
                             <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Tipo da Conta</span>
@@ -3145,7 +3167,7 @@ export default function App() {
                           <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/50">
                             <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-bold">Uso Acumulado</span>
                             <span className="text-xs font-bold text-amber-300 mt-0.5 block font-mono">
-                              {typeof openrouterQuota.usage === 'number' ? `$${openrouterQuota.usage.toFixed(4)} USD` : 'Sem consumo'}
+                              {typeof openrouterQuota.usage === 'number' ? `$${openrouterQuota.usage.toFixed(4)} USD` : '$0.0000 USD'}
                             </span>
                           </div>
 
@@ -3163,19 +3185,51 @@ export default function App() {
                             </span>
                           </div>
                         </div>
-                      ) : (
-                        <div className="p-3 bg-slate-800/50 rounded-xl text-center text-xs text-slate-400">
-                          {isLoadingQuota ? (
-                            <span className="flex items-center justify-center gap-1.5 text-[11px] text-amber-400 font-bold">
-                              <Loader2 className="w-3 h-3 animate-spin" /> Consultando limites da chave...
-                            </span>
-                          ) : (
-                            <span className="text-[11px]">Clique em "Atualizar Cota" para visualizar o consumo e saldo atual.</span>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800">
+                          <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            Chave verificada e autorizada no OpenRouter
+                          </span>
+                          {openrouterQuota.lastUpdated && (
+                            <span>Atualizado às {openrouterQuota.lastUpdated}</span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    ) : quotaError ? (
+                      <div className="p-3 bg-rose-950/40 border border-rose-800/50 rounded-xl text-xs text-rose-300 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold block text-rose-200">Não foi possível obter a cota:</span>
+                          <span className="text-[11px] text-rose-300/90">{quotaError}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-slate-800/50 rounded-xl text-center text-xs text-slate-400 space-y-1">
+                        {isLoadingQuota ? (
+                          <div className="flex items-center justify-center gap-2 text-amber-400 font-bold text-xs py-1">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Consultando status e cota na API OpenRouter...</span>
+                          </div>
+                        ) : openrouterConfig.hasKey || openrouterKeyInput.trim() ? (
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-300">Clique em "Atualizar Cota" para ler os créditos e limites da chave.</span>
+                            <button
+                              type="button"
+                              onClick={() => fetchOpenRouterQuota()}
+                              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
+                            >
+                              Consultar Agora
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400">
+                            💡 Cole sua chave <span className="font-mono text-amber-300 font-bold">sk-or-v1-...</span> no campo acima e clique em <span className="font-bold text-slate-200">Salvar Chave</span> para ativar o medidor em tempo real.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Seleção de Modelos Gratuitos */}
                   <div className="space-y-3">

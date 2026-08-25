@@ -21,13 +21,25 @@ export interface ProvidersConfig {
 }
 
 function getConfigFilepath(): string {
-  if (process.env.NODE_ENV !== 'production' && fs.existsSync(path.join(process.cwd(), 'providers-config.json'))) {
-    return path.join(process.cwd(), 'providers-config.json');
+  const localFile = path.join(process.cwd(), 'providers-config.json');
+  if (fs.existsSync(localFile)) {
+    return localFile;
   }
 
   const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library/Preferences') : path.join(process.env.HOME || '', '.config'));
-  const writableDir = appData ? path.join(appData, 'prompter-nano-banana') : process.cwd();
-  return path.join(writableDir, 'providers-config.json');
+  if (appData) {
+    const postforgeDir = path.join(appData, 'postforge');
+    const oldDir = path.join(appData, 'prompter-nano-banana');
+    if (fs.existsSync(path.join(postforgeDir, 'providers-config.json'))) {
+      return path.join(postforgeDir, 'providers-config.json');
+    }
+    if (fs.existsSync(path.join(oldDir, 'providers-config.json'))) {
+      return path.join(oldDir, 'providers-config.json');
+    }
+    return path.join(postforgeDir, 'providers-config.json');
+  }
+
+  return localFile;
 }
 
 const CONFIG_FILE = getConfigFilepath();

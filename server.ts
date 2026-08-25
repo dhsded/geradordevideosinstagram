@@ -231,18 +231,26 @@ export async function startServer(port = 3000) {
   });
 
   // Rota para consulta de cota, saldo e limites da chave OpenRouter
-  app.get("/api/providers/openrouter/quota", async (req, res) => {
+  app.all(["/api/providers/openrouter/quota", "/api/providers/openrouter-quota"], async (req, res) => {
     try {
-      const apiKey = providersManager.getOpenRouterKey();
+      const queryKey = (req.query.apiKey as string) || (req.body?.apiKey as string);
+      const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const apiKey = (queryKey || authHeader || providersManager.getOpenRouterKey()).trim();
+
       if (!apiKey) {
-        return res.status(400).json({ error: "Chave OpenRouter não configurada." });
+        return res.status(400).json({ 
+          error: "Chave da API OpenRouter não configurada. Cole sua chave sk-or-v1-... acima e salve para consultar a cota." 
+        });
       }
+
       const baseUrl = providersManager.getOpenRouterBaseUrl();
 
       // Consultar status e limites da chave
       const keyRes = await fetch(`${baseUrl}/auth/key`, {
         headers: {
-          "Authorization": `Bearer ${apiKey}`
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://postforge.app",
+          "X-Title": "PostForge"
         }
       });
 
@@ -251,7 +259,7 @@ export async function startServer(port = 3000) {
         let errJson: any = null;
         try { errJson = JSON.parse(errText); } catch {}
         return res.status(keyRes.status).json({ 
-          error: errJson?.error?.message || errText || `Erro HTTP ${keyRes.status}` 
+          error: errJson?.error?.message || errText || `Erro HTTP ${keyRes.status} ao consultar chave na OpenRouter` 
         });
       }
 
@@ -262,7 +270,9 @@ export async function startServer(port = 3000) {
       try {
         const creditsRes = await fetch(`${baseUrl}/credits`, {
           headers: {
-            "Authorization": `Bearer ${apiKey}`
+            "Authorization": `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://postforge.app",
+            "X-Title": "PostForge"
           }
         });
         if (creditsRes.ok) {
