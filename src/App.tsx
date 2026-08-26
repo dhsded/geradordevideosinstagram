@@ -721,7 +721,10 @@ export default function App() {
 
   const handleAddOpenRouterMultiKeys = async () => {
     if (!openrouterMultiKeysInput.trim()) return;
-    const rawKeys = openrouterMultiKeysInput.split(/[\r\n,;]+/).map(k => k.trim()).filter(Boolean);
+    const rawKeys = openrouterMultiKeysInput
+      .split(/[\r\n,;]+/)
+      .map(k => k.trim().replace(/^["']+|["']+$/g, '').trim())
+      .filter(Boolean);
     if (rawKeys.length === 0) return;
 
     setIsUploadingOpenRouterKeys(true);
@@ -730,17 +733,27 @@ export default function App() {
       const res = await fetch(getApiUrl('/api/openrouter-keys'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: rawKeys, labelPrefix: 'Conta' })
+        body: JSON.stringify({ keys: rawKeys, labelPrefix: 'Conta' }),
+        signal: AbortSignal.timeout(12000)
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         setOpenrouterKeysStats(data);
         setOpenrouterMultiKeysInput('');
-        addLog('success', 'OPENROUTER', `${data.addedCount || rawKeys.length} chave(s) OpenRouter adicionada(s) ao pool!`);
-        fetchOpenRouterQuota();
+        if (data.addedCount > 0) {
+          addLog('success', 'OPENROUTER', `${data.addedCount} chave(s) OpenRouter adicionada(s) ao pool com sucesso!`);
+          fetchOpenRouterQuota(rawKeys[0]);
+        } else {
+          addLog('info', 'OPENROUTER', 'As chaves inseridas já constavam no pool cadastrado.');
+        }
+        await fetchOpenRouterKeys();
+      } else {
+        throw new Error(data.error || `Erro HTTP ${res.status} ao adicionar chaves.`);
       }
     } catch (err: any) {
-      setKeyManagerError(`Erro ao adicionar chaves OpenRouter: ${err.message}`);
+      const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (12s).' : (err.message || 'Erro ao adicionar chaves.');
+      setKeyManagerError(`Erro ao adicionar chaves OpenRouter: ${msg}`);
+      addLog('error', 'OPENROUTER', `Falha ao adicionar chaves: ${msg}`);
     } finally {
       setIsUploadingOpenRouterKeys(false);
     }
@@ -754,24 +767,35 @@ export default function App() {
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const lines = text.split(/[\r\n,;]+/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+        const lines = text
+          .split(/[\r\n,;]+/)
+          .map(l => l.trim().replace(/^["']+|["']+$/g, '').trim())
+          .filter(l => l && !l.startsWith('#'));
         if (lines.length === 0) {
           alert('Nenhuma chave encontrada no arquivo .txt selecionado.');
+          setIsUploadingOpenRouterKeys(false);
           return;
         }
         const res = await fetch(getApiUrl('/api/openrouter-keys'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: lines, labelPrefix: 'Arquivo' })
+          body: JSON.stringify({ keys: lines, labelPrefix: 'Arquivo' }),
+          signal: AbortSignal.timeout(12000)
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
-          const data = await res.json();
           setOpenrouterKeysStats(data);
-          addLog('success', 'OPENROUTER', `${lines.length} chave(s) OpenRouter importada(s) com sucesso.`);
-          fetchOpenRouterQuota();
+          addLog('success', 'OPENROUTER', `${data.addedCount || lines.length} chave(s) OpenRouter importada(s) com sucesso.`);
+          if (lines.length > 0) {
+            fetchOpenRouterQuota(lines[0]);
+          }
+          await fetchOpenRouterKeys();
+        } else {
+          throw new Error(data.error || `Erro HTTP ${res.status} ao importar arquivo.`);
         }
       } catch (err: any) {
-        setKeyManagerError(`Erro ao carregar arquivo de chaves OpenRouter: ${err.message}`);
+        const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (12s).' : (err.message || 'Erro ao carregar arquivo de chaves.');
+        setKeyManagerError(`Erro ao carregar arquivo de chaves OpenRouter: ${msg}`);
       } finally {
         setIsUploadingOpenRouterKeys(false);
       }
@@ -1688,10 +1712,12 @@ export default function App() {
     setIsTestingProvider(true);
     setTestResult(null);
     setKeyManagerError(null);
+    addLog('info', 'TESTE', `Iniciando teste de conexão com o provedor ${prov.toUpperCase()}...`);
     try {
       const body: any = { provider: prov };
       if (prov === 'openrouter') {
-        if (openrouterKeyInput.trim()) body.apiKey = openrouterKeyInput.trim();
+        const cleanKey = openrouterKeyInput.trim().replace(/^["']+|["']+$/g, '');
+        if (cleanKey) body.apiKey = cleanKey;
         body.baseUrl = openrouterBaseUrlInput.trim();
         body.model = openrouterModelInput.trim();
       } else {
@@ -1700,15 +1726,21 @@ export default function App() {
       const res = await fetch(getApiUrl('/api/providers/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000)
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || 'Falha no teste de conexão.');
+        throw new Error(data.error || `Falha no teste de conexão (Status HTTP ${res.status}).`);
       }
       setTestResult({ success: true, message: data.message });
+      addLog('success', 'TESTE', `Conexão com ${prov.toUpperCase()} validada com sucesso!`);
     } catch (err: any) {
-      setTestResult({ success: false, message: err.message || 'Erro no teste.' });
+      const errorMsg = err.name === 'TimeoutError'
+        ? 'Tempo limite esgotado ao testar conexão (15s).'
+        : (err.message || 'Erro no teste de conexão.');
+      setTestResult({ success: false, message: errorMsg });
+      addLog('error', 'TESTE', `Falha no teste do ${prov.toUpperCase()}: ${errorMsg}`);
     } finally {
       setIsTestingProvider(false);
     }

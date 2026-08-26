@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { openrouterKeysManager } from './openrouter-keys-manager';
 
 dotenv.config();
 
@@ -111,7 +112,13 @@ export class ProvidersManager {
   }
 
   public getOpenRouterKey(): string {
-    return this.config.openrouter.apiKey.trim() || (process.env.OPENROUTER_API_KEY || '').trim();
+    const directKey = (this.config.openrouter.apiKey || '').trim().replace(/^["']+|["']+$/g, '');
+    if (directKey) return directKey;
+
+    const poolKey = (openrouterKeysManager.getActiveKey() || '').trim().replace(/^["']+|["']+$/g, '');
+    if (poolKey) return poolKey;
+
+    return (process.env.OPENROUTER_API_KEY || '').trim().replace(/^["']+|["']+$/g, '');
   }
 
   public getOpenRouterBaseUrl(): string {

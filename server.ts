@@ -462,12 +462,12 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
       const targetProvider = provider || providersManager.getActiveProvider();
 
       if (targetProvider === "openrouter") {
-        const keyToUse = (apiKey || providersManager.getOpenRouterKey()).trim();
+        const keyToUse = (apiKey || providersManager.getOpenRouterKey() || openrouterKeysManager.getActiveKey() || '').trim().replace(/^["']+|["']+$/g, '');
         const urlToUse = baseUrl || providersManager.getOpenRouterBaseUrl();
         const modelToUse = model || providersManager.getOpenRouterModel();
 
         if (!keyToUse) {
-          return res.status(400).json({ error: "Chave da API OpenRouter não informada. Insira sua chave sk-or-v1-..." });
+          return res.status(400).json({ error: "Chave da API OpenRouter não informada. Insira sua chave (sk-or-v1-...) no campo ou cadastre no pool de chaves." });
         }
 
         const testRes = await fetch(`${urlToUse}/chat/completions`, {
@@ -483,15 +483,30 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
             messages: [{ role: "user", content: "Responda em formato JSON: {\"status\": \"ok\", \"message\": \"conectado\"}" }],
             response_format: { type: "json_object" },
             max_tokens: 30
-          })
+          }),
+          signal: AbortSignal.timeout(12000)
         });
 
         if (!testRes.ok) {
           const errText = await testRes.text();
           let errJson: any = null;
           try { errJson = JSON.parse(errText); } catch {}
+          const rawMsg = errJson?.error?.message || errJson?.message || errText || `Erro HTTP ${testRes.status}`;
+
+          if (rawMsg.toLowerCase().includes('user not found') || testRes.status === 401) {
+            return res.status(401).json({
+              error: "Chave OpenRouter não encontrada ou não autorizada na sua conta ('User not found'). Acesse openrouter.ai/keys para criar ou copiar uma chave válida e ativa."
+            });
+          }
+
+          if (testRes.status === 429 || rawMsg.toLowerCase().includes('rate limit') || rawMsg.toLowerCase().includes('quota')) {
+            return res.status(429).json({
+              error: `Cota ou limite excedido no OpenRouter (429): ${rawMsg.slice(0, 150)}`
+            });
+          }
+
           return res.status(testRes.status).json({ 
-            error: errJson?.error?.message || errText || `Erro HTTP ${testRes.status}` 
+            error: rawMsg
           });
         }
 

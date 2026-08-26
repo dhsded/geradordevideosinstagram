@@ -76,8 +76,8 @@ export class OpenRouterKeysManager {
   }
 
   private seedFromEnv() {
-    const envKey = (process.env.OPENROUTER_API_KEY || '').trim();
-    if (envKey && (envKey.startsWith('sk-or-v1-') || envKey.startsWith('sk-')) && !this.keys.some(k => k.key === envKey)) {
+    const envKey = (process.env.OPENROUTER_API_KEY || '').trim().replace(/^["']+|["']+$/g, '');
+    if (envKey && envKey.length >= 20 && (envKey.startsWith('sk-or-v1-') || envKey.startsWith('sk-')) && !this.keys.some(k => k.key === envKey)) {
       this.keys.push({
         id: this.generateId(),
         key: envKey,
@@ -208,8 +208,8 @@ export class OpenRouterKeysManager {
   public addKeys(newKeys: string[], labelPrefix?: string): number {
     let countAdded = 0;
     for (const rawKey of newKeys) {
-      const cleanKey = rawKey.trim();
-      if (cleanKey && (cleanKey.startsWith('sk-or-v1-') || cleanKey.startsWith('sk-')) && !this.keys.some(k => k.key === cleanKey)) {
+      const cleanKey = String(rawKey || '').trim().replace(/^["']+|["']+$/g, '').trim();
+      if (cleanKey && cleanKey.length >= 8 && !this.keys.some(k => k.key === cleanKey)) {
         this.keys.push({
           id: this.generateId(),
           key: cleanKey,
@@ -322,7 +322,16 @@ export class OpenRouterKeysManager {
       const text = await authRes.text();
       let json: any = null;
       try { json = JSON.parse(text); } catch {}
-      const errMsg = json?.error?.message || text || `HTTP ${statusCode}`;
+      const errMsg = json?.error?.message || json?.message || text || `HTTP ${statusCode}`;
+
+      if (errMsg.toLowerCase().includes('user not found') || statusCode === 401) {
+        return {
+          active: false,
+          status: 'exhausted',
+          message: `Chave não encontrada na conta OpenRouter ('User not found'). Verifique se a chave foi copiada corretamente de openrouter.ai/keys.`,
+          statusCode
+        };
+      }
 
       if (statusCode === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate limit')) {
         return {
@@ -333,7 +342,7 @@ export class OpenRouterKeysManager {
         };
       }
 
-      if (statusCode === 401 || statusCode === 403 || errMsg.toLowerCase().includes('invalid api key')) {
+      if (statusCode === 403 || errMsg.toLowerCase().includes('invalid api key')) {
         return {
           active: false,
           status: 'exhausted',
