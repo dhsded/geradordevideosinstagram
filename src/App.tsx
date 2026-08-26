@@ -640,12 +640,16 @@ export default function App() {
         throw new Error(`Resposta inesperada do servidor (Status HTTP ${res.status}): ${text.slice(0, 100)}`);
       }
 
+      if (data.openrouterStats) {
+        setOpenrouterKeysStats(data.openrouterStats);
+      }
+
       if (!data || data.success === false) {
         throw new Error(data?.error || `Não foi possível obter a cota do OpenRouter (Status ${res.status})`);
       }
 
       const quotaObj = {
-        label: data.keyInfo?.label,
+        label: data.keyInfo?.label || (data.activeKey ? `Chave ${data.activeKey}` : undefined),
         usage: typeof data.keyInfo?.usage === 'number' ? data.keyInfo?.usage : (typeof data.creditsInfo?.total_usage === 'number' ? data.creditsInfo?.total_usage : 0),
         limit: data.keyInfo?.limit ?? null,
         is_free_tier: data.keyInfo?.is_free_tier ?? true,
@@ -657,7 +661,7 @@ export default function App() {
       setOpenrouterQuota(quotaObj);
       addLog('success', 'COTA', `Métricas OpenRouter: Uso $${quotaObj.usage.toFixed(4)} USD | Conta ${quotaObj.is_free_tier ? 'Free Tier' : 'Padrão'} | Limite: ${quotaObj.limit ? `$${quotaObj.limit}` : 'Ilimitado'}`);
     } catch (err: any) {
-      const errorMsg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao consultar OpenRouter (10s).' : (err.message || 'Erro ao carregar cota da chave.');
+      const errorMsg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao consultar OpenRouter (15s).' : (err.message || 'Erro ao carregar cota da chave.');
       console.warn('Erro ao carregar cota OpenRouter:', err);
       setQuotaError(errorMsg);
       addLog('error', 'COTA', `Falha ao consultar cota OpenRouter: ${errorMsg}`);

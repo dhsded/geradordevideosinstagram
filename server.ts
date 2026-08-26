@@ -553,13 +553,17 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
     try {
       const queryKey = (req.query.apiKey as string) || (req.body?.apiKey as string);
       const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-      let rawKey = (queryKey || authHeader || providersManager.getOpenRouterKey() || '').trim();
-      rawKey = rawKey.replace(/^["']+|["']+$/g, '').trim();
+      let rawKey = (queryKey || authHeader || '').trim().replace(/^["']+|["']+$/g, '');
+
+      // Se nenhuma chave foi passada explicitamente, tentar a chave ativa do pool ou da configuração
+      if (!rawKey) {
+        rawKey = (openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey() || '').trim().replace(/^["']+|["']+$/g, '');
+      }
 
       if (!rawKey) {
         return res.json({ 
           success: false,
-          error: "Chave da API OpenRouter não configurada. Cole sua chave sk-or-v1-... acima e salve para consultar a cota." 
+          error: "Nenhuma chave OpenRouter cadastrada. Adicione uma ou mais chaves (sk-or-v1-...) no pool ou no campo de chave acima para consultar cota e saldo." 
         });
       }
 
@@ -569,96 +573,88 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
         baseUrl = `${baseUrl}/api/v1`;
       }
 
+      // Preparar lista de chaves a tentar: chave solicitada primeiro, seguida das demais chaves ativas do pool
+      const poolKeys = openrouterKeysManager.getAllFreeKeys();
+      const keysToTry = [rawKey, ...poolKeys].filter((k, i, self) => k && k.length >= 8 && self.indexOf(k) === i);
+
       let keyData: any = null;
       let creditsData: any = null;
-      let authErrorMessage = '';
+      let lastErrorMessage = '';
+      let successfulKey = '';
 
-      // 1. Consultar status e limites da chave (/auth/key)
-      try {
-        const keyRes = await fetch(`${baseUrl}/auth/key`, {
-          method: 'GET',
-          headers: {
-            "Authorization": `Bearer ${rawKey}`,
-            "HTTP-Referer": "https://postforge.app",
-            "X-Title": "PostForge"
-          },
-          signal: AbortSignal.timeout(8000)
-        });
-
-        const keyText = await keyRes.text();
+      for (const currentKey of keysToTry) {
         try {
-          const parsed = JSON.parse(keyText);
-          if (keyRes.ok) {
-            keyData = parsed.data || parsed;
-          } else {
-            authErrorMessage = parsed?.error?.message || parsed?.message || `Erro HTTP ${keyRes.status} no OpenRouter`;
-          }
-        } catch {
-          if (!keyRes.ok) {
-            authErrorMessage = `Erro HTTP ${keyRes.status} ao consultar chave`;
-          }
-        }
-      } catch (fetchErr: any) {
-        console.warn("[OpenRouter Quota] Falha ao consultar /auth/key:", fetchErr.message);
-        authErrorMessage = fetchErr.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar OpenRouter (8s)' : (fetchErr.message || 'Falha de conexão com a API OpenRouter');
-      }
-
-      // 2. Se /auth/key não retornou, tentar /key como fallback
-      if (!keyData) {
-        try {
-          const altKeyRes = await fetch(`${baseUrl}/key`, {
+          const keyRes = await fetch(`${baseUrl}/auth/key`, {
             method: 'GET',
             headers: {
-              "Authorization": `Bearer ${rawKey}`,
+              "Authorization": `Bearer ${currentKey}`,
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
             },
             signal: AbortSignal.timeout(8000)
           });
-          if (altKeyRes.ok) {
-            const altText = await altKeyRes.text();
-            try {
-              const parsed = JSON.parse(altText);
-              keyData = parsed.data || parsed;
-              authErrorMessage = '';
-            } catch {}
-          }
-        } catch {}
-      }
 
-      // 3. Consultar saldo de créditos (/credits)
-      try {
-        const creditsRes = await fetch(`${baseUrl}/credits`, {
-          method: 'GET',
-          headers: {
-            "Authorization": `Bearer ${rawKey}`,
-            "HTTP-Referer": "https://postforge.app",
-            "X-Title": "PostForge"
-          },
-          signal: AbortSignal.timeout(8000)
-        });
-        if (creditsRes.ok) {
-          const creditsText = await creditsRes.text();
-          try {
-            const parsed = JSON.parse(creditsText);
-            creditsData = parsed.data || parsed;
-          } catch {}
+          const keyText = await keyRes.text();
+          let parsed: any = null;
+          try { parsed = JSON.parse(keyText); } catch {}
+
+          if (keyRes.ok) {
+            keyData = parsed?.data || parsed;
+            successfulKey = currentKey;
+            lastErrorMessage = '';
+
+            // Consultar saldo de créditos (/credits)
+            try {
+              const creditsRes = await fetch(`${baseUrl}/credits`, {
+                method: 'GET',
+                headers: {
+                  "Authorization": `Bearer ${currentKey}`,
+                  "HTTP-Referer": "https://postforge.app",
+                  "X-Title": "PostForge"
+                },
+                signal: AbortSignal.timeout(6000)
+              });
+              if (creditsRes.ok) {
+                const credText = await creditsRes.text();
+                const credParsed = JSON.parse(credText);
+                creditsData = credParsed?.data || credParsed;
+              }
+            } catch (err: any) {
+              console.warn("[OpenRouter Quota] Aviso ao consultar créditos:", err.message);
+            }
+
+            break; // Chave válida encontrada!
+          } else {
+            const rawMsg = parsed?.error?.message || parsed?.message || keyText || `HTTP ${keyRes.status}`;
+            if (keyRes.status === 401 || rawMsg.toLowerCase().includes('user not found')) {
+              openrouterKeysManager.markExhausted(currentKey, 'Chave não encontrada na conta (User not found)');
+              lastErrorMessage = "Chave OpenRouter não encontrada ou não autorizada na sua conta ('User not found'). Verifique suas chaves no painel openrouter.ai/keys.";
+            } else if (keyRes.status === 429 || rawMsg.toLowerCase().includes('quota') || rawMsg.toLowerCase().includes('rate limit')) {
+              openrouterKeysManager.markExhausted(currentKey, `Cota esgotada (429): ${rawMsg.slice(0, 100)}`);
+              lastErrorMessage = `Cota esgotada na chave OpenRouter (429): ${rawMsg.slice(0, 150)}`;
+            } else {
+              lastErrorMessage = rawMsg;
+            }
+          }
+        } catch (fetchErr: any) {
+          lastErrorMessage = fetchErr.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar OpenRouter (8s)' : (fetchErr.message || 'Falha de conexão com a API OpenRouter');
         }
-      } catch (err: any) {
-        console.warn("[OpenRouter Quota] Aviso ao consultar créditos:", err.message);
       }
 
       if (!keyData && !creditsData) {
         return res.json({
           success: false,
-          error: authErrorMessage || 'Não foi possível validar a chave junto ao OpenRouter. Verifique se a chave sk-or-v1-... está correta e ativa.'
+          error: lastErrorMessage || 'Não foi possível validar a chave junto ao OpenRouter. Verifique se as chaves sk-or-v1-... estão corretas no painel openrouter.ai/keys.',
+          openrouterStats: openrouterKeysManager.getStats()
         });
       }
 
       return res.json({
         success: true,
         keyInfo: keyData,
-        creditsInfo: creditsData
+        creditsInfo: creditsData,
+        activeKey: successfulKey ? (successfulKey.length > 10 ? `${successfulKey.substring(0, 8)}...${successfulKey.substring(successfulKey.length - 4)}` : 'Ativa') : undefined,
+        openrouterStats: openrouterKeysManager.getStats()
       });
     } catch (error: any) {
       console.error("OpenRouter Quota Handler Error:", error);

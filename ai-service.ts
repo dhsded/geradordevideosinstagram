@@ -585,9 +585,9 @@ export class AIService {
 
               console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}) com chave ${maskedKey}:`, errMsg);
 
-              if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key")) {
+              if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key") || errMsg.toLowerCase().includes("user not found")) {
                 keyIsExhaustedOrInvalid = true;
-                exhaustionReason = `Chave inválida (${response.status}): ${errMsg}`;
+                exhaustionReason = `Chave inválida ou não encontrada (${response.status}): ${errMsg}`;
                 break;
               }
 
