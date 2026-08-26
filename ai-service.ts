@@ -539,13 +539,12 @@ export class AIService {
         throw new Error("Nenhuma chave OpenRouter configurada. Por favor, adicione suas chaves OpenRouter (sk-or-v1-...) no Menu de I.As ou no arquivo .env.");
       }
 
-      if (!isFallback && triedKeys.has(activeKey)) {
+      // Prevenir loop infinito: se a chave (pool ou fallback) já foi tentada, encerrar
+      if (triedKeys.has(activeKey)) {
         throw new Error("Todas as chaves do OpenRouter cadastradas atingiram o limite temporário ou esgotamento de cotas.");
       }
 
-      if (!isFallback) {
-        triedKeys.add(activeKey);
-      }
+      triedKeys.add(activeKey);
 
       const maskedKey = maskKeyForLog(activeKey);
       let success = false;
@@ -651,18 +650,16 @@ export class AIService {
       }
 
       if (success) {
-        if (!isFallback) {
-          openrouterKeysManager.recordSuccess(activeKey);
-        }
+        openrouterKeysManager.recordSuccess(activeKey);
         return { 
           text: resultText,
           provider: 'openrouter',
           model: usedModel
         };
       } else {
-        if (!isFallback && keyIsExhaustedOrInvalid) {
+        if (keyIsExhaustedOrInvalid) {
           openrouterKeysManager.markExhausted(activeKey, exhaustionReason);
-        } else if (!isFallback) {
+        } else {
           openrouterKeysManager.recordError(activeKey, lastError?.message);
         }
         continue;
