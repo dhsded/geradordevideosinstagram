@@ -30,18 +30,28 @@ const getApiUrl = (endpoint: string): string => {
 };
 
 const apiFetch = async (endpoint: string, options: RequestInit = {}): Promise<Response> => {
+  // 1. Tentar URL direta calculada
   const primaryUrl = getApiUrl(endpoint);
   try {
-    return await fetch(primaryUrl, options);
+    const res = await fetch(primaryUrl, options);
+    return res;
   } catch (err: any) {
-    if (primaryUrl.startsWith('http://127.0.0.1:3000')) {
-      const fallbackUrl = primaryUrl.replace('http://127.0.0.1:3000', 'http://localhost:3000');
-      return await fetch(fallbackUrl, options);
-    } else if (primaryUrl.startsWith('http://localhost:3000')) {
-      const fallbackUrl = primaryUrl.replace('http://localhost:3000', 'http://127.0.0.1:3000');
-      return await fetch(fallbackUrl, options);
-    } else if (!primaryUrl.startsWith('http')) {
-      return await fetch(`http://127.0.0.1:3000${endpoint}`, options);
+    // 2. Se falhar, tentar endpoints alternativos imediatos (sem esperar 30s)
+    const altUrls: string[] = [];
+    if (primaryUrl !== endpoint && endpoint.startsWith('/')) {
+      altUrls.push(endpoint);
+    }
+    if (primaryUrl.includes('127.0.0.1:3000')) {
+      altUrls.push(primaryUrl.replace('127.0.0.1:3000', 'localhost:3000'));
+    } else if (primaryUrl.includes('localhost:3000')) {
+      altUrls.push(primaryUrl.replace('localhost:3000', '127.0.0.1:3000'));
+    }
+
+    for (const altUrl of altUrls) {
+      try {
+        const res = await fetch(altUrl, options);
+        return res;
+      } catch {}
     }
     throw err;
   }

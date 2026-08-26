@@ -135,7 +135,23 @@ export async function startServer(port = 3000) {
     }
   });
 
-  app.post(["/api/openrouter-keys/upload", "/api/openrouter-keys"], (req, res) => {
+  app.post("/api/openrouter-keys/upload", (req, res) => {
+    try {
+      const { keys, labelPrefix } = req.body;
+      if (!Array.isArray(keys)) {
+        return res.status(400).json({ error: "O campo 'keys' deve ser uma lista de strings (sk-or-v1-...)." });
+      }
+      const addedCount = openrouterKeysManager.addKeys(keys, labelPrefix);
+      res.json({
+        ...openrouterKeysManager.getStats(),
+        addedCount
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/openrouter-keys", (req, res) => {
     try {
       const { keys, labelPrefix } = req.body;
       if (!Array.isArray(keys)) {
