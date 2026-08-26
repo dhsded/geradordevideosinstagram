@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, utilityProcess, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 const http = require('http');
 
@@ -18,7 +19,8 @@ function startBackend() {
     backendProcess = spawn(npmCmd, ['run', 'dev'], {
       cwd: __dirname,
       env: { ...process.env, FORCE_COLOR: 'true' },
-      stdio: 'inherit'
+      stdio: 'inherit',
+      shell: true
     });
 
     backendProcess.on('error', (err) => {
@@ -97,6 +99,14 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  // Garantir que downloads vão automaticamente para a pasta Downloads
+  mainWindow.webContents.session.on('will-download', (event, item) => {
+    const downloadsFolder = path.join(os.homedir(), 'Downloads');
+    const targetFile = path.join(downloadsFolder, item.getFilename());
+    item.setSavePath(targetFile);
+    console.log(`[Electron Download] Salvando arquivo para: ${targetFile}`);
+  });
+
   mainWindow.loadURL('http://localhost:3000');
 
   mainWindow.once('ready-to-show', () => {
@@ -139,7 +149,7 @@ app.on('will-quit', () => {
         backendProcess.kill();
       }
       if (backendProcess.pid && process.platform === 'win32' && isDev) {
-        spawn('taskkill', ['/pid', backendProcess.pid, '/f', '/t']);
+        spawn('taskkill', ['/pid', String(backendProcess.pid), '/f', '/t'], { shell: true });
       }
     } catch (e) {
       console.error('Error stopping backend:', e);

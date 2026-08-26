@@ -182,25 +182,74 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }, true);
 
-  // Monitorar entradas de teclado em inputs e textareas
-  let inputTimeout = null;
-  document.addEventListener('input', (e) => {
-    const el = e.target;
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-      // Debounce para não inundar o host com mensagens a cada caractere
-      if (inputTimeout) clearTimeout(inputTimeout);
-      
-      inputTimeout = setTimeout(() => {
-        ipcRenderer.sendToHost('spy-input', {
-          tagName: el.tagName,
-          id: el.id || '',
-          className: typeof el.className === 'string' ? el.className : '',
-          name: el.name || el.placeholder || '',
-          value: el.value || el.innerText || '',
-          selector: getCssSelector(el),
-          xpath: getXPath(el)
-        });
-      }, 300);
+  // ==========================================
+  // EXECUTOR DE PASSOS AUTOMATIZADOS (RPA)
+  // ==========================================
+  ipcRenderer.on('spy-exec-step', (event, { actionId, step }) => {
+    try {
+      let targetEl = null;
+      if (step.seletor) {
+        try { targetEl = document.querySelector(step.seletor); } catch {}
+      }
+      if (!targetEl && step.xpath) {
+        try {
+          const result = document.evaluate(step.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          targetEl = result.singleNodeValue;
+        } catch {}
+      }
+
+      if (step.tipo === 'wait') {
+        setTimeout(() => {
+          ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Aguardado ${step.tempo_espera_ms || 1000}ms` });
+        }, step.tempo_espera_ms || 1000);
+        return;
+      }
+
+      if (!targetEl && step.tipo !== 'navigate') {
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: false, error: `Elemento não encontrado: "${step.seletor || step.xpath}"` });
+        return;
+      }
+
+      // Flash visual de execução
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const originalOutline = targetEl.style.outline;
+        const originalBg = targetEl.style.backgroundColor;
+        targetEl.style.outline = '3px solid #10b981';
+        targetEl.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+
+        setTimeout(() => {
+          targetEl.style.outline = originalOutline;
+          targetEl.style.backgroundColor = originalBg;
+        }, 1200);
+      }
+
+      if (step.tipo === 'click') {
+        targetEl.focus();
+        targetEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        targetEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        targetEl.click();
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Clique executado em: "${step.seletor}"` });
+      } else if (step.tipo === 'fill') {
+        targetEl.focus();
+        if ('value' in targetEl) {
+          targetEl.value = step.valor || '';
+        } else {
+          targetEl.innerText = step.valor || '';
+        }
+        targetEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        targetEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Texto preenchido com sucesso.` });
+      } else if (step.tipo === 'keypress') {
+        targetEl.dispatchEvent(new KeyboardEvent('keydown', { key: step.valor || 'Enter', code: step.valor || 'Enter', bubbles: true }));
+        targetEl.dispatchEvent(new KeyboardEvent('keyup', { key: step.valor || 'Enter', code: step.valor || 'Enter', bubbles: true }));
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Tecla pressionada: ${step.valor || 'Enter'}` });
+      } else {
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Ação ${step.tipo} executada.` });
+      }
+    } catch (err) {
+      console.error('[Spy Preload] Erro ao executar passo:', err);
+      ipcRenderer.sendToHost('spy-exec-result', { actionId, success: false, error: err.message });
     }
-  }, true);
+  });
 });

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { keysManager } from "./keys-manager";
+import { openrouterKeysManager } from "./openrouter-keys-manager";
 import { providersManager } from "./providers-manager";
 
 export interface AIContentPart {
@@ -174,7 +175,7 @@ export class AIService {
 
   /**
    * Ponto de entrada unificado para geração de conteúdo (Roteiros de Vídeo e Carrosséis)
-   * Com alternância bidirecional inteligente entre Gemini e OpenRouter caso as cotas se esgotem
+   * Com alternância bidirecional inteligente entre Gemini e OpenRouter caso todas as cotas se esgotem
    */
   public async generate(options: AIGenerateOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
@@ -199,16 +200,16 @@ export class AIService {
       try {
         return await this.generateWithOpenRouter(execOptions);
       } catch (openrouterErr: any) {
-        console.warn(`[Failover] Falha no OpenRouter (${openrouterErr.message}). Verificando disponibilidade do Gemini para failover...`);
+        console.warn(`[Failover] Todas as chaves/modelos do OpenRouter falharam (${openrouterErr.message}). Verificando disponibilidade do Gemini para failover...`);
         const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
         if (geminiKeyAvailable) {
-          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para Gemini após esgotamento do OpenRouter...`);
+          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para Google Gemini após esgotamento de todas as chaves OpenRouter...`);
           const geminiResult = await this.generateWithGemini(execOptions);
           return {
             ...geminiResult,
             failoverUsed: true,
             originalProvider: 'openrouter',
-            failoverReason: `Cota do OpenRouter esgotada / modelos ocupados (${openrouterErr.message})`
+            failoverReason: `Todas as chaves do OpenRouter atingiram o limite de cotas (${openrouterErr.message})`
           };
         }
         throw openrouterErr;
@@ -217,8 +218,8 @@ export class AIService {
       try {
         return await this.generateWithGemini(execOptions);
       } catch (geminiErr: any) {
-        console.warn(`[Failover] Falha no Gemini (${geminiErr.message}). Verificando disponibilidade do OpenRouter para failover...`);
-        const openrouterKeyAvailable = providersManager.getOpenRouterKey();
+        console.warn(`[Failover] Todas as chaves do Gemini falharam (${geminiErr.message}). Verificando disponibilidade do OpenRouter para failover...`);
+        const openrouterKeyAvailable = openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey();
         if (openrouterKeyAvailable) {
           console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para OpenRouter após esgotamento de todas as chaves do Gemini...`);
           const openrouterResult = await this.generateWithOpenRouter(execOptions);
@@ -226,7 +227,7 @@ export class AIService {
             ...openrouterResult,
             failoverUsed: true,
             originalProvider: 'gemini',
-            failoverReason: `Todas as cotas de chaves do Gemini foram esgotadas (${geminiErr.message})`
+            failoverReason: `Todas as chaves do Gemini atingiram o limite de cotas (${geminiErr.message})`
           };
         }
         throw geminiErr;
@@ -446,14 +447,10 @@ export class AIService {
   }
 
   /**
-   * Execução através do OpenRouter API compatível com OpenAI, com suporte a chave universal
+   * Execução através do OpenRouter API compatível com OpenAI, com suporte a pool rotativo de múltiplas chaves
    */
   private async generateWithOpenRouter(options: AIGenerateOptions): Promise<AIGenerateResult> {
-    const apiKey = providersManager.getOpenRouterKey();
-    if (!apiKey) {
-      throw new Error("Chave do OpenRouter não configurada. Por favor, cole sua chave OpenRouter (sk-or-v1-...) no Menu de I.As ou no arquivo .env.");
-    }
-
+    const triedKeys = new Set<string>();
     const baseUrl = providersManager.getOpenRouterBaseUrl();
     const configuredModel = providersManager.getOpenRouterModel();
     const primaryModel = options.model || configuredModel || "minimax/minimax-m3:free";
@@ -529,91 +526,148 @@ export class AIService {
         : userContentArray
     };
 
-    let lastError: any = null;
+    while (true) {
+      let activeKey = openrouterKeysManager.getActiveKey();
+      let isFallback = false;
 
-    for (const currentModel of modelsToTry) {
-      console.log(`[OpenRouter] Solicitando geração com modelo: ${currentModel}...`);
+      if (!activeKey) {
+        activeKey = providersManager.getOpenRouterKey();
+        isFallback = true;
+      }
 
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const response = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`,
-              "HTTP-Referer": "https://postforge.app",
-              "X-Title": "PostForge"
-            },
-            signal: AbortSignal.timeout(35000),
-            body: JSON.stringify({
-              model: currentModel,
-              messages: [systemMessage, userMessage],
-              response_format: { type: "json_object" },
-              temperature: 0.7,
-            })
-          });
+      if (!activeKey) {
+        throw new Error("Nenhuma chave OpenRouter configurada. Por favor, adicione suas chaves OpenRouter (sk-or-v1-...) no Menu de I.As ou no arquivo .env.");
+      }
 
-          if (!response.ok) {
-            const errText = await response.text();
-            let errJson: any = null;
-            try { errJson = JSON.parse(errText); } catch {}
-            const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+      if (!isFallback && triedKeys.has(activeKey)) {
+        throw new Error("Todas as chaves do OpenRouter cadastradas atingiram o limite temporário ou esgotamento de cotas.");
+      }
 
-            console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}):`, errMsg);
+      if (!isFallback) {
+        triedKeys.add(activeKey);
+      }
 
-            if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key")) {
-              throw new Error(`Chave do OpenRouter inválida ou não autorizada (${response.status}): ${errMsg}`);
-            }
+      const maskedKey = maskKeyForLog(activeKey);
+      let success = false;
+      let keyIsExhaustedOrInvalid = false;
+      let exhaustionReason = '';
+      let resultText = '';
+      let usedModel = primaryModel;
+      let lastError: any = null;
 
-            lastError = new Error(`OpenRouter ${currentModel}: ${errMsg}`);
-            break; // modelo ocupado ou sem cota, tentar próximo modelo da lista
-          }
+      for (const currentModel of modelsToTry) {
+        console.log(`[OpenRouter] Solicitando modelo ${currentModel} com chave ${maskedKey}...`);
 
-          const data: any = await response.json();
-          const rawContent = data?.choices?.[0]?.message?.content;
-          if (!rawContent) {
-            throw new Error(`OpenRouter retornou resposta vazia no modelo ${currentModel}.`);
-          }
-
-          let cleanText = rawContent.trim();
-          if (cleanText.startsWith('```json')) {
-            cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-          } else if (cleanText.startsWith('```')) {
-            cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-          }
-
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            JSON.parse(cleanText);
-          } catch (parseErr) {
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              cleanText = jsonMatch[0];
-              JSON.parse(cleanText);
-            } else {
-              throw new Error(`Modelo ${currentModel} não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
-            }
-          }
+            const response = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${activeKey}`,
+                "HTTP-Referer": "https://postforge.app",
+                "X-Title": "PostForge"
+              },
+              signal: AbortSignal.timeout(35000),
+              body: JSON.stringify({
+                model: currentModel,
+                messages: [systemMessage, userMessage],
+                response_format: { type: "json_object" },
+                temperature: 0.7,
+              })
+            });
 
-          console.log(`[OpenRouter] Geração concluída com sucesso usando modelo ${currentModel}!`);
-          return { 
-            text: cleanText,
-            provider: 'openrouter',
-            model: currentModel
-          };
-        } catch (err: any) {
-          lastError = err;
-          if (err.message?.includes("Chave do OpenRouter inválida")) {
-            throw err;
-          }
-          console.warn(`[OpenRouter] Falha na tentativa ${attempt + 1} do modelo ${currentModel}:`, err.message);
-          if (attempt === 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (!response.ok) {
+              const errText = await response.text();
+              let errJson: any = null;
+              try { errJson = JSON.parse(errText); } catch {}
+              const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+
+              console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}) com chave ${maskedKey}:`, errMsg);
+
+              if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key")) {
+                keyIsExhaustedOrInvalid = true;
+                exhaustionReason = `Chave inválida (${response.status}): ${errMsg}`;
+                break;
+              }
+
+              if (response.status === 429 || response.status === 402 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("credit") || errMsg.toLowerCase().includes("insufficient")) {
+                keyIsExhaustedOrInvalid = true;
+                exhaustionReason = `Cota/Crédito esgotado (${response.status}): ${errMsg}`;
+                break;
+              }
+
+              lastError = new Error(`OpenRouter ${currentModel}: ${errMsg}`);
+              break; // modelo ocupado, tentar próximo modelo da lista
+            }
+
+            const data: any = await response.json();
+            const rawContent = data?.choices?.[0]?.message?.content;
+            if (!rawContent) {
+              throw new Error(`OpenRouter retornou resposta vazia no modelo ${currentModel}.`);
+            }
+
+            let cleanText = rawContent.trim();
+            if (cleanText.startsWith('```json')) {
+              cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            } else if (cleanText.startsWith('```')) {
+              cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+            }
+
+            try {
+              JSON.parse(cleanText);
+            } catch (parseErr) {
+              const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                cleanText = jsonMatch[0];
+                JSON.parse(cleanText);
+              } else {
+                throw new Error(`Modelo ${currentModel} não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
+              }
+            }
+
+            console.log(`[OpenRouter] Geração concluída com sucesso usando modelo ${currentModel} (chave ${maskedKey})!`);
+            resultText = cleanText;
+            usedModel = currentModel;
+            success = true;
+            break;
+          } catch (err: any) {
+            lastError = err;
+            if (err.message?.includes("Chave inválida") || err.message?.includes("Cota/Crédito esgotado")) {
+              keyIsExhaustedOrInvalid = true;
+              exhaustionReason = err.message;
+              break;
+            }
+            console.warn(`[OpenRouter] Falha na tentativa ${attempt + 1} do modelo ${currentModel}:`, err.message);
+            if (attempt === 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
           }
         }
+
+        if (success || keyIsExhaustedOrInvalid) {
+          break;
+        }
+      }
+
+      if (success) {
+        if (!isFallback) {
+          openrouterKeysManager.recordSuccess(activeKey);
+        }
+        return { 
+          text: resultText,
+          provider: 'openrouter',
+          model: usedModel
+        };
+      } else {
+        if (!isFallback && keyIsExhaustedOrInvalid) {
+          openrouterKeysManager.markExhausted(activeKey, exhaustionReason);
+        } else if (!isFallback) {
+          openrouterKeysManager.recordError(activeKey, lastError?.message);
+        }
+        continue;
       }
     }
-
-    throw lastError || new Error("Falha ao gerar conteúdo com todos os modelos OpenRouter disponíveis.");
   }
 }
 

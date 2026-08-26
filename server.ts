@@ -1,10 +1,14 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import os from "os";
+import { exec } from "child_process";
+import JSZip from "jszip";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
+import { openrouterKeysManager } from "./openrouter-keys-manager";
 import { providersManager } from "./providers-manager";
 
 dotenv.config();
@@ -120,15 +124,298 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // ==========================================
+  // OPENROUTER MULTI-KEYS ENDPOINTS
+  // ==========================================
+  app.get("/api/openrouter-keys", (req, res) => {
+    try {
+      res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post(["/api/openrouter-keys/upload", "/api/openrouter-keys"], (req, res) => {
+    try {
+      const { keys, labelPrefix } = req.body;
+      if (!Array.isArray(keys)) {
+        return res.status(400).json({ error: "O campo 'keys' deve ser uma lista de strings (sk-or-v1-...)." });
+      }
+      const addedCount = openrouterKeysManager.addKeys(keys, labelPrefix);
+      res.json({
+        ...openrouterKeysManager.getStats(),
+        addedCount
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/openrouter-keys/reset", (req, res) => {
+    try {
+      openrouterKeysManager.resetStatuses();
+      res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.all(["/api/openrouter-keys/verify-all", "/api/openrouter-keys/check-all"], async (req, res) => {
+    try {
+      const results = await openrouterKeysManager.verifyAllKeys();
+      res.json(results);
+    } catch (error: any) {
+      console.error("Erro ao verificar chaves OpenRouter:", error);
+      res.status(500).json({ error: error.message || "Erro ao verificar cotas das chaves OpenRouter" });
+    }
+  });
+
+  app.post("/api/openrouter-keys/clear", (req, res) => {
+    try {
+      openrouterKeysManager.clearAll();
+      res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/openrouter-keys", (req, res) => {
+    try {
+      const target = req.body?.id || req.body?.key || req.query?.id || req.query?.key;
+      if (!target) {
+        return res.status(400).json({ error: "O identificador da chave é obrigatório para exclusão." });
+      }
+      openrouterKeysManager.removeKey(String(target));
+      res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/openrouter-keys/:id", (req, res) => {
+    try {
+      const target = req.params.id;
+      if (target === "all") {
+        openrouterKeysManager.clearAll();
+      } else {
+        openrouterKeysManager.removeKey(target);
+      }
+      res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // ESPIÃO FLOW & RPA EXECUTOR ENDPOINTS
+  // ==========================================
+  const MACROS_DIR = path.join(process.cwd(), 'macros');
+  if (!fs.existsSync(MACROS_DIR)) {
+    fs.mkdirSync(MACROS_DIR, { recursive: true });
+  }
+
+  // 1. Compreensão de Processos com IA (Visão Computacional + LLM)
+  app.post("/api/spy/understand-process", async (req, res) => {
+    try {
+      const { steps, targetUrl, userGoal, provider: reqProvider, model: reqModel } = req.body;
+
+      if (!Array.isArray(steps) || steps.length === 0) {
+        return res.status(400).json({ error: "Nenhum passo gravado foi fornecido para análise." });
+      }
+
+      const parts: any[] = [];
+      const promptText = `Você é um Engenheiro Sênior de RPA (Robotic Process Automation), Especialista em Automação Web e Visão Computacional.
+Sua missão é analisar a sequência de ações do usuário (cliques, digitações, navegações e capturas de tela) gravadas no Espião FLOW e:
+
+1. COMPREENDER O PROCESSO: Descubra qual ferramenta ou fluxo o usuário operou (ex: "Geração de imagens no Midjourney/Leonardo/Flux", "Criação de Carrossel no Canva", "Postagem no Instagram", etc.).
+2. IDENTIFICAR VARIÁVEIS DINÂMICAS: Encontre onde o usuário digitou textos ou prompts que podem ser parametrizados (ex: o usuário digitou "Um coração fofo com óculos...", converta em variável "{prompt_imagem}").
+3. SINTETIZAR O MACRO PARAMETRIZADO: Crie um fluxo de execução robusto, indicando seletores precisos, ações e tempos de espera adequados para replicação em larga escala.
+4. GERAR CÓDIGOS DE EXECUÇÃO: Forneça scripts limpos, comentados e autônomos em Puppeteer e Playwright.
+
+=== URL DO PROCESSO ===
+${targetUrl || 'Navegador Web'}
+
+${userGoal ? `=== OBJETIVO DECLARADO PELO USUÁRIO ===\n${userGoal}\n` : ''}
+
+=== SEQUÊNCIA DE PASSOS GRAVADOS (${steps.length} PASSOS) ===
+${steps.map((s: any, idx: number) => {
+  return `[Passo ${idx + 1}] Tipo: ${s.type.toUpperCase()} | Seletor: "${s.selector || ''}" | XPath: "${s.xpath || ''}" | Valor/Texto: "${s.value || ''}" | Descrição: "${s.description || ''}"`;
+}).join('\n')}
+
+Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
+
+      parts.push({ text: promptText });
+
+      // Adicionar capturas de tela anexadas aos passos (se houver)
+      steps.forEach((s: any, idx: number) => {
+        if (s.screenshot) {
+          parts.push({
+            text: `\n--- [SCREENSHOT DO PASSO ${idx + 1}: AÇÃO "${s.type.toUpperCase()}" NO SELETOR "${s.selector || ''}"] ---`
+          });
+          parts.push({
+            inlineData: {
+              mimeType: 'image/png',
+              data: s.screenshot.includes('base64,') ? s.screenshot.split('base64,')[1] : s.screenshot
+            }
+          });
+          parts.push({
+            text: `--- [FIM DO SCREENSHOT DO PASSO ${idx + 1}] ---\n`
+          });
+        }
+      });
+
+      const responseSchema = {
+        type: "OBJECT",
+        properties: {
+          nome_processo: { 
+            type: "STRING", 
+            description: "Nome claro e descritivo do processo identificado, ex: Geração Automatizada de Imagens no Midjourney" 
+          },
+          descricao_processo: { 
+            type: "STRING", 
+            description: "Explicação técnica e resumida do fluxo identificado e sua finalidade" 
+          },
+          resumo_passo_a_passo: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Resumo executivo das etapas do processo"
+          },
+          variaveis_identificadas: {
+            type: "ARRAY",
+            description: "Lista de campos e variáveis que podem ser substituídos dinamicamente em lote",
+            items: {
+              type: "OBJECT",
+              properties: {
+                nome_variavel: { type: "STRING", description: "Nome da variável em formato de tag, ex: {prompt_slide_1} ou {termo_pesquisa}" },
+                valor_original: { type: "STRING", description: "Texto original que o usuário havia digitado no passo" },
+                descricao: { type: "STRING", description: "Explicação sobre o que este parâmetro representa no fluxo" },
+                passo_index: { type: "INTEGER", description: "Índice do passo associado (1-indexed)" }
+              },
+              required: ["nome_variavel", "valor_original", "descricao", "passo_index"]
+            }
+          },
+          macro_parametrizado: {
+            type: "ARRAY",
+            description: "Sequência de passos de automação com suporte a variáveis e tolerância a atrasos",
+            items: {
+              type: "OBJECT",
+              properties: {
+                ordem: { type: "INTEGER", description: "Número sequencial da ação" },
+                tipo: { type: "STRING", description: "Tipo de ação: click, fill, wait, navigate, screenshot ou keypress" },
+                seletor: { type: "STRING", description: "Seletor CSS otimizado" },
+                xpath: { type: "STRING", description: "XPath do elemento" },
+                valor: { type: "STRING", description: "Valor ou texto da ação (pode conter tags de variáveis como {prompt})" },
+                variavel_associada: { type: "STRING", description: "Nome da variável se aplicável" },
+                descricao: { type: "STRING", description: "Explicação amigável da ação" },
+                tempo_espera_ms: { type: "INTEGER", description: "Tempo de espera recomendado em milissegundos após a ação" }
+              },
+              required: ["ordem", "tipo", "seletor", "descricao"]
+            }
+          },
+          codigo_puppeteer: { 
+            type: "STRING", 
+            description: "Script executável completo em Node.js com Puppeteer para rodar o macro" 
+          },
+          codigo_playwright: { 
+            type: "STRING", 
+            description: "Script executável completo em Node.js com Playwright para rodar o macro" 
+          }
+        },
+        required: ["nome_processo", "descricao_processo", "resumo_passo_a_passo", "variaveis_identificadas", "macro_parametrizado", "codigo_puppeteer", "codigo_playwright"]
+      };
+
+      const result = await aiService.generate({
+        parts,
+        responseSchema,
+        provider: reqProvider,
+        model: reqModel
+      });
+
+      res.json({
+        text: result.text,
+        provider: result.provider,
+        model: result.model,
+        failoverUsed: result.failoverUsed
+      });
+    } catch (error: any) {
+      console.error("Understand Process Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao compreender processo com IA." });
+    }
+  });
+
+  // 2. Salvar Macro na Biblioteca
+  app.post("/api/spy/save-macro", (req, res) => {
+    try {
+      const macro = req.body;
+      const macroId = macro.id || `macro_${Date.now()}`;
+      macro.id = macroId;
+      macro.updatedAt = new Date().toISOString();
+
+      const macroFilePath = path.join(MACROS_DIR, `${macroId}.json`);
+      fs.writeFileSync(macroFilePath, JSON.stringify(macro, null, 2), 'utf-8');
+      
+      // Também salvar o último em spy-macro.json para compatibilidade
+      fs.writeFileSync(path.join(process.cwd(), 'spy-macro.json'), JSON.stringify(macro, null, 2), 'utf-8');
+
+      res.json({ success: true, macroId, path: macroFilePath });
+    } catch (error: any) {
+      console.error("Save Macro Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 3. Listar Macros Salvos
+  app.get("/api/spy/list-macros", (req, res) => {
+    try {
+      if (!fs.existsSync(MACROS_DIR)) {
+        return res.json({ macros: [] });
+      }
+
+      const files = fs.readdirSync(MACROS_DIR).filter(f => f.endsWith('.json'));
+      const macros = files.map(file => {
+        try {
+          const content = fs.readFileSync(path.join(MACROS_DIR, file), 'utf-8');
+          return JSON.parse(content);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+
+      // Ordenar do mais recente para o mais antigo
+      macros.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+
+      res.json({ macros });
+    } catch (error: any) {
+      console.error("List Macros Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 4. Excluir Macro
+  app.delete("/api/spy/delete-macro/:id", (req, res) => {
+    try {
+      const macroId = req.params.id;
+      const macroFilePath = path.join(MACROS_DIR, `${macroId}.json`);
+      if (fs.existsSync(macroFilePath)) {
+        fs.unlinkSync(macroFilePath);
+        res.json({ success: true, message: "Macro excluído com sucesso." });
+      } else {
+        res.status(404).json({ error: "Macro não encontrado." });
+      }
+    } catch (error: any) {
+      console.error("Delete Macro Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Salvar análise simples
   app.post("/api/save-analysis", (req, res) => {
     try {
       const data = req.body;
       const filePath = path.join(process.cwd(), 'spy-analysis.json');
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-      console.log(`[Spy Server] Análise de tela salva em: ${filePath}`);
       res.json({ success: true, path: filePath });
     } catch (error: any) {
-      console.error("Save Analysis Error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -138,10 +425,8 @@ export async function startServer(port = 3000) {
       const data = req.body;
       const filePath = path.join(process.cwd(), 'spy-macro.json');
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-      console.log(`[Spy Server] Macro salvo em: ${filePath}`);
       res.json({ success: true, path: filePath });
     } catch (error: any) {
-      console.error("Save Macro Error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -613,22 +898,25 @@ export async function startServer(port = 3000) {
       const parts: any[] = [];
       const hasReferenceImages = Array.isArray(characterReferenceImages) && characterReferenceImages.length > 0;
 
-      const promptText = `Você é um Diretor de Arte, Auditor Visual e Especialista em Continuidade Cinematográfica e Consistência de Personagens para Instagram.
-Sua missão é realizar uma Auditoria Visual e Organização Sequencial das imagens geradas enviadas, mapeando-as rigorosamente de acordo com o roteiro/slides fornecido${hasReferenceImages ? ' e comparando a fidelidade física/estilística contra as IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM enviadas' : ''}.
+      const promptText = `Você é um Diretor de Arte Cinematográfico, Auditor Visual Sênior e Especialista em Storyboard e Consistência de Personagens para Instagram.
+Sua missão é realizar uma Auditoria Visual e Mapeamento de Alta Precisão das imagens geradas, associando cada imagem ao Slide/Cena exato do roteiro que ela representa${hasReferenceImages ? ' e avaliando a consistência anatômica/estilística contra as IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM enviadas' : ''}.
 
 === ROTEIRO / SEQUÊNCIA DE SLIDES ESPERADA ===
 ${scriptContext.trim()}
 
-${characterNotes ? `=== DIRETRIZES DE CONSISTÊNCIA DE PERSONAGEM E ESTILO ===\n${characterNotes.trim()}\n` : ''}
+${characterNotes ? `=== DIRETRIZES DE ESTILO E PERSONAGEM ===\n${characterNotes.trim()}\n` : ''}
 
-=== SUAS TAREFAS DE AUDITORIA ===
-1. Examine com atenção cada uma das imagens geradas fornecidas abaixo${hasReferenceImages ? ', comparando minuciosamente os traços anatômicos, cores, proporções e vestimentas contra as IMAGENS DE REFERÊNCIA OFICIAIS DO PERSONAGEM' : ''}.
-2. Identifique os traços do personagem, estilo visual, paleta de cores, expressão emocional e elementos de cena em cada imagem.
-3. Para CADA SLIDE do roteiro (Slide 1, Slide 2, etc.), selecione a melhor imagem correspondente entre as enviadas (identificada exatamente pelo nome do arquivo correspondente).
-4. Avalie a consistência visual em porcentagem (ex: "95%", "90%", "85%").
-5. Forneça um feedback visual detalhado explicando por que a imagem foi mapeada para aquele slide, destacando a fidelidade à narrativa e ao personagem.
-6. Se houver imagens sobressalentes que não foram utilizadas nos slides, liste-as com o motivo pelo qual não foram a melhor escolha para a sequência.
-7. Forneça uma análise resumida da consistência geral da coleção de imagens.
+=== PROTOCOLO DE ALTA PRECISÃO PARA MAPEAMENTO E AUDITORIA ===
+⚠️ ATENÇÃO CRÍTICA:
+1. NÃO ASSUMA QUE A IMAGEM 1 É O SLIDE 1: As imagens geradas foram enviadas em ordem arbitrária/aleatória. Você DEVE inspecionar profundamente o conteúdo visual de CADA imagem e cruzar com os requisitos de cada slide.
+2. CRITÉRIOS DE CORRESPONDÊNCIA OBRIGATÓRIOS:
+   - PERSONAGENS & EXPRESSÕES: Verifique quem está na imagem (Coração, Cérebro, Humano, etc.) e a emoção retratada (choro, sorriso, espanto, serenidade, raiva, dúvida).
+   - AÇÕES & OBJETOS EM CENA: Verifique adereços e ações específicos descritos no prompt de cada slide (ex: segurando lupa, mapa, espelho, debaixo de chuva, na frente de uma porta, olhando as estrelas).
+   - CENÁRIO & ILUMINAÇÃO: Verifique o ambiente (quarto escuro, rua movimentada, floresta, fundo minimalista, luz dourada, tempestade).
+   - PROGRESSÃO DRAMÁTICA: A sequência 1 -> 2 -> 3... deve contar a história do roteiro do começo ao fim sem saltos temporais incoerentes.
+3. REGRA DE EXCLUSIVIDADE: Cada imagem do lote só pode ser alocada a no máximo 1 slide. Não repita o mesmo arquivo de imagem em slides diferentes.
+4. IMAGENS SOBRESSALENTES: Se houver mais imagens do que slides (ou imagens de testes/descartes), aloque apenas as melhores para os slides e liste as restantes na seção "imagens_sobressalentes" com o motivo claro.
+5. JUSTIFICATIVA EXPLÍCITA: No campo "elementos_visuais_identificados", liste os elementos específicos vistos na imagem que comprovam a escolha daquele slide.
 
 Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
 
@@ -657,12 +945,12 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
 
       // Imagens do lote a serem auditadas e organizadas
       parts.push({
-        text: `\n=== LOTE DE IMAGENS GERADAS A SEREM AUDITADAS E MAPEADAS (${images.length} IMAGENS) ===\n`
+        text: `\n=== LOTE DE IMAGENS GERADAS A SEREM AUDITADAS E MAPEADAS (${images.length} IMAGENS) ===\nInspecione cada arquivo detalhadamente antes de decidir para qual slide ele pertence:\n`
       });
 
       images.forEach((img: { name: string; mimeType: string; data: string }, index: number) => {
         parts.push({
-          text: `\n--- [INÍCIO DA IMAGEM GERADA ${index + 1}: ARQUIVO "${img.name}"] ---`
+          text: `\n--- [INÍCIO DA IMAGEM GERADA #${index + 1} | NOME DO ARQUIVO: "${img.name}"] ---`
         });
         parts.push({
           inlineData: {
@@ -671,44 +959,49 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
           }
         });
         parts.push({
-          text: `--- [FIM DA IMAGEM GERADA: ARQUIVO "${img.name}"] ---\n`
+          text: `--- [FIM DA IMAGEM GERADA #${index + 1}: "${img.name}"] ---\n`
         });
       });
 
       const responseSchema = {
         type: "OBJECT",
         properties: {
+          nome_sugerido_projeto: {
+            type: "STRING",
+            description: "Slug limpo sem acentos ou caracteres especiais para nomear o arquivo ZIP, ex: Ansiedade_Guia_Pratico"
+          },
           resumo_geral_consistencia: { 
             type: "STRING", 
-            description: "Resumo executivo sobre a consistência dos personagens, estilo artístico e iluminação." 
+            description: "Resumo executivo sobre a consistência dos personagens, estilo artístico, paleta e iluminação de toda a sequência." 
           },
           pontuacao_media_geral: { 
             type: "STRING", 
-            description: "Média percentual de consistência de toda a sequência, ex: 92%" 
+            description: "Média percentual de consistência e alinhamento de toda a sequência, ex: 94%" 
           },
           auditoria_imagens: {
             type: "ARRAY",
-            description: "Lista ordenada sequencialmente de slides com suas respectivas imagens mapeadas",
+            description: "Lista ordenada sequencialmente dos slides (1, 2, 3...) com suas respectivas imagens mapeadas com máxima precisão",
             items: {
               type: "OBJECT",
               properties: {
                 slide_numero: { type: "INTEGER", description: "Número sequencial do slide (1, 2, 3...)" },
-                descricao_esperada: { type: "STRING", description: "Resumo do que era esperado neste slide" },
-                imagem_arquivo_correspondente: { type: "STRING", description: "Nome exato do arquivo de imagem correspondente que melhor representa este slide" },
+                descricao_esperada: { type: "STRING", description: "Resumo do que era esperado neste slide de acordo com o roteiro/prompt" },
+                imagem_arquivo_correspondente: { type: "STRING", description: "Nome exato do arquivo de imagem correspondente selecionado para este slide" },
+                elementos_visuais_identificados: { type: "STRING", description: "Elementos visuais concretos encontrados na imagem que comprovam a correspondência com o slide (personagem, objetos, emoção, cenário)" },
                 pontuacao_consistencia: { type: "STRING", description: "Porcentagem de correspondência e consistência, ex: 95%" },
-                feedback_visual: { type: "STRING", description: "Explicação detalhada da escolha e fidelidade visual" },
+                feedback_visual: { type: "STRING", description: "Análise crítica da fidelidade visual e narrativa da imagem em relação ao roteiro" },
                 destaque_pontos_fortes: { 
                   type: "ARRAY", 
                   items: { type: "STRING" },
-                  description: "Pontos fortes visuais e de consistência" 
+                  description: "Pontos fortes visuais, de consistência e impacto" 
                 },
                 alertas_inconsistencia: { 
                   type: "ARRAY", 
                   items: { type: "STRING" },
-                  description: "Eventuais pequenas inconsistências ou sugestões de melhoria" 
+                  description: "Eventuais pequenas divergências visuais ou recomendações" 
                 }
               },
-              required: ["slide_numero", "descricao_esperada", "imagem_arquivo_correspondente", "pontuacao_consistencia", "feedback_visual"]
+              required: ["slide_numero", "descricao_esperada", "imagem_arquivo_correspondente", "elementos_visuais_identificados", "pontuacao_consistencia", "feedback_visual"]
             }
           },
           imagens_sobressalentes: {
@@ -718,7 +1011,7 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
               type: "OBJECT",
               properties: {
                 nome_arquivo: { type: "STRING", description: "Nome do arquivo não utilizado" },
-                motivo_descarte: { type: "STRING", description: "Motivo pelo qual a imagem não entrou na sequência final" }
+                motivo_descarte: { type: "STRING", description: "Motivo detalhado pelo qual a imagem foi descartada ou substituída na sequência final" }
               },
               required: ["nome_arquivo", "motivo_descarte"]
             }
@@ -745,6 +1038,319 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
     } catch (error: any) {
       console.error("Audit Images Error:", error);
       res.status(500).json({ error: error.message || "Erro durante auditoria de imagens." });
+    }
+  });
+
+  // API Route - SUPER AUDITOR MULTI-PROJETOS (Separa múltiplos roteiros e distribui imagens misturadas)
+  app.post("/api/audit-multi-projects", async (req, res) => {
+    try {
+      const { images, characterReferenceImages, scriptsText, characterNotes, provider: reqProvider, model: reqModel } = req.body;
+      
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "Nenhuma imagem foi fornecida para auditoria multi-projetos." });
+      }
+
+      if (!scriptsText || typeof scriptsText !== 'string' || !scriptsText.trim()) {
+        return res.status(400).json({ error: "O texto dos roteiros é obrigatório." });
+      }
+
+      const parts: any[] = [];
+      const promptText = `Você é um Diretor de Arte Executivo Sênior e Especialista em Clusterização Semântica e Visão Computacional.
+O usuário enviou um LOTE GERAL com VÁRIAS IMAGENS MISTURADAS (${images.length} imagens) e UM OU MÚLTIPLOS ROTEIROS DE CARROSSEL / VÍDEO.
+
+Sua missão é executar o PROTOCOLO DE AUTO-SEPARAÇÃO & CLUSTERIZAÇÃO EM LARGA ESCALA:
+1. IDENTIFICAÇÃO DE PROJETOS: Analise o texto de entrada e identifique quantos projetos/roteiros distintos foram fornecidos. Dê um "titulo_projeto" claro e um "nome_arquivo_zip_sugerido" (slug limpo, sem acentos ou espaços, ex: "Ansiedade_Guia_Pratico", "Treino_Hipertrofia_Iniciante", "Top10_Filmes_Suspense").
+2. CLUSTERIZAÇÃO DE IMAGENS: Para CADA projeto identificado, inspecione todas as imagens do lote geral e descubra quais imagens pertencem especificamente àquele roteiro (personagens, cenário, estilo e contexto).
+3. ORDENAÇÃO CRONOLÓGICA: Ordene as imagens de cada projeto exatamente na sequência de slides 1, 2, 3... da sua narrativa.
+4. ELEMENTOS IDENTIFICADOS: Preencha o campo "elementos_visuais_identificados" com os traços visuais concretos que comprovam a alocação daquela imagem naquele slide.
+5. SOBRESSALENTES: Se houver imagens extras do mesmo tema que não entraram nos slides principais, coloque na lista "imagens_sobressalentes" daquele projeto.
+6. EXCLUSIVIDADE ABSOLUTA: Cada arquivo de imagem só pode ser atribuído a no máximo 1 slide de 1 projeto.
+
+=== TEXTO DOS ROTEIROS FORNECIDOS ===
+${scriptsText.trim()}
+
+${characterNotes ? `=== DIRETRIZES DE PERSONAGENS / NOTAS GERAIS ===\n${characterNotes.trim()}\n` : ''}
+
+=== LOTE GERAL DE IMAGENS A SEREM CLUSTERIZADAS E ORDENADAS (${images.length} IMAGENS) ===
+Analise cada imagem abaixo e distribua entre os projetos identificados:`;
+
+      parts.push({ text: promptText });
+
+      // Se houver imagens de referência
+      if (Array.isArray(characterReferenceImages) && characterReferenceImages.length > 0) {
+        parts.push({
+          text: `\n=== IMAGENS DE REFERÊNCIA OFICIAIS DE PERSONAGENS ===\n`
+        });
+        characterReferenceImages.forEach((refImg: any, rIdx: number) => {
+          parts.push({ text: `\n[REFERÊNCIA OFICIAL ${rIdx + 1}: "${refImg.name}"]` });
+          parts.push({
+            inlineData: {
+              mimeType: refImg.mimeType || 'image/png',
+              data: refImg.data.includes('base64,') ? refImg.data.split('base64,')[1] : refImg.data
+            }
+          });
+        });
+      }
+
+      // Adicionar todas as imagens enviadas
+      images.forEach((img: { name: string; mimeType: string; data: string }, index: number) => {
+        parts.push({
+          text: `\n--- [IMAGEM DO LOTE #${index + 1} | ARQUIVO: "${img.name}"] ---`
+        });
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType || 'image/png',
+            data: img.data.includes('base64,') ? img.data.split('base64,')[1] : img.data
+          }
+        });
+        parts.push({
+          text: `--- [FIM DA IMAGEM #${index + 1}: "${img.name}"] ---\n`
+        });
+      });
+
+      const responseSchema = {
+        type: "OBJECT",
+        properties: {
+          resumo_geral_auditoria: { 
+            type: "STRING", 
+            description: "Visão geral sobre a clusterização, quantidade de projetos identificados e aproveitamento das imagens." 
+          },
+          projetos: {
+            type: "ARRAY",
+            description: "Lista de todos os projetos/roteiros identificados com suas respectivas imagens clusterizadas e ordenadas",
+            items: {
+              type: "OBJECT",
+              properties: {
+                id: { type: "STRING", description: "ID único do projeto, ex: proj_1, proj_2" },
+                titulo_projeto: { type: "STRING", description: "Título claro do roteiro/projeto identificado, ex: Psicologia: Ansiedade Infantil" },
+                nome_arquivo_zip_sugerido: { type: "STRING", description: "Slug limpo sem acentos ou caracteres especiais para nomear o arquivo .zip, ex: Ansiedade_Infantil_Guia" },
+                resumo_narrativo: { type: "STRING", description: "Breve resumo do que este projeto/carrossel trata" },
+                pontuacao_media: { type: "STRING", description: "Pontuação média de consistência deste projeto, ex: 94%" },
+                roteiro_associado: { type: "STRING", description: "Trecho do roteiro identificado que pertence a este projeto" },
+                slides_ordenados: {
+                  type: "ARRAY",
+                  description: "Sequência cronológica de slides deste projeto",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      slide_numero: { type: "INTEGER", description: "Número sequencial do slide (1, 2, 3...)" },
+                      imagem_arquivo_correspondente: { type: "STRING", description: "Nome exato do arquivo de imagem selecionado para este slide" },
+                      descricao_esperada: { type: "STRING", description: "Descrição do que ocorre neste slide" },
+                      feedback_visual: { type: "STRING", description: "Análise crítica de por que esta imagem foi alocada aqui" },
+                      elementos_visuais_identificados: { type: "STRING", description: "Elementos visuais identificados na imagem (personagem, emoção, cenário, objetos)" },
+                      pontuacao_consistencia: { type: "STRING", description: "Pontuação de consistência, ex: 95%" }
+                    },
+                    required: ["slide_numero", "imagem_arquivo_correspondente", "descricao_esperada", "feedback_visual", "elementos_visuais_identificados", "pontuacao_consistencia"]
+                  }
+                },
+                imagens_sobressalentes: {
+                  type: "ARRAY",
+                  description: "Imagens que pertencem ao tema deste projeto mas não entraram na sequência ativa",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      nome_arquivo: { type: "STRING", description: "Nome do arquivo" },
+                      motivo_descarte: { type: "STRING", description: "Motivo de ter ficado como sobressalente" }
+                    },
+                    required: ["nome_arquivo", "motivo_descarte"]
+                  }
+                }
+              },
+              required: ["id", "titulo_projeto", "nome_arquivo_zip_sugerido", "resumo_narrativo", "pontuacao_media", "slides_ordenados"]
+            }
+          },
+          imagens_descartadas_globais: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Imagens que não pertencem a nenhum dos roteiros fornecidos"
+          }
+        },
+        required: ["resumo_geral_auditoria", "projetos"]
+      };
+
+      const result = await aiService.generate({
+        parts,
+        responseSchema,
+        provider: reqProvider,
+        model: reqModel
+      });
+
+      res.json({
+        text: result.text,
+        provider: result.provider,
+        model: result.model,
+        failoverUsed: result.failoverUsed,
+        originalProvider: result.originalProvider,
+        failoverReason: result.failoverReason
+      });
+    } catch (error: any) {
+      console.error("Audit Multi Projects Error:", error);
+      res.status(500).json({ error: error.message || "Erro durante auditoria multi-projetos." });
+    }
+  });
+
+  // API Route - Export Ordered Images ZIP & Save to Downloads
+  app.post("/api/export-ordered-zip", async (req, res) => {
+    try {
+      const { images, surplusImages, reportText, scriptText, customZipName } = req.body;
+      if (!images || !Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "Nenhuma imagem informada para exportação." });
+      }
+
+      const zip = new JSZip();
+      const imagesFolder = zip.folder("imagens_ordenadas");
+
+      // Adicionar imagens ordenadas
+      for (const img of images) {
+        if (!img.base64 || !img.filename) continue;
+        const cleanBase64 = img.base64.includes('base64,') ? img.base64.split('base64,')[1] : img.base64;
+        const safeName = img.filename.replace(/[<>:"/\\|?*]/g, '_');
+        imagesFolder?.file(safeName, Buffer.from(cleanBase64, 'base64'));
+      }
+
+      // Adicionar imagens sobressalentes se houver
+      if (surplusImages && Array.isArray(surplusImages) && surplusImages.length > 0) {
+        const surplusFolder = zip.folder("imagens_sobressalentes");
+        for (const s of surplusImages) {
+          if (!s.base64 || !s.filename) continue;
+          const cleanBase64 = s.base64.includes('base64,') ? s.base64.split('base64,')[1] : s.base64;
+          const safeName = s.filename.replace(/[<>:"/\\|?*]/g, '_');
+          surplusFolder?.file(safeName, Buffer.from(cleanBase64, 'base64'));
+        }
+      }
+
+      // Adicionar relatório em texto
+      if (reportText) {
+        zip.file("relatorio_auditoria_postforge.txt", reportText);
+      }
+
+      // Adicionar roteiro de referência
+      if (scriptText) {
+        zip.file("roteiro_referencia.txt", scriptText);
+      }
+
+      const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
+      const now = new Date();
+      const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+      const zipName = customZipName || `PostForge_Imagens_Sequenciais_${timestamp}.zip`;
+
+      // Salvar na pasta Downloads do usuário
+      const userDownloads = path.join(os.homedir(), 'Downloads');
+      let savedPath: string | null = null;
+
+      try {
+        if (!fs.existsSync(userDownloads)) {
+          fs.mkdirSync(userDownloads, { recursive: true });
+        }
+        const targetFile = path.join(userDownloads, zipName);
+        fs.writeFileSync(targetFile, zipBuffer);
+        savedPath = targetFile;
+        console.log(`[Export Server] ZIP salvo automaticamente na pasta Downloads: ${targetFile}`);
+      } catch (saveErr: any) {
+        console.warn(`[Export Server] Aviso ao salvar direto em Downloads:`, saveErr.message);
+      }
+
+      // Também salvar uma cópia temporária na pasta do projeto se necessário
+      const localTempDir = path.join(process.cwd(), 'temp_exports');
+      try {
+        if (!fs.existsSync(localTempDir)) {
+          fs.mkdirSync(localTempDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(localTempDir, zipName), zipBuffer);
+      } catch {}
+
+      res.json({
+        success: true,
+        filename: zipName,
+        savedPath,
+        sizeBytes: zipBuffer.length,
+        downloadUrl: `/api/download-temp-zip?file=${encodeURIComponent(zipName)}`
+      });
+    } catch (error: any) {
+      console.error("Export Ordered Zip Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao gerar arquivo ZIP das imagens." });
+    }
+  });
+
+  // Salvar ZIP diretamente via stream binário ultra-rápido (< 20ms)
+  app.post("/api/save-zip-stream", express.raw({ type: "*/*", limit: "300mb" }), (req, res) => {
+    try {
+      const filename = (req.query.name as string) || `PostForge_Imagens_${Date.now()}.zip`;
+      const safeName = path.basename(filename).replace(/[<>:"/\\|?*]/g, '_');
+      const userDownloads = path.join(os.homedir(), 'Downloads');
+      
+      if (!fs.existsSync(userDownloads)) {
+        fs.mkdirSync(userDownloads, { recursive: true });
+      }
+
+      const targetPath = path.join(userDownloads, safeName);
+      fs.writeFileSync(targetPath, req.body);
+      console.log(`[Export Server Stream] ZIP gravado instantaneamente em Downloads: ${targetPath}`);
+
+      // Salvar temp copy
+      const localTempDir = path.join(process.cwd(), 'temp_exports');
+      if (!fs.existsSync(localTempDir)) {
+        fs.mkdirSync(localTempDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(localTempDir, safeName), req.body);
+
+      res.json({
+        success: true,
+        filename: safeName,
+        savedPath: targetPath,
+        sizeBytes: (req.body as Buffer).length,
+        downloadUrl: `/api/download-temp-zip?file=${encodeURIComponent(safeName)}`
+      });
+    } catch (err: any) {
+      console.error("Save Zip Stream Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API Route - Baixar arquivo gerado via link HTTP direto
+  app.get("/api/download-temp-zip", (req, res) => {
+    try {
+      const filename = req.query.file as string;
+      if (!filename) return res.status(400).send("Filename missing");
+      
+      const cleanFilename = path.basename(filename);
+      const userDownloads = path.join(os.homedir(), 'Downloads');
+      const targetDownloads = path.join(userDownloads, cleanFilename);
+      const targetTemp = path.join(process.cwd(), 'temp_exports', cleanFilename);
+
+      let targetPath = fs.existsSync(targetDownloads) ? targetDownloads : fs.existsSync(targetTemp) ? targetTemp : null;
+
+      if (targetPath) {
+        res.download(targetPath, cleanFilename);
+      } else {
+        res.status(404).send("Arquivo não encontrado.");
+      }
+    } catch (e: any) {
+      res.status(500).send(e.message);
+    }
+  });
+
+  // API Route - Abrir pasta de Downloads / Arquivo no Explorer
+  app.post("/api/open-folder", (req, res) => {
+    try {
+      const { targetPath } = req.body;
+      const pathToOpen = targetPath || path.join(os.homedir(), 'Downloads');
+      
+      if (process.platform === 'win32') {
+        if (fs.existsSync(pathToOpen) && fs.statSync(pathToOpen).isFile()) {
+          exec(`explorer.exe /select,"${pathToOpen.replace(/\//g, '\\')}"`);
+        } else {
+          exec(`explorer.exe "${pathToOpen.replace(/\//g, '\\')}"`);
+        }
+      } else if (process.platform === 'darwin') {
+        exec(`open "${pathToOpen}"`);
+      } else {
+        exec(`xdg-open "${pathToOpen}"`);
+      }
+      res.json({ success: true, opened: pathToOpen });
+    } catch (e: any) {
+      console.error("Open Folder Error:", e);
+      res.status(500).json({ error: e.message });
     }
   });
 

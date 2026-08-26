@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -54,8 +54,10 @@ interface GeneratedPrompts {
 }
 
 interface GeneratedCarousel {
+  title?: string;
+  theme?: string;
   language?: DialogueLanguage | string;
-  coverImagePrompt: string;
+  coverImagePrompt?: string;
   slides: {
     slideNumber: number;
     imagePromptEn: string;
@@ -156,6 +158,7 @@ interface AuditSlideResult {
   slide_numero: number;
   descricao_esperada: string;
   imagem_arquivo_correspondente: string;
+  elementos_visuais_identificados?: string;
   pontuacao_consistencia: string;
   feedback_visual: string;
   destaque_pontos_fortes?: string[];
@@ -172,6 +175,80 @@ interface AuditResult {
   pontuacao_media_geral?: string;
   auditoria_imagens: AuditSlideResult[];
   imagens_sobressalentes?: AuditSurplusImage[];
+}
+
+// Interfaces do Espião FLOW e Executor RPA em Larga Escala
+export interface SpyRecordedStep {
+  id: number;
+  type: 'click' | 'input' | 'keypress' | 'wait' | 'navigate' | 'screenshot';
+  selector: string;
+  xpath?: string;
+  tagName?: string;
+  text?: string;
+  name?: string;
+  value?: string;
+  description: string;
+  screenshot?: string;
+  timestamp?: string;
+}
+
+export interface SpyVariableItem {
+  nome_variavel: string;
+  valor_original: string;
+  descricao: string;
+  passo_index: number;
+}
+
+export interface SpyMacroStep {
+  ordem: number;
+  tipo: 'click' | 'fill' | 'wait' | 'navigate' | 'screenshot' | 'keypress';
+  seletor: string;
+  xpath?: string;
+  valor?: string;
+  variavel_associada?: string;
+  descricao: string;
+  tempo_espera_ms?: number;
+}
+
+export interface SpyMacro {
+  id: string;
+  nome_processo: string;
+  descricao_processo: string;
+  targetUrl: string;
+  resumo_passo_a_passo: string[];
+  variaveis_identificadas: SpyVariableItem[];
+  macro_parametrizado: SpyMacroStep[];
+  codigo_puppeteer?: string;
+  codigo_playwright?: string;
+  updatedAt?: string;
+}
+
+export interface ExecutorBatchItem {
+  id: string;
+  label?: string;
+  params: Record<string, string>;
+  status: 'pending' | 'running' | 'success' | 'failed';
+  log?: string;
+  screenshot?: string;
+}
+
+export interface AuditMultiProjectItem {
+  id: string;
+  titulo_projeto: string;
+  nome_arquivo_zip_sugerido: string;
+  resumo_narrativo: string;
+  pontuacao_media: string;
+  roteiro_associado?: string;
+  slides_ordenados: AuditSlideResult[];
+  imagens_sobressalentes: AuditSurplusImage[];
+  zipBlob?: Blob;
+  savedPath?: string;
+}
+
+export interface MultiProjectAuditResponse {
+  resumo_geral_auditoria: string;
+  projetos: AuditMultiProjectItem[];
+  imagens_descartadas_globais?: string[];
 }
 
 export interface ExecutionLogItem {
@@ -240,13 +317,30 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [hoveredElement, setHoveredElement] = useState<any>(null);
   const [selectedElement, setSelectedElement] = useState<any>(null);
-  const [recordedSteps, setRecordedSteps] = useState<any[]>([]);
+  const [recordedSteps, setRecordedSteps] = useState<SpyRecordedStep[]>([]);
   const [preloadPath, setPreloadPath] = useState<string>('');
   const [webviewCanGoBack, setWebviewCanGoBack] = useState(false);
   const [webviewCanGoForward, setWebviewCanGoForward] = useState(false);
   const [isWebviewLoading, setIsWebviewLoading] = useState(false);
   const [activeSpyScriptTab, setActiveSpyScriptTab] = useState<'json' | 'puppeteer' | 'playwright'>('json');
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: '', type: '' });
+
+  // Estados do Espião FLOW com IA e Executor em Larga Escala (RPA)
+  const [spySubTab, setSpySubTab] = useState<'recorder' | 'macro' | 'executor' | 'library'>('recorder');
+  const [isAnalyzingProcess, setIsAnalyzingProcess] = useState(false);
+  const [userProcessGoalInput, setUserProcessGoalInput] = useState('');
+  const [activeMacro, setActiveMacro] = useState<SpyMacro | null>(null);
+  const [savedMacrosList, setSavedMacrosList] = useState<SpyMacro[]>([]);
+  const [isLoadingMacros, setIsLoadingMacros] = useState(false);
+  
+  // Estados do Executor em Larga Escala
+  const [executorBatchItems, setExecutorBatchItems] = useState<ExecutorBatchItem[]>([]);
+  const [isExecutorRunning, setIsExecutorRunning] = useState(false);
+  const [isExecutorPaused, setIsExecutorPaused] = useState(false);
+  const [executorCurrentIndex, setExecutorCurrentIndex] = useState(0);
+  const [executorCurrentStepIndex, setExecutorCurrentStepIndex] = useState(0);
+  const [executorDelayBetweenSteps, setExecutorDelayBetweenSteps] = useState(1500);
+  const [executorDelayBetweenItems, setExecutorDelayBetweenItems] = useState(3000);
 
   const [niche, setNiche] = useState(NICHES[0]);
   const [animationStyle, setAnimationStyle] = useState(ANIMATION_STYLES[0]);
@@ -286,6 +380,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GeneratedPrompts | null>(null);
   const [carouselResult, setCarouselResult] = useState<GeneratedCarousel | null>(null);
+  const [carouselQuantity, setCarouselQuantity] = useState<number>(1);
+  const [batchCarouselResults, setBatchCarouselResults] = useState<GeneratedCarousel[]>([]);
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState<number>(0);
 
   // Video Analysis states
   const [videoFile, setVideoFile] = useState<{data: string, mimeType: string} | null>(null);
@@ -307,6 +404,23 @@ export default function App() {
   const [auditImageModalUrl, setAuditImageModalUrl] = useState<{ url: string; title: string } | null>(null);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [isDragOverAudit, setIsDragOverAudit] = useState(false);
+
+  // Estados de Pré-visualização & Ordenação Interativa de Imagens
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewTab, setPreviewTab] = useState<'ordered' | 'surplus' | 'report'>('ordered');
+  const [orderedSlidesList, setOrderedSlidesList] = useState<AuditSlideResult[]>([]);
+  const [surplusImagesList, setSurplusImagesList] = useState<AuditSurplusImage[]>([]);
+  const [downloadSuccessInfo, setDownloadSuccessInfo] = useState<{
+    filename: string;
+    savedPath: string | null;
+    sizeBytes?: number;
+    downloadUrl?: string;
+  } | null>(null);
+
+  // Estados de Auditoria Multi-Projetos & Multi-Roteiros
+  const [multiProjectsResult, setMultiProjectsResult] = useState<MultiProjectAuditResponse | null>(null);
+  const [activeMultiProjectIndex, setActiveMultiProjectIndex] = useState<number>(0);
+  const [isDownloadingAllZips, setIsDownloadingAllZips] = useState<boolean>(false);
 
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
@@ -469,6 +583,22 @@ export default function App() {
   const [isLoadingQuota, setIsLoadingQuota] = useState(false);
   const [quotaError, setQuotaError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (auditImageModalUrl) {
+          setAuditImageModalUrl(null);
+        } else if (isPreviewModalOpen) {
+          setIsPreviewModalOpen(false);
+        } else if (isKeyManagerOpen) {
+          setIsKeyManagerOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [auditImageModalUrl, isPreviewModalOpen, isKeyManagerOpen]);
+
   const fetchOpenRouterQuota = async (keyOverride?: string) => {
     const keyToUse = (keyOverride !== undefined ? keyOverride : openrouterKeyInput.trim()).trim();
     setIsLoadingQuota(true);
@@ -539,6 +669,35 @@ export default function App() {
     free: number;
     exhausted: number;
   } | null>(null);
+
+  // Estados de Múltiplas Chaves OpenRouter com Pool Rotativo
+  const [openrouterKeysStats, setOpenrouterKeysStats] = useState<{
+    total: number;
+    free: number;
+    exhausted: number;
+    keysList: Array<{
+      id: string;
+      keyMasked: string;
+      label?: string;
+      status: 'free' | 'exhausted';
+      successCount: number;
+      errorCount: number;
+      addedAt: string;
+      lastVerified?: string;
+      lastError?: string;
+      creditsRemaining?: number;
+    }>;
+  }>({ total: 0, free: 0, exhausted: 0, keysList: [] });
+  const [openrouterMultiKeysInput, setOpenrouterMultiKeysInput] = useState('');
+  const [isUploadingOpenRouterKeys, setIsUploadingOpenRouterKeys] = useState(false);
+  const [isVerifyingOpenRouterKeys, setIsVerifyingOpenRouterKeys] = useState(false);
+  const [openrouterVerificationReport, setOpenrouterVerificationReport] = useState<{
+    verifiedAt: string;
+    total: number;
+    free: number;
+    exhausted: number;
+  } | null>(null);
+
   const [lastGenerationMeta, setLastGenerationMeta] = useState<{
     provider?: string;
     model?: string;
@@ -547,6 +706,150 @@ export default function App() {
     failoverReason?: string;
   } | null>(null);
   const [keyManagerError, setKeyManagerError] = useState<string | null>(null);
+
+  const fetchOpenRouterKeys = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/openrouter-keys'));
+      if (res.ok) {
+        const data = await res.json();
+        setOpenrouterKeysStats(data);
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar chaves OpenRouter:', e);
+    }
+  };
+
+  const handleAddOpenRouterMultiKeys = async () => {
+    if (!openrouterMultiKeysInput.trim()) return;
+    const rawKeys = openrouterMultiKeysInput.split(/[\r\n,;]+/).map(k => k.trim()).filter(Boolean);
+    if (rawKeys.length === 0) return;
+
+    setIsUploadingOpenRouterKeys(true);
+    setKeyManagerError(null);
+    try {
+      const res = await fetch(getApiUrl('/api/openrouter-keys'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: rawKeys, labelPrefix: 'Conta' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOpenrouterKeysStats(data);
+        setOpenrouterMultiKeysInput('');
+        addLog('success', 'OPENROUTER', `${data.addedCount || rawKeys.length} chave(s) OpenRouter adicionada(s) ao pool!`);
+        fetchOpenRouterQuota();
+      }
+    } catch (err: any) {
+      setKeyManagerError(`Erro ao adicionar chaves OpenRouter: ${err.message}`);
+    } finally {
+      setIsUploadingOpenRouterKeys(false);
+    }
+  };
+
+  const handleOpenRouterKeysFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingOpenRouterKeys(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/[\r\n,;]+/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+        if (lines.length === 0) {
+          alert('Nenhuma chave encontrada no arquivo .txt selecionado.');
+          return;
+        }
+        const res = await fetch(getApiUrl('/api/openrouter-keys'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: lines, labelPrefix: 'Arquivo' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setOpenrouterKeysStats(data);
+          addLog('success', 'OPENROUTER', `${lines.length} chave(s) OpenRouter importada(s) com sucesso.`);
+          fetchOpenRouterQuota();
+        }
+      } catch (err: any) {
+        setKeyManagerError(`Erro ao carregar arquivo de chaves OpenRouter: ${err.message}`);
+      } finally {
+        setIsUploadingOpenRouterKeys(false);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleResetOpenRouterKeys = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/openrouter-keys/reset'), { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setOpenrouterKeysStats(data);
+        addLog('success', 'OPENROUTER', 'Todas as chaves OpenRouter foram reativadas (status: Livre).');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleRemoveOpenRouterKey = async (id: string) => {
+    try {
+      const res = await fetch(getApiUrl(`/api/openrouter-keys/${encodeURIComponent(id)}`), { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setOpenrouterKeysStats(data);
+        addLog('info', 'OPENROUTER', 'Chave OpenRouter removida.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleVerifyAllOpenRouterKeys = async () => {
+    setIsVerifyingOpenRouterKeys(true);
+    setKeyManagerError(null);
+    addLog('info', 'OPENROUTER', 'Iniciando verificação de cotas de todas as chaves OpenRouter...');
+    try {
+      const res = await fetch(getApiUrl('/api/openrouter-keys/verify-all'), { method: 'POST' });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
+      }
+
+      setOpenrouterVerificationReport({
+        verifiedAt: data.verifiedAt,
+        total: data.total,
+        free: data.free,
+        exhausted: data.exhausted
+      });
+      await fetchOpenRouterKeys();
+      addLog('success', 'OPENROUTER', `Verificação de cotas OpenRouter concluída: ${data.free} ativas, ${data.exhausted} esgotadas/inválidas.`);
+    } catch (err: any) {
+      console.error('Erro na verificação de chaves OpenRouter:', err);
+      setKeyManagerError(err.message || 'Erro ao verificar chaves OpenRouter.');
+      addLog('error', 'OPENROUTER', `Falha ao testar chaves OpenRouter: ${err.message}`);
+    } finally {
+      setIsVerifyingOpenRouterKeys(false);
+    }
+  };
+
+  const handleClearOpenRouterKeys = async () => {
+    if (!confirm('Deseja realmente remover todas as chaves OpenRouter cadastradas?')) return;
+    try {
+      const res = await fetch(getApiUrl('/api/openrouter-keys/clear'), { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setOpenrouterKeysStats(data);
+        addLog('info', 'OPENROUTER', 'Todas as chaves OpenRouter foram removidas.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
 
   const handleVerifyAllKeys = async () => {
     setIsVerifyingKeys(true);
@@ -605,6 +908,7 @@ export default function App() {
           setKeysStats(data.geminiStats);
         }
       }
+      await fetchOpenRouterKeys();
     } catch (err) {
       console.error('Erro ao buscar estatísticas de provedores:', err);
     }
@@ -612,6 +916,7 @@ export default function App() {
 
   React.useEffect(() => {
     fetchProvidersAndStats();
+    fetchOpenRouterKeys();
   }, []);
 
   React.useEffect(() => {
@@ -636,12 +941,27 @@ export default function App() {
     getPreload();
   }, []);
 
+  // Helper para capturar snapshot visual do Webview
+  const captureWebviewSnapshot = async (): Promise<string | undefined> => {
+    try {
+      const webview = webviewRef.current;
+      if (!webview) return undefined;
+      if (typeof webview.capturePage === 'function') {
+        const nativeImg = await webview.capturePage();
+        return nativeImg.toDataURL();
+      }
+    } catch (e) {
+      console.warn('Erro ao capturar snapshot do webview:', e);
+    }
+    return undefined;
+  };
+
   // Monitorar e anexar listeners do Webview
   React.useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
 
-    const handleIpcMessage = (event: any) => {
+    const handleIpcMessage = async (event: any) => {
       const { channel, args } = event;
       const data = args[0];
 
@@ -659,6 +979,8 @@ export default function App() {
           const desc = data.tagName === 'BUTTON' || data.tagName === 'A' 
             ? `Clicar no botão/link "${data.text || data.id || data.className || 'Sem texto'}"` 
             : `Clicar no elemento <${data.tagName.toLowerCase()}>`;
+
+          const snapshot = await captureWebviewSnapshot();
             
           setRecordedSteps(prev => [...prev, {
             id: stepId,
@@ -667,12 +989,15 @@ export default function App() {
             xpath: data.xpath,
             tagName: data.tagName,
             text: data.text,
-            description: desc
+            description: desc,
+            screenshot: snapshot,
+            timestamp: new Date().toLocaleTimeString('pt-BR')
           }]);
         }
       } else if (channel === 'spy-input') {
         if (isRecording) {
           const stepId = Date.now();
+          const snapshot = await captureWebviewSnapshot();
           // Agrupar inputs seguidos no mesmo seletor para evitar redundância
           setRecordedSteps(prev => {
             const last = prev[prev.length - 1];
@@ -681,7 +1006,8 @@ export default function App() {
               updated[updated.length - 1] = {
                 ...last,
                 value: data.value,
-                description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`
+                description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`,
+                screenshot: snapshot || last.screenshot
               };
               return updated;
             }
@@ -693,7 +1019,9 @@ export default function App() {
               tagName: data.tagName,
               name: data.name,
               value: data.value,
-              description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`
+              description: `Digitar "${data.value}" no campo "${data.name || data.id || 'Sem nome'}"`,
+              screenshot: snapshot,
+              timestamp: new Date().toLocaleTimeString('pt-BR')
             }];
           });
         }
@@ -783,89 +1111,267 @@ export default function App() {
     setRecordedSteps(prev => prev.filter(s => s.id !== id));
   };
 
-  const handleSyncMacroToAi = async () => {
-    if (recordedSteps.length === 0) return;
+  const handleUnderstandProcessWithAi = async () => {
+    if (recordedSteps.length === 0) {
+      alert('Grave pelo menos uma ação no navegador antes de analisar o processo com IA.');
+      return;
+    }
+    setIsAnalyzingProcess(true);
+    setSyncStatus({ message: 'A IA está analisando seu fluxo e identificando o macro...', type: '' });
+    addLog('ai', 'ESPIÃO', `Iniciando análise com IA de ${recordedSteps.length} passos gravados...`);
+
     try {
-      setSyncStatus({ message: 'Enviando macro...', type: '' });
-      const payload = {
-        url: spyUrl,
-        timestamp: new Date().toISOString(),
-        steps: recordedSteps
-      };
-      const response = await fetch('/api/save-macro', {
+      const modelToUse = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
+      const response = await fetch(getApiUrl('/api/spy/understand-process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          steps: recordedSteps,
+          targetUrl: spyUrl,
+          userGoal: userProcessGoalInput,
+          provider: activeProvider,
+          model: modelToUse
+        })
       });
-      if (response.ok) {
-        setSyncStatus({ message: 'Macro sincronizado com o IA! ("spy-macro.json" salvo)', type: 'success' });
-        setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
-      } else {
-        throw new Error('Falha ao salvar macro no servidor.');
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || `Erro HTTP ${response.status}`);
       }
+
+      const data = await response.json();
+      let cleanText = data.text.trim();
+      if (cleanText.startsWith('```json')) cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      else if (cleanText.startsWith('```')) cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+
+      const parsed: SpyMacro = JSON.parse(cleanText);
+      parsed.id = `macro_${Date.now()}`;
+      parsed.targetUrl = spyUrl;
+      parsed.updatedAt = new Date().toISOString();
+
+      setActiveMacro(parsed);
+      setSpySubTab('macro');
+      setSyncStatus({ message: `Processo "${parsed.nome_processo}" sintetizado com sucesso!`, type: 'success' });
+      addLog('success', 'ESPIÃO', `Processo "${parsed.nome_processo}" sintetizado com sucesso pela IA (${parsed.variaveis_identificadas?.length || 0} variáveis detectadas)!`);
     } catch (err: any) {
-      setSyncStatus({ message: `Erro ao sincronizar: ${err.message}`, type: 'error' });
-      setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
+      console.error('Erro na análise de processo:', err);
+      setSyncStatus({ message: `Erro ao analisar processo: ${err.message}`, type: 'error' });
+      addLog('error', 'ESPIÃO', `Falha ao compreender processo: ${err.message}`);
+    } finally {
+      setIsAnalyzingProcess(false);
     }
   };
 
-  const handleAnalyzePageForAi = async () => {
+  const handleSaveActiveMacro = async () => {
+    if (!activeMacro) return;
+    try {
+      const response = await fetch(getApiUrl('/api/spy/save-macro'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(activeMacro)
+      });
+      if (response.ok) {
+        setSyncStatus({ message: 'Macro salvo na biblioteca com sucesso!', type: 'success' });
+        addLog('success', 'ESPIÃO', `Macro "${activeMacro.nome_processo}" salvo na biblioteca.`);
+        handleLoadMacrosList();
+      }
+    } catch (err: any) {
+      setSyncStatus({ message: `Erro ao salvar macro: ${err.message}`, type: 'error' });
+    }
+  };
+
+  const handleLoadMacrosList = async () => {
+    setIsLoadingMacros(true);
+    try {
+      const response = await fetch(getApiUrl('/api/spy/list-macros'));
+      if (response.ok) {
+        const data = await response.json();
+        setSavedMacrosList(data.macros || []);
+      }
+    } catch (err: any) {
+      console.warn('Erro ao carregar macros:', err);
+    } finally {
+      setIsLoadingMacros(false);
+    }
+  };
+
+  const handleDeleteMacro = async (macroId: string) => {
+    try {
+      const response = await fetch(getApiUrl(`/api/spy/delete-macro/${macroId}`), {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        addLog('info', 'ESPIÃO', `Macro excluído da biblioteca.`);
+        handleLoadMacrosList();
+        if (activeMacro?.id === macroId) setActiveMacro(null);
+      }
+    } catch (err: any) {
+      console.warn('Erro ao excluir macro:', err);
+    }
+  };
+
+  const handlePullItemsFromPostForge = () => {
+    if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
+      const items: ExecutorBatchItem[] = carouselResult.slides.map(s => ({
+        id: `slide_${s.slideNumber}`,
+        label: `Slide ${s.slideNumber}`,
+        params: {
+          "{prompt_imagem}": s.imagePromptEn || '',
+          "{prompt}": s.imagePromptEn || '',
+          "{texto_slide}": s.descriptionPt || '',
+          "{titulo}": topic || '',
+          "{numero_slide}": String(s.slideNumber)
+        },
+        status: 'pending'
+      }));
+      setExecutorBatchItems(items);
+      setSpySubTab('executor');
+      addLog('info', 'EXECUTOR', `${items.length} slides importados do Carrossel para o Executor em Lote.`);
+    } else if (result && result.scenes && result.scenes.length > 0) {
+      const items: ExecutorBatchItem[] = result.scenes.map(s => ({
+        id: `scene_${s.sceneNumber}`,
+        label: `Cena ${s.sceneNumber} (${s.duration}s)`,
+        params: {
+          "{prompt_imagem}": s.videoPromptEn || '',
+          "{prompt}": s.videoPromptEn || '',
+          "{texto_slide}": s.contextPt || '',
+          "{titulo}": topic || '',
+          "{numero_slide}": String(s.sceneNumber)
+        },
+        status: 'pending'
+      }));
+      setExecutorBatchItems(items);
+      setSpySubTab('executor');
+      addLog('info', 'EXECUTOR', `${items.length} cenas importadas do Vídeo para o Executor em Lote.`);
+    } else {
+      alert('Nenhum carrossel ou vídeo foi gerado na sessão atual. Você pode adicionar itens manualmente na tabela.');
+    }
+  };
+
+  const handleStartBatchExecution = async () => {
+    if (!activeMacro || !activeMacro.macro_parametrizado || activeMacro.macro_parametrizado.length === 0) {
+      alert('Selecione ou gere um Macro com IA antes de iniciar o executor.');
+      setSpySubTab('macro');
+      return;
+    }
+    if (executorBatchItems.length === 0) {
+      alert('Adicione pelo menos um item para execução em lote.');
+      return;
+    }
+
+    setIsExecutorRunning(true);
+    setIsExecutorPaused(false);
+    addLog('ai', 'EXECUTOR', `Iniciando Execução em Larga Escala: ${executorBatchItems.length} itens no macro "${activeMacro.nome_processo}"...`);
+
+    for (let i = 0; i < executorBatchItems.length; i++) {
+      setExecutorCurrentIndex(i);
+      const currentItem = executorBatchItems[i];
+
+      setExecutorBatchItems(prev => {
+        const next = [...prev];
+        next[i] = { ...next[i], status: 'running', log: 'Iniciando execução do item...' };
+        return next;
+      });
+
+      addLog('info', 'EXECUTOR', `[Item ${i + 1}/${executorBatchItems.length}] Executando: "${currentItem.label || `Item ${i + 1}`}"`);
+
+      try {
+        for (let sIdx = 0; sIdx < activeMacro.macro_parametrizado.length; sIdx++) {
+          setExecutorCurrentStepIndex(sIdx);
+          const step = activeMacro.macro_parametrizado[sIdx];
+
+          // Substituir variáveis dinâmicas no valor do step
+          let resolvedValue = step.valor || '';
+          if (resolvedValue) {
+            Object.entries(currentItem.params).forEach(([varName, varVal]) => {
+              resolvedValue = resolvedValue.split(varName).join(varVal);
+            });
+            if (resolvedValue.includes('{prompt}') && currentItem.params['{prompt_imagem}']) {
+              resolvedValue = resolvedValue.split('{prompt}').join(currentItem.params['{prompt_imagem}']);
+            }
+          }
+
+          const resolvedStep = { ...step, valor: resolvedValue };
+
+          // Disparar ação para o Webview
+          if (webviewRef.current) {
+            const actionId = `act_${Date.now()}_${sIdx}`;
+            webviewRef.current.send('spy-exec-step', { actionId, step: resolvedStep });
+          }
+
+          // Aguardar tempo de delay configurado
+          const delay = Math.max(step.tempo_espera_ms || 1000, executorDelayBetweenSteps);
+          await new Promise(r => setTimeout(r, delay));
+        }
+
+        // Capturar screenshot final do item
+        const finalScreenshot = await captureWebviewSnapshot();
+
+        setExecutorBatchItems(prev => {
+          const next = [...prev];
+          next[i] = { ...next[i], status: 'success', log: 'Concluído com sucesso.', screenshot: finalScreenshot };
+          return next;
+        });
+
+        addLog('success', 'EXECUTOR', `[Item ${i + 1}/${executorBatchItems.length}] Concluído com sucesso!`);
+
+        if (i < executorBatchItems.length - 1) {
+          await new Promise(r => setTimeout(r, executorDelayBetweenItems));
+        }
+      } catch (err: any) {
+        setExecutorBatchItems(prev => {
+          const next = [...prev];
+          next[i] = { ...next[i], status: 'failed', log: `Erro: ${err.message}` };
+          return next;
+        });
+        addLog('error', 'EXECUTOR', `[Item ${i + 1}/${executorBatchItems.length}] Falha: ${err.message}`);
+      }
+    }
+
+    setIsExecutorRunning(false);
+    addLog('success', 'EXECUTOR', 'Execução em lote finalizada!');
+  };
+
+  const handleStopBatchExecution = () => {
+    setIsExecutorRunning(false);
+    addLog('warning', 'EXECUTOR', 'Execução em lote interrompida pelo usuário.');
+  };
+
+  const handleAnalyzePage = async () => {
     if (!webviewRef.current) return;
     try {
-      setSyncStatus({ message: 'Analisando DOM da página...', type: '' });
-      
+      setSyncStatus({ message: 'Analisando elementos da página...', type: 'info' });
       const extractionScript = `
-        (() => {
+        (function() {
+          const allElements = Array.from(document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"]'));
           const interactives = [];
-          const allElements = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [onclick]');
           const parsed = new Set();
           
           function getCssSelector(el) {
-            if (!(el instanceof Element)) return '';
+            if (!(el instanceof Element)) return;
             const path = [];
-            let current = el;
-            while (current && current.nodeType === Node.ELEMENT_NODE) {
-              let selector = current.nodeName.toLowerCase();
-              if (current.id) {
-                selector += '#' + current.id;
+            while (el.nodeType === Node.ELEMENT_NODE) {
+              let selector = el.nodeName.toLowerCase();
+              if (el.id) {
+                selector += '#' + el.id;
                 path.unshift(selector);
                 break;
               } else {
-                let className = '';
-                if (current.className && typeof current.className === 'string') {
-                  const classes = current.className.trim().split(/\\\\s+/).filter(c => !c.includes(':') && !c.startsWith('nano-banana'));
-                  if (classes.length > 0) {
-                    className = '.' + classes.slice(0, 3).join('.');
-                  }
-                }
-                selector += className;
-                let sibling = current;
+                let sibling = el;
                 let nth = 1;
                 while (sibling = sibling.previousElementSibling) {
-                  if (sibling.nodeName.toLowerCase() === current.nodeName.toLowerCase()) nth++;
+                  if (sibling.nodeName.toLowerCase() === selector) nth++;
                 }
-                let hasNextSibling = false;
-                let nextSibling = current;
-                while (nextSibling = nextSibling.nextElementSibling) {
-                  if (nextSibling.nodeName.toLowerCase() === current.nodeName.toLowerCase()) {
-                    hasNextSibling = true;
-                    break;
-                  }
-                }
-                if (nth > 1 || hasNextSibling) {
-                  selector += \`:nth-of-type(\${nth})\`;
-                }
+                selector += ':nth-of-type(' + nth + ')';
               }
               path.unshift(selector);
-              current = current.parentNode;
+              el = el.parentElement;
             }
             return path.join(' > ');
           }
 
-          function getXPath(el) {
-            if (!(el instanceof Element)) return '';
+          function getXPath(current) {
             const paths = [];
-            let current = el;
             for (; current && current.nodeType === Node.ELEMENT_NODE; current = current.parentNode) {
               let index = 0;
               let hasSiblings = false;
@@ -880,7 +1386,7 @@ export default function App() {
                 }
               }
               const tagName = current.nodeName.toLowerCase();
-              const pathIndex = (index || hasSiblings) ? \`[\${index + 1}]\` : '';
+              const pathIndex = (index || hasSiblings) ? '[' + (index + 1) + ']' : '';
               paths.unshift(tagName + pathIndex);
             }
             return paths.length ? '/' + paths.join('/') : null;
@@ -935,7 +1441,6 @@ export default function App() {
       setTimeout(() => setSyncStatus({ message: '', type: '' }), 5000);
     }
   };
-
 
   const handleKeysFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1435,14 +1940,24 @@ export default function App() {
   const handlePullScriptFromGeneration = () => {
     setAuditError(null);
     setAuditDocumentInfo(null);
-    if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
-      let scriptText = `=== CARROSSEL GERADO: ${topic || 'Carrossel Sem Título'} ===\n\n`;
-      carouselResult.slides.forEach((s) => {
-        const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
-        scriptText += `Slide ${s.slideNumber}:\n`;
-        scriptText += `- Descrição Visual: ${s.descriptionPt}\n`;
-        scriptText += `- Prompt de Imagem: ${s.imagePromptEn}\n`;
-        scriptText += `- Diálogo / Texto em Balões: "${bubbleText}"\n\n`;
+
+    if (batchCarouselResults && batchCarouselResults.length > 1) {
+      let scriptText = '';
+      batchCarouselResults.forEach((car, cIdx) => {
+        const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+        scriptText += `=== PROJETO ${cIdx + 1}: ${cTitle.toUpperCase()} ===\n`;
+        if (car.instagramPost) {
+          scriptText += `Contexto/Legenda: ${car.instagramPost.substring(0, 140)}...\n\n`;
+        }
+        car.slides?.forEach((s) => {
+          const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
+          scriptText += `[SLIDE ${s.slideNumber}]\n`;
+          scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
+          scriptText += `• Prompt Visual de Geração (Midjourney / DALL-E): ${s.imagePromptEn}\n`;
+          if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+          scriptText += `\n`;
+        });
+        scriptText += `----------------------------------------------------\n\n`;
       });
       setAuditScriptInput(scriptText.trim());
       
@@ -1453,17 +1968,39 @@ export default function App() {
       ].filter(Boolean).join('\n');
       
       setAuditCharacterNotes(charNotes);
+      addLog('info', 'AUDITORIA', `${batchCarouselResults.length} roteiros de carrossel puxados e organizados por projeto.`);
+    } else if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
+      let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${carouselResult.slides.length} SLIDES): ${carouselResult.title || topic || 'Carrossel Sem Título'} ===\n\n`;
+      carouselResult.slides.forEach((s) => {
+        const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
+        scriptText += `[SLIDE ${s.slideNumber}]\n`;
+        scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
+        scriptText += `• Prompt Visual de Geração (Midjourney / DALL-E): ${s.imagePromptEn}\n`;
+        if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+        scriptText += `\n`;
+      });
+      setAuditScriptInput(scriptText.trim());
+      
+      const charNotes = [
+        artStyle ? `Estilo Visual: ${artStyle}` : '',
+        carouselTone ? `Tom Narrativo: ${carouselTone}` : '',
+        characterDescription ? `Personagens: ${characterDescription}` : 'Personagens principais com consistência de traço, iluminação e cores'
+      ].filter(Boolean).join('\n');
+      
+      setAuditCharacterNotes(charNotes);
+      addLog('info', 'AUDITORIA', `Roteiro de ${carouselResult.slides.length} slides puxado do Carrossel com prompts visuais completos.`);
     } else if (result && result.scenes && result.scenes.length > 0) {
-      let scriptText = `=== ROTEIRO DE VÍDEO GERADO: ${topic || 'Vídeo Sem Título'} ===\n\n`;
+      let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${result.scenes.length} CENAS): ${topic || 'Vídeo Sem Título'} ===\n\n`;
       if (result.nanoBananaImagePrompt) {
-        scriptText += `Capa do Vídeo (PostForge):\n- Prompt: ${result.nanoBananaImagePrompt}\n\n`;
+        scriptText += `[CAPA DO VÍDEO]\n• Prompt Visual: ${result.nanoBananaImagePrompt}\n\n`;
       }
       result.scenes.forEach((s) => {
         const dialogueText = s.dialoguePt || s.dialogueEn || s.dialogueEs || s.dialogue || '';
-        scriptText += `Slide / Cena ${s.sceneNumber} (${s.duration}s):\n`;
-        scriptText += `- Contexto da Cena: ${s.contextPt}\n`;
-        scriptText += `- Prompt Visual: ${s.videoPromptEn}\n`;
-        scriptText += `- Diálogo / Narração: "${dialogueText}"\n\n`;
+        scriptText += `[CENA / SLIDE ${s.sceneNumber}] (${s.duration}s)\n`;
+        scriptText += `• Contexto da Cena: ${s.contextPt}\n`;
+        scriptText += `• Prompt Visual de Geração: ${s.videoPromptEn}\n`;
+        if (dialogueText) scriptText += `• Diálogo / Narração: "${dialogueText}"\n`;
+        scriptText += `\n`;
       });
       setAuditScriptInput(scriptText.trim());
 
@@ -1474,9 +2011,23 @@ export default function App() {
       ].filter(Boolean).join('\n');
 
       setAuditCharacterNotes(charNotes);
+      addLog('info', 'AUDITORIA', `Roteiro de ${result.scenes.length} cenas puxado do Vídeo com prompts visuais completos.`);
     } else {
       setAuditError('Nenhum roteiro ou carrossel gerado foi encontrado na sessão. Gere um na aba Vídeo/Carrossel ou carregue um arquivo .PDF / .DOC / .TXT diretamente.');
     }
+  };
+
+  const handleSelectCarouselIndex = (index: number) => {
+    if (batchCarouselResults[index]) {
+      setActiveCarouselIndex(index);
+      setCarouselResult(batchCarouselResults[index]);
+    }
+  };
+
+  const handleSendAllCarouselsToAudit = () => {
+    handlePullScriptFromGeneration();
+    setActiveTab('audit');
+    addLog('info', 'AUDITORIA', 'Todos os roteiros foram enviados para a Auditoria Visual! Agora faça o upload das imagens para separação e download.');
   };
 
   const handleRunAudit = async () => {
@@ -1513,13 +2064,13 @@ export default function App() {
           mimeType: img.mimeType,
           data: img.base64
         })),
-        scriptContext: auditScriptInput,
+        scriptsText: auditScriptInput,
         characterNotes: auditCharacterNotes,
         provider: activeProvider,
         model: modelToUse
       };
 
-      const response = await fetch(getApiUrl('/api/audit-images'), {
+      const response = await fetch(getApiUrl('/api/audit-multi-projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -1558,9 +2109,25 @@ export default function App() {
         cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
       }
 
-      const parsed: AuditResult = JSON.parse(cleanText);
-      setAuditResult(parsed);
-      addLog('success', 'AUDITORIA', `Auditoria concluída com sucesso! ${parsed.auditoria_imagens?.length || 0} slide(s) mapeado(s) e ordenado(s). Consistência média: ${parsed.pontuacao_media_geral || 'N/A'}`);
+      const parsed: MultiProjectAuditResponse = JSON.parse(cleanText);
+      setMultiProjectsResult(parsed);
+      setActiveMultiProjectIndex(0);
+
+      const firstProj = parsed.projetos?.[0];
+      if (firstProj) {
+        setOrderedSlidesList(firstProj.slides_ordenados || []);
+        setSurplusImagesList(firstProj.imagens_sobressalentes || []);
+        setAuditResult({
+          resumo_geral_consistencia: parsed.resumo_geral_auditoria || firstProj.resumo_narrativo,
+          pontuacao_media_geral: firstProj.pontuacao_media,
+          auditoria_imagens: firstProj.slides_ordenados || [],
+          imagens_sobressalentes: firstProj.imagens_sobressalentes || []
+        });
+      }
+
+      setDownloadSuccessInfo(null);
+      setIsPreviewModalOpen(true); // Abre o preview automaticamente após organizar as imagens
+      addLog('success', 'AUDITORIA', `Auditoria Multi-Projetos concluída! ${parsed.projetos?.length || 0} projeto(s) identificado(s) e separado(s) com sucesso.`);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         addLog('warning', 'AUDITORIA', 'Auditoria cancelada pelo usuário.');
@@ -1575,15 +2142,143 @@ export default function App() {
     }
   };
 
-  const handleDownloadOrderedImagesZip = async () => {
-    if (!auditResult || !auditResult.auditoria_imagens || auditResult.auditoria_imagens.length === 0) return;
+  const handleSelectMultiProject = (index: number) => {
+    if (!multiProjectsResult?.projetos || !multiProjectsResult.projetos[index]) return;
+    const proj = multiProjectsResult.projetos[index];
+    setActiveMultiProjectIndex(index);
+    setOrderedSlidesList(proj.slides_ordenados || []);
+    setSurplusImagesList(proj.imagens_sobressalentes || []);
+    setAuditResult({
+      resumo_geral_consistencia: proj.resumo_narrativo || multiProjectsResult.resumo_geral_auditoria,
+      pontuacao_media_geral: proj.pontuacao_media,
+      auditoria_imagens: proj.slides_ordenados || [],
+      imagens_sobressalentes: proj.imagens_sobressalentes || []
+    });
+    addLog('info', 'AUDITORIA', `Projeto ativo alterado para: "${proj.titulo_projeto}" (${proj.slides_ordenados?.length || 0} slides).`);
+  };
+
+  const handleMoveSlideUp = (index: number) => {
+    if (index <= 0) return;
+    setOrderedSlidesList(prev => {
+      const next = [...prev];
+      const temp = next[index - 1];
+      next[index - 1] = { ...next[index], slide_numero: index };
+      next[index] = { ...temp, slide_numero: index + 1 };
+      return next;
+    });
+    addLog('info', 'AUDITORIA', `Slide ${index + 1} movido para a posição ${index}.`);
+  };
+
+  const handleMoveSlideDown = (index: number) => {
+    if (index >= orderedSlidesList.length - 1) return;
+    setOrderedSlidesList(prev => {
+      const next = [...prev];
+      const temp = next[index + 1];
+      next[index + 1] = { ...next[index], slide_numero: index + 2 };
+      next[index] = { ...temp, slide_numero: index + 1 };
+      return next;
+    });
+    addLog('info', 'AUDITORIA', `Slide ${index + 1} movido para a posição ${index + 2}.`);
+  };
+
+  const handleRemoveSlideToSurplus = (index: number) => {
+    const item = orderedSlidesList[index];
+    if (!item) return;
+    setOrderedSlidesList(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      return updated.map((s, idx) => ({ ...s, slide_numero: idx + 1 }));
+    });
+    setSurplusImagesList(prev => [
+      ...prev,
+      { nome_arquivo: item.imagem_arquivo_correspondente, motivo_descarte: 'Descartado manualmente da sequência pelo usuário' }
+    ]);
+    addLog('warning', 'AUDITORIA', `Imagem "${item.imagem_arquivo_correspondente}" movida para sobressalentes.`);
+  };
+
+  const handlePromoteSurplusToSlide = (surplus: AuditSurplusImage) => {
+    setSurplusImagesList(prev => prev.filter(s => s.nome_arquivo !== surplus.nome_arquivo));
+    setOrderedSlidesList(prev => [
+      ...prev,
+      {
+        slide_numero: prev.length + 1,
+        descricao_esperada: 'Slide adicionado manualmente pelo usuário',
+        imagem_arquivo_correspondente: surplus.nome_arquivo,
+        pontuacao_consistencia: '100%',
+        feedback_visual: 'Imagem promovida manualmente para a sequência de slides.'
+      }
+    ]);
+    addLog('success', 'AUDITORIA', `Imagem sobressalente "${surplus.nome_arquivo}" adicionada como Slide ${orderedSlidesList.length + 1}.`);
+  };
+
+  const handleSwapSlideImage = (slideIndex: number, newImageName: string) => {
+    const currentSlide = orderedSlidesList[slideIndex];
+    if (!currentSlide || currentSlide.imagem_arquivo_correspondente === newImageName) return;
+
+    const oldImageName = currentSlide.imagem_arquivo_correspondente;
+
+    setOrderedSlidesList(prev => {
+      const next = [...prev];
+      next[slideIndex] = {
+        ...next[slideIndex],
+        imagem_arquivo_correspondente: newImageName,
+        feedback_visual: `Imagem associada manualmente pelo usuário: "${newImageName}".`
+      };
+      return next;
+    });
+
+    // Se a nova imagem estava em sobressalentes, removemos de sobressalentes e colocamos a antiga
+    setSurplusImagesList(prev => {
+      const filtered = prev.filter(s => s.nome_arquivo !== newImageName);
+      if (oldImageName && !filtered.some(s => s.nome_arquivo === oldImageName)) {
+        return [...filtered, { nome_arquivo: oldImageName, motivo_descarte: `Substituída manualmente no Slide ${slideIndex + 1}` }];
+      }
+      return filtered;
+    });
+
+    addLog('info', 'AUDITORIA', `Slide ${slideIndex + 1} alterado manualmente para a imagem "${newImageName}".`);
+  };
+
+  const handleOpenFolder = async (targetPath?: string | null) => {
+    try {
+      const res = await fetch(getApiUrl('/api/open-folder'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetPath: targetPath || undefined })
+      });
+      if (res.ok) {
+        addLog('info', 'SISTEMA', `Pasta aberta no gerenciador de arquivos.`);
+      }
+    } catch (err: any) {
+      console.warn('Erro ao abrir pasta:', err);
+    }
+  };
+
+  // Gerar e Baixar .ZIP de um projeto específico
+  const handleDownloadSingleProjectZip = async (project?: AuditMultiProjectItem) => {
+    const targetProject = project || (multiProjectsResult?.projetos ? multiProjectsResult.projetos[activeMultiProjectIndex] : null);
+    const currentSlides = targetProject?.slides_ordenados || (orderedSlidesList.length > 0 ? orderedSlidesList : auditResult?.auditoria_imagens);
+    
+    if (!currentSlides || currentSlides.length === 0) {
+      alert('Nenhuma imagem ordenada encontrada para download.');
+      return;
+    }
+
     setIsGeneratingZip(true);
-    addLog('info', 'EXPORTAÇÃO', 'Gerando arquivo .ZIP com as imagens ordenadas por slide...');
+    setDownloadSuccessInfo(null);
+    
+    const projSlug = targetProject?.nome_arquivo_zip_sugerido || targetProject?.titulo_projeto?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Sequenciais';
+    const cleanSlug = projSlug.replace(/^PostForge_/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const zipName = `PostForge_${cleanSlug}.zip`;
+
+    addLog('info', 'EXPORTAÇÃO', `Gerando arquivo "${zipName}" com ${currentSlides.length} slides...`);
+
     try {
       const zip = new JSZip();
       const imagesFolder = zip.folder("imagens_ordenadas");
 
-      auditResult.auditoria_imagens.forEach((item) => {
+      // 1. Adicionar imagens ordenadas
+      currentSlides.forEach((item, idx) => {
+        const slideNum = item.slide_numero || idx + 1;
         const matched = uploadedAuditImages.find(img => 
           img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
           img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
@@ -1593,63 +2288,99 @@ export default function App() {
         if (matched && imagesFolder) {
           const extension = matched.name.split('.').pop() || 'png';
           const cleanName = matched.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const sequentialFilename = `Slide_${String(item.slide_numero).padStart(2, '0')}_${cleanName}.${extension}`;
-          imagesFolder.file(sequentialFilename, matched.base64, { base64: true });
+          const sequentialFilename = `Slide_${String(slideNum).padStart(2, '0')}_${cleanName}.${extension}`;
+          const cleanBase64 = matched.base64.includes('base64,') ? matched.base64.split('base64,')[1] : matched.base64;
+          imagesFolder.file(sequentialFilename, cleanBase64, { base64: true });
         }
       });
 
-      if (auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0) {
+      // 2. Mapear sobressalentes
+      const currentSurplus = targetProject?.imagens_sobressalentes || (surplusImagesList.length > 0 ? surplusImagesList : auditResult?.imagens_sobressalentes || []);
+      if (currentSurplus.length > 0) {
         const surplusFolder = zip.folder("imagens_sobressalentes");
-        auditResult.imagens_sobressalentes.forEach((surplus) => {
+        currentSurplus.forEach((surplus) => {
           const matched = uploadedAuditImages.find(img => 
             img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase()
           );
           if (matched && surplusFolder) {
-            surplusFolder.file(matched.name, matched.base64, { base64: true });
+            const cleanBase64 = matched.base64.includes('base64,') ? matched.base64.split('base64,')[1] : matched.base64;
+            surplusFolder.file(matched.name, cleanBase64, { base64: true });
           }
         });
       }
 
+      // 3. Montar Relatório
       let reportText = `====================================================\n`;
-      reportText += `POSTFORGE - RELATÓRIO DE AUDITORIA & ORDENAÇÃO DE IMAGENS\n`;
+      reportText += `POSTFORGE - RELATÓRIO DE AUDITORIA & ORDENAÇÃO: ${targetProject?.titulo_projeto || 'Carrossel'}\n`;
       reportText += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
-      reportText += `Pontuação Média de Consistência: ${auditResult.pontuacao_media_geral || 'N/A'}\n`;
+      reportText += `Pontuação Média de Consistência: ${targetProject?.pontuacao_media || auditResult?.pontuacao_media_geral || 'N/A'}\n`;
       reportText += `====================================================\n\n`;
-      reportText += `RESUMO GERAL DE CONSISTÊNCIA:\n${auditResult.resumo_geral_consistencia}\n\n`;
+      reportText += `RESUMO DO PROJETO:\n${targetProject?.resumo_narrativo || auditResult?.resumo_geral_consistencia || 'Sequência ordenada pelo usuário.'}\n\n`;
       reportText += `----------------------------------------------------\n`;
       reportText += `MAPEAMENTO SEQUENCIAL DOS SLIDES:\n`;
       reportText += `----------------------------------------------------\n\n`;
 
-      auditResult.auditoria_imagens.forEach((item) => {
-        reportText += `[SLIDE ${item.slide_numero}] -> Arquivo: "${item.imagem_arquivo_correspondente}" (Consistência: ${item.pontuacao_consistencia})\n`;
+      currentSlides.forEach((item, idx) => {
+        const slideNum = item.slide_numero || idx + 1;
+        reportText += `[SLIDE ${slideNum}] -> Arquivo: "${item.imagem_arquivo_correspondente}" (Consistência: ${item.pontuacao_consistencia})\n`;
         reportText += `Descrição Esperada: ${item.descricao_esperada}\n`;
         reportText += `Feedback Visual da IA: ${item.feedback_visual}\n`;
-        if (item.destaque_pontos_fortes && item.destaque_pontos_fortes.length > 0) {
-          reportText += `Pontos Fortes: ${item.destaque_pontos_fortes.join(', ')}\n`;
-        }
-        if (item.alertas_inconsistencia && item.alertas_inconsistencia.length > 0) {
-          reportText += `Alertas/Ajustes: ${item.alertas_inconsistencia.join(', ')}\n`;
+        if (item.elementos_visuais_identificados) {
+          reportText += `Elementos Identificados: ${item.elementos_visuais_identificados}\n`;
         }
         reportText += `\n`;
       });
 
-      if (auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0) {
+      if (currentSurplus.length > 0) {
         reportText += `----------------------------------------------------\n`;
         reportText += `IMAGENS SOBRESSALENTES / NÃO UTILIZADAS:\n`;
         reportText += `----------------------------------------------------\n\n`;
-        auditResult.imagens_sobressalentes.forEach((surplus) => {
+        currentSurplus.forEach((surplus) => {
           reportText += `- Arquivo: "${surplus.nome_arquivo}": ${surplus.motivo_descarte}\n`;
         });
       }
 
       zip.file("relatorio_auditoria_postforge.txt", reportText);
-      if (auditScriptInput) {
-        zip.file("roteiro_referencia.txt", auditScriptInput);
+      if (targetProject?.roteiro_associado || auditScriptInput) {
+        zip.file("roteiro_referencia.txt", targetProject?.roteiro_associado || auditScriptInput);
       }
 
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      saveAs(zipBlob, `PostForge_Imagens_Sequenciais_${Date.now()}.zip`);
-      addLog('success', 'EXPORTAÇÃO', 'Arquivo ZIP com as imagens ordenadas e relatório baixado com sucesso!');
+      const zipBlob = await zip.generateAsync({ 
+        type: "blob", 
+        compression: "STORE"
+      });
+
+      saveAs(zipBlob, zipName);
+
+      setDownloadSuccessInfo({
+        filename: zipName,
+        savedPath: 'Salvo automaticamente na pasta Downloads',
+        sizeBytes: zipBlob.size,
+        downloadUrl: undefined
+      });
+
+      // Gravar em background em Downloads via backend
+      try {
+        const streamRes = await fetch(getApiUrl(`/api/save-zip-stream?name=${encodeURIComponent(zipName)}`), {
+          method: 'POST',
+          body: zipBlob
+        });
+        if (streamRes.ok) {
+          const streamData = await streamRes.json();
+          if (streamData.savedPath) {
+            setDownloadSuccessInfo({
+              filename: zipName,
+              savedPath: streamData.savedPath,
+              sizeBytes: zipBlob.size,
+              downloadUrl: streamData.downloadUrl
+            });
+          }
+        }
+      } catch (streamErr) {
+        console.warn('Gravação em background na pasta Downloads via stream:', streamErr);
+      }
+
+      addLog('success', 'EXPORTAÇÃO', `Arquivo ZIP "${zipName}" salvo com sucesso!`);
     } catch (err: any) {
       console.error('Erro ao gerar ZIP:', err);
       alert('Ocorreu um erro ao gerar o arquivo ZIP: ' + err.message);
@@ -1657,6 +2388,36 @@ export default function App() {
     } finally {
       setIsGeneratingZip(false);
     }
+  };
+
+  // Baixar TODOS os .ZIPs de todos os projetos separados de uma única vez
+  const handleDownloadAllProjectsZips = async () => {
+    if (!multiProjectsResult?.projetos || multiProjectsResult.projetos.length === 0) {
+      handleDownloadSingleProjectZip();
+      return;
+    }
+
+    setIsDownloadingAllZips(true);
+    addLog('info', 'EXPORTAÇÃO', `Iniciando geração em lote de ${multiProjectsResult.projetos.length} arquivos .ZIP separados...`);
+
+    try {
+      for (let i = 0; i < multiProjectsResult.projetos.length; i++) {
+        const proj = multiProjectsResult.projetos[i];
+        await handleDownloadSingleProjectZip(proj);
+        // Pequena pausa entre arquivos para não sobrecarregar disparos do navegador
+        await new Promise(r => setTimeout(r, 400));
+      }
+      addLog('success', 'EXPORTAÇÃO', `Todos os ${multiProjectsResult.projetos.length} arquivos .ZIP foram gerados e salvos com seus respectivos nomes na pasta Downloads!`);
+    } catch (err: any) {
+      console.error('Erro ao baixar todos os ZIPs:', err);
+      addLog('error', 'EXPORTAÇÃO', `Erro no download em lote: ${err.message}`);
+    } finally {
+      setIsDownloadingAllZips(false);
+    }
+  };
+
+  const handleDownloadOrderedImagesZip = () => {
+    handleDownloadSingleProjectZip();
   };
 
   const handleExportAuditReportTXT = () => {
@@ -1739,42 +2500,87 @@ export default function App() {
       link.download = `roteiro_postforge.txt`;
       link.click();
       URL.revokeObjectURL(url);
-    } else if (activeTab === 'carousel' && carouselResult) {
-      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
-      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
-      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+    } else if (activeTab === 'carousel' && (batchCarouselResults.length > 0 || carouselResult)) {
+      if (batchCarouselResults.length > 1) {
+        let content = `====================================================\n`;
+        content += `   POSTFORGE - LOTE DE ${batchCarouselResults.length} CARROSSÉIS ESTRUTURADOS\n`;
+        content += `====================================================\n\n`;
 
-      let content = `--- CARROSSEL INSTAGRAM (POSTFORGE) ---\n\n`;
-      
-      carouselResult.slides?.forEach((slide) => {
-        content += `SLIDE ${slide.slideNumber}\n`;
-        content += `Descrição: ${slide.descriptionPt}\n`;
-        if (isEn) {
-          content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles}\n\n`;
-        } else if (isEs) {
-          content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles}\n\n`;
-        } else if (isAll) {
-          content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
-          content += `Texto nos Balões (EN): ${slide.textInBubblesEn}\n`;
-          content += `Texto nos Balões (ES): ${slide.textInBubblesEs}\n\n`;
-        } else {
-          content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles}\n\n`;
-        }
-        content += `[PROMPT DE IMAGEM - INGLÊS]\n`;
-        content += `${slide.imagePromptEn}\n\n`;
-        content += `=========================================\n\n`;
-      });
+        batchCarouselResults.forEach((car, cIdx) => {
+          const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+          const isEn = car.language === 'en' || (car.slides[0]?.textInBubblesEn && !car.slides[0]?.textInBubblesPt && !car.slides[0]?.textInBubblesEs);
+          const isEs = car.language === 'es' || (car.slides[0]?.textInBubblesEs && !car.slides[0]?.textInBubblesPt && !car.slides[0]?.textInBubblesEn);
+          const isAll = car.language === 'all' || (car.slides[0]?.textInBubblesPt && car.slides[0]?.textInBubblesEn && car.slides[0]?.textInBubblesEs);
 
-      content += `--- LEGENDA INSTAGRAM ---\n\n`;
-      content += carouselResult.instagramPost;
+          content += `####################################################\n`;
+          content += `PROJETO ${cIdx + 1}: ${cTitle.toUpperCase()}\n`;
+          content += `####################################################\n\n`;
 
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `carrossel_postforge.txt`;
-      link.click();
-      URL.revokeObjectURL(url);
+          car.slides?.forEach((slide) => {
+            content += `--- SLIDE ${slide.slideNumber} ---\n`;
+            content += `Descrição da Cena: ${slide.descriptionPt}\n`;
+            if (isEn) {
+              content += `Texto no Balão (EN): "${slide.textInBubblesEn || slide.textInBubbles}"\n`;
+            } else if (isEs) {
+              content += `Texto no Balão (ES): "${slide.textInBubblesEs || slide.textInBubbles}"\n`;
+            } else if (isAll) {
+              content += `Texto no Balão (PT): "${slide.textInBubblesPt}"\n`;
+              content += `Texto no Balão (EN): "${slide.textInBubblesEn}"\n`;
+              content += `Texto no Balão (ES): "${slide.textInBubblesEs}"\n`;
+            } else {
+              content += `Texto no Balão (PT): "${slide.textInBubblesPt || slide.textInBubbles}"\n`;
+            }
+            content += `[PROMPT MIDJOURNEY / DALL-E]:\n${slide.imagePromptEn}\n\n`;
+          });
+
+          content += `--- LEGENDA DO INSTAGRAM ---\n`;
+          content += `${car.instagramPost}\n\n\n`;
+        });
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `lote_${batchCarouselResults.length}_carrosseis_postforge.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else if (carouselResult) {
+        const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
+        const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
+        const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+
+        let content = `--- CARROSSEL INSTAGRAM: ${carouselResult.title || 'POSTFORGE'} ---\n\n`;
+        
+        carouselResult.slides?.forEach((slide) => {
+          content += `SLIDE ${slide.slideNumber}\n`;
+          content += `Descrição: ${slide.descriptionPt}\n`;
+          if (isEn) {
+            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles}\n\n`;
+          } else if (isEs) {
+            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles}\n\n`;
+          } else if (isAll) {
+            content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
+            content += `Texto nos Balões (EN): ${slide.textInBubblesEn}\n`;
+            content += `Texto nos Balões (ES): ${slide.textInBubblesEs}\n\n`;
+          } else {
+            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles}\n\n`;
+          }
+          content += `[PROMPT DE IMAGEM - INGLÊS]\n`;
+          content += `${slide.imagePromptEn}\n\n`;
+          content += `=========================================\n\n`;
+        });
+
+        content += `--- LEGENDA INSTAGRAM ---\n\n`;
+        content += carouselResult.instagramPost;
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `carrossel_postforge.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
     }
   };
 
@@ -2369,29 +3175,74 @@ export default function App() {
         else if (dialogueLanguage === 'es') requiredSlideFields.push("textInBubblesEs");
         else requiredSlideFields.push("textInBubblesPt", "textInBubblesEn", "textInBubblesEs");
 
-        responseSchema = {
-          type: Type.OBJECT,
-          properties: {
-            slides: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  slideNumber: { type: Type.INTEGER },
-                  imagePromptEn: { type: Type.STRING },
-                  textInBubblesPt: { type: Type.STRING },
-                  textInBubblesEn: { type: Type.STRING },
-                  textInBubblesEs: { type: Type.STRING },
-                  textInBubbles: { type: Type.STRING },
-                  descriptionPt: { type: Type.STRING },
+        if (carouselQuantity > 1) {
+          promptText += `\n=== GERAÇÃO EM LOTE DE CARROSSÉIS (${carouselQuantity} CARROSSÉIS SOLICITADOS) ===
+          O usuário solicitou a criação de EXATAMENTE ${carouselQuantity} CARROSSÉIS COMPLETOS, ESTRUTURADOS E INDEPENDENTES.
+          - Se foi digitado um tema geral ou anexado material de estudo: Crie ${carouselQuantity} carrosséis que abordem ângulos, subtemas, ganchos e metáforas 100% diferentes e complementares.
+          - Se foi fornecida uma lista de tópicos (um por linha): Crie 1 carrossel completo para cada tópico da lista.
+          - Cada carrossel deve ter seu próprio "title" (título descritivo em Português), "theme" (tema central), "slides" (com exatamente ${sceneCount} slides estruturados com "slideNumber", "imagePromptEn", "textInBubbles...", "descriptionPt") e "instagramPost" (legenda dedicada).
+          - Retorne todos os carrosséis na lista "carousels".`;
+
+          responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+              carousels: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    theme: { type: Type.STRING },
+                    slides: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          slideNumber: { type: Type.INTEGER },
+                          imagePromptEn: { type: Type.STRING },
+                          textInBubblesPt: { type: Type.STRING },
+                          textInBubblesEn: { type: Type.STRING },
+                          textInBubblesEs: { type: Type.STRING },
+                          textInBubbles: { type: Type.STRING },
+                          descriptionPt: { type: Type.STRING },
+                        },
+                        required: requiredSlideFields,
+                      },
+                    },
+                    instagramPost: { type: Type.STRING },
+                  },
+                  required: ["title", "slides", "instagramPost"],
                 },
-                required: requiredSlideFields,
               },
             },
-            instagramPost: { type: Type.STRING },
-          },
-          required: ["slides", "instagramPost"],
-        };
+            required: ["carousels"],
+          };
+        } else {
+          responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              slides: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    slideNumber: { type: Type.INTEGER },
+                    imagePromptEn: { type: Type.STRING },
+                    textInBubblesPt: { type: Type.STRING },
+                    textInBubblesEn: { type: Type.STRING },
+                    textInBubblesEs: { type: Type.STRING },
+                    textInBubbles: { type: Type.STRING },
+                    descriptionPt: { type: Type.STRING },
+                  },
+                  required: requiredSlideFields,
+                },
+              },
+              instagramPost: { type: Type.STRING },
+            },
+            required: ["slides", "instagramPost"],
+          };
+        }
       }
 
       if (referencePdfs.length > 0 || contextImages.length > 0) {
@@ -2487,7 +3338,29 @@ export default function App() {
         setResult(jsonResult);
         addLog('success', 'GERADOR', `Roteiro de vídeo gerado com sucesso (${jsonResult.scenes?.length || 0} cenas) via ${data.provider.toUpperCase()} (${data.model})!`);
       } else {
-        if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
+        if (jsonResult && jsonResult.carousels && Array.isArray(jsonResult.carousels) && jsonResult.carousels.length > 0) {
+          const list = jsonResult.carousels.map((car: any, idx: number) => {
+            car.title = car.title || `Carrossel ${idx + 1}`;
+            car.language = dialogueLanguage;
+            if (car.slides && Array.isArray(car.slides)) {
+              car.slides.forEach((slide: any) => {
+                if (dialogueLanguage === 'pt') {
+                  slide.textInBubblesPt = slide.textInBubblesPt || slide.textInBubbles || '';
+                } else if (dialogueLanguage === 'en') {
+                  slide.textInBubblesEn = slide.textInBubblesEn || slide.textInBubbles || '';
+                } else if (dialogueLanguage === 'es') {
+                  slide.textInBubblesEs = slide.textInBubblesEs || slide.textInBubbles || '';
+                }
+              });
+            }
+            return car;
+          });
+          setBatchCarouselResults(list);
+          setCarouselResult(list[0]);
+          setActiveCarouselIndex(0);
+          addLog('success', 'GERADOR', `Lote de ${list.length} carrosséis gerado com sucesso via ${data.provider.toUpperCase()} (${data.model})!`);
+        } else if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
+          jsonResult.title = jsonResult.title || topic || 'Carrossel';
           jsonResult.language = dialogueLanguage;
           jsonResult.slides.forEach((slide: any) => {
             if (dialogueLanguage === 'pt') {
@@ -2498,9 +3371,11 @@ export default function App() {
               slide.textInBubblesEs = slide.textInBubblesEs || slide.textInBubbles || '';
             }
           });
+          setBatchCarouselResults([jsonResult]);
+          setCarouselResult(jsonResult);
+          setActiveCarouselIndex(0);
+          addLog('success', 'GERADOR', `Carrossel gerado com sucesso (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
         }
-        setCarouselResult(jsonResult);
-        addLog('success', 'GERADOR', `Carrossel gerado com sucesso (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -2587,6 +3462,11 @@ export default function App() {
                 <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-black rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 max-w-[130px] truncate">
                   {openrouterModelInput.split('/').pop()?.replace(':free', '') || 'Nemotron'}
                 </span>
+                {openrouterKeysStats.total > 0 && (
+                  <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-black rounded-md ${openrouterKeysStats.free > 0 ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                    {openrouterKeysStats.free}/{openrouterKeysStats.total}
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -2608,361 +3488,830 @@ export default function App() {
         
 
         {activeTab === 'spy' ? (
-          <div className="lg:col-span-12 w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
-            {/* Coluna do Navegador (Esquerda) */}
-            <div className="lg:col-span-8 flex flex-col h-full bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-              {/* Barra de Navegação */}
-              <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/50">
-                <div className="flex items-center gap-1.5">
-                  <button 
-                    onClick={handleSpyGoBack} 
-                    disabled={!webviewCanGoBack} 
-                    className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition"
-                    title="Voltar"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={handleSpyGoForward} 
-                    disabled={!webviewCanGoForward} 
-                    className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition"
-                    title="Avançar"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={handleSpyReload} 
-                    className="p-2 hover:bg-slate-200/80 rounded-xl text-slate-600 transition"
-                    title="Atualizar"
-                  >
-                    <RotateCw className={`w-4 h-4 ${isWebviewLoading ? 'animate-spin text-indigo-500' : ''}`} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSpyNavigate} className="flex-grow flex items-center gap-2">
-                  <div className="flex-grow relative flex items-center">
-                    <div className="absolute left-3.5 text-slate-400">
-                      <Compass className="w-4 h-4" />
-                    </div>
-                    <input 
-                      type="text" 
-                      value={inputUrl}
-                      onChange={(e) => setInputUrl(e.target.value)}
-                      placeholder="Digite a URL para navegar (ex: midjourney.com)"
-                      className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-inner"
-                    />
-                  </div>
-                  <button 
-                    type="submit" 
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-sm transition"
-                  >
-                    Ir
-                  </button>
-                </form>
-
-                {/* Inspect Target Button */}
-                <button 
-                  onClick={handleToggleInspect}
-                  className={`flex items-center gap-2 px-4 py-2 text-xs font-extrabold rounded-2xl shadow-sm transition cursor-pointer select-none border border-slate-200 ${isInspectMode ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-100 hover:bg-indigo-700' : 'bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300'}`}
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>{isInspectMode ? 'Inspecionando...' : 'Inspecionar'}</span>
-                </button>
-
-                {/* Analyze Target Button */}
-                <button 
+          <div className="lg:col-span-12 w-full h-full flex flex-col gap-4 overflow-hidden">
+            {/* Sub-Navegação do Espião FLOW */}
+            <div className="bg-slate-900 border border-slate-800 p-2 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-lg shrink-0">
+              <div className="flex items-center gap-2">
+                <button
                   type="button"
-                  onClick={handleAnalyzePageForAi}
-                  className="flex items-center gap-2 px-4 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 rounded-2xl shadow-sm transition cursor-pointer select-none"
-                  title="Mapeia todos os botões e campos de texto desta tela e envia diretamente para o IA analisá-la!"
+                  onClick={() => setSpySubTab('recorder')}
+                  className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    spySubTab === 'recorder'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
                 >
-                  <Cpu className="w-4 h-4" />
-                  <span>Analisar para o IA</span>
+                  <Eye className="w-4 h-4 text-indigo-300" />
+                  <span>1. Gravador & Navegador</span>
+                  {recordedSteps.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/40 text-indigo-200 text-[10px]">
+                      {recordedSteps.length}
+                    </span>
+                  )}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => setSpySubTab('macro')}
+                  className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    spySubTab === 'macro'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Workflow className="w-4 h-4 text-emerald-400" />
+                  <span>2. Macro com IA & Variáveis</span>
+                  {activeMacro && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSpySubTab('executor')}
+                  className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    spySubTab === 'executor'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Zap className="w-4 h-4 text-amber-400" />
+                  <span>3. Executor em Larga Escala (RPA)</span>
+                  {executorBatchItems.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-300 text-[10px]">
+                      {executorBatchItems.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setSpySubTab('library'); handleLoadMacrosList(); }}
+                  className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    spySubTab === 'library'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 text-cyan-400" />
+                  <span>4. Biblioteca de Macros</span>
+                </button>
               </div>
 
-              {/* WebView Area */}
-              <div className="flex-grow relative bg-slate-100/50">
-                {preloadPath ? (
-                  // @ts-ignore
-                  <webview
-                    ref={webviewRef}
-                    src={spyUrl}
-                    preload={preloadPath}
-                    className="absolute inset-0 w-full h-full bg-white"
-                    style={{ border: 'none' }}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                    <p className="text-sm font-semibold">Carregando espião...</p>
+              {/* Status do Espião */}
+              <div className="flex items-center gap-2 pr-2">
+                {isRecording && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/20 border border-rose-500/40 text-rose-300 rounded-xl text-xs font-bold animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span>GRAVANDO TELA & AÇÕES</span>
+                  </div>
+                )}
+                {isExecutorRunning && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold animate-pulse">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>EXECUTOR ATIVO</span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Painel do Espião (Direita) */}
-            <div className="lg:col-span-4 flex flex-col h-full bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden text-slate-300">
-              {/* Header do Painel */}
-              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
-                  <h3 className="font-bold text-sm uppercase tracking-wider text-white">Console do Espião</h3>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setIsRecording(!isRecording)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-xl transition ${isRecording ? 'bg-rose-500 text-white hover:bg-rose-600 animate-pulse' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'}`}
-                  >
-                    {isRecording ? (
-                      <>
-                        <Square className="w-3 h-3 fill-current" />
-                        <span>Parar</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Gravar</span>
-                      </>
-                    )}
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={handleSyncMacroToAi}
-                    disabled={recordedSteps.length === 0}
-                    className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 rounded-xl transition border border-indigo-700"
-                    title="Sincronizar Macro Gravado com o IA"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                  <button 
-                    onClick={handleClearSteps}
-                    disabled={recordedSteps.length === 0}
-                    className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 disabled:opacity-40 rounded-xl transition border border-slate-700"
-                    title="Limpar Fluxo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+            {/* CONTEÚDO DAS SUB-ABAS DO ESPIÃO */}
+            <div className="flex-1 overflow-hidden">
+              
+              {/* SUB-ABA 1: GRAVADOR & NAVEGADOR */}
+              {spySubTab === 'recorder' && (
+                <div className="w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
+                  {/* Coluna do Navegador (Esquerda) */}
+                  <div className="lg:col-span-8 flex flex-col h-full bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+                    {/* Barra de Navegação */}
+                    <div className="p-3.5 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/50">
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={handleSpyGoBack} 
+                          disabled={!webviewCanGoBack} 
+                          className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition cursor-pointer"
+                          title="Voltar"
+                        >
+                          <ArrowLeft className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={handleSpyGoForward} 
+                          disabled={!webviewCanGoForward} 
+                          className="p-2 hover:bg-slate-200/80 disabled:opacity-30 rounded-xl text-slate-600 transition cursor-pointer"
+                          title="Avançar"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={handleSpyReload} 
+                          className="p-2 hover:bg-slate-200/80 rounded-xl text-slate-600 transition cursor-pointer"
+                          title="Atualizar"
+                        >
+                          <RotateCw className={`w-4 h-4 ${isWebviewLoading ? 'animate-spin text-indigo-500' : ''}`} />
+                        </button>
+                      </div>
 
-              {/* Status de Sincronização */}
-              {syncStatus.message && (
-                <div className={`px-5 py-2.5 text-xs font-bold border-b transition-all flex items-center gap-2 ${
-                  syncStatus.type === 'success' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50' : 
-                  syncStatus.type === 'error' ? 'bg-rose-950/40 text-rose-400 border-rose-900/50' : 
-                  'bg-slate-950 text-indigo-400 border-slate-800'
-                }`}>
-                  <Database className="w-3.5 h-3.5 animate-pulse" />
-                  <span className="truncate">{syncStatus.message}</span>
+                      <form onSubmit={handleSpyNavigate} className="flex-grow flex items-center gap-2">
+                        <div className="flex-grow relative flex items-center">
+                          <div className="absolute left-3.5 text-slate-400">
+                            <Compass className="w-4 h-4" />
+                          </div>
+                          <input 
+                            type="text" 
+                            value={inputUrl}
+                            onChange={(e) => setInputUrl(e.target.value)}
+                            placeholder="Digite a URL para navegar (ex: midjourney.com, leonardo.ai, canva.com)"
+                            className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-inner font-mono text-xs"
+                          />
+                        </div>
+                        <button 
+                          type="submit" 
+                          className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-sm transition cursor-pointer"
+                        >
+                          Ir
+                        </button>
+                      </form>
+
+                      {/* Botão de Inspecionar */}
+                      <button 
+                        onClick={handleToggleInspect}
+                        className={`flex items-center gap-2 px-3.5 py-2 text-xs font-extrabold rounded-2xl shadow-sm transition cursor-pointer select-none border border-slate-200 ${
+                          isInspectMode ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-100 hover:bg-indigo-700' : 'bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300'
+                        }`}
+                        title="Modo Inspetor de Elementos e Seletores"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>{isInspectMode ? 'Inspecionando...' : 'Inspecionar'}</span>
+                      </button>
+
+                      {/* Botão de Tirar Snapshot */}
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          const snap = await captureWebviewSnapshot();
+                          if (snap) {
+                            setRecordedSteps(prev => [...prev, {
+                              id: Date.now(),
+                              type: 'screenshot',
+                              selector: 'body',
+                              description: 'Captura manual de tela',
+                              screenshot: snap,
+                              timestamp: new Date().toLocaleTimeString('pt-BR')
+                            }]);
+                            addLog('image', 'ESPIÃO', 'Snapshot de tela capturado e anexado ao fluxo.');
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-2xl transition cursor-pointer"
+                        title="Tirar foto snapshot da tela atual e anexar aos passos"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Snapshot</span>
+                      </button>
+                    </div>
+
+                    {/* Área do WebView */}
+                    <div className="flex-grow relative bg-slate-100/50">
+                      {preloadPath ? (
+                        // @ts-ignore
+                        <webview
+                          ref={webviewRef}
+                          src={spyUrl}
+                          preload={preloadPath}
+                          className="absolute inset-0 w-full h-full bg-white"
+                          style={{ border: 'none' }}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
+                          <p className="text-sm font-semibold">Carregando espião...</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Painel do Espião (Direita) */}
+                  <div className="lg:col-span-4 flex flex-col h-full bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden text-slate-300">
+                    {/* Header do Painel */}
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+                        <h3 className="font-bold text-xs uppercase tracking-wider text-white">Gravador de Ações</h3>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setIsRecording(!isRecording)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-xl transition cursor-pointer ${
+                            isRecording ? 'bg-rose-500 text-white hover:bg-rose-600 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md'
+                          }`}
+                        >
+                          {isRecording ? (
+                            <>
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Parar</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Gravar</span>
+                            </>
+                          )}
+                        </button>
+                        <button 
+                          onClick={handleClearSteps}
+                          disabled={recordedSteps.length === 0}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 disabled:opacity-40 rounded-xl transition border border-slate-700 cursor-pointer"
+                          title="Limpar Fluxo Gravado"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Status de Sincronização / Análise */}
+                    {syncStatus.message && (
+                      <div className={`px-4 py-2 text-xs font-bold border-b transition-all flex items-center gap-2 ${
+                        syncStatus.type === 'success' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50' : 
+                        syncStatus.type === 'error' ? 'bg-rose-950/40 text-rose-400 border-rose-900/50' : 
+                        'bg-slate-950 text-indigo-400 border-slate-800'
+                      }`}>
+                        <Database className="w-3.5 h-3.5 animate-pulse shrink-0" />
+                        <span className="truncate">{syncStatus.message}</span>
+                      </div>
+                    )}
+
+                    {/* Timeline de Ações & Inspetor */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      
+                      {/* Inspetor de Elementos */}
+                      {selectedElement && (
+                        <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-indigo-500/30 text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-md font-mono text-[10px]">
+                              {selectedElement.tagName}
+                            </span>
+                            <span className="text-[10px] text-slate-400">Elemento Inspecionado</span>
+                          </div>
+                          <code className="block p-1.5 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-[10px] break-all">
+                            {selectedElement.selector}
+                          </code>
+                        </div>
+                      )}
+
+                      {/* Campo Opcional: Objetivo do Processo */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          🎯 Objetivo do Processo (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          value={userProcessGoalInput}
+                          onChange={(e) => setUserProcessGoalInput(e.target.value)}
+                          placeholder="Ex: Gerar imagem no Midjourney e baixar"
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      {/* Linha do Tempo dos Passos */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <span>Linha do Tempo ({recordedSteps.length} passos)</span>
+                          {recordedSteps.length > 0 && <span>Com Screenshots 📸</span>}
+                        </div>
+
+                        {recordedSteps.length === 0 ? (
+                          <div className="py-8 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
+                            <div className="p-2.5 rounded-full mb-2 bg-slate-800 text-slate-500">
+                              <Play className="w-4 h-4" />
+                            </div>
+                            <p className="text-xs font-bold text-slate-400">Nenhum passo gravado</p>
+                            <p className="text-[10px] text-slate-500 mt-1">Clique em "Gravar" e use o navegador à esquerda.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {recordedSteps.map((step, idx) => (
+                              <div 
+                                key={step.id} 
+                                className="p-2.5 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition text-left text-xs flex gap-2.5 items-start group"
+                              >
+                                {/* Thumbnail do Snapshot */}
+                                {step.screenshot ? (
+                                  <div 
+                                    onClick={() => setAuditImageModalUrl({ url: step.screenshot!, title: `Passo ${idx + 1}: ${step.description}` })}
+                                    className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:border-indigo-500 transition group/img relative"
+                                    title="Ver captura de tela em tela cheia"
+                                  >
+                                    <img src={step.screenshot} alt="Step" className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white">
+                                      <ZoomIn className="w-3 h-3" />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0">
+                                    {step.type === 'click' ? <MousePointer className="w-4 h-4 text-indigo-400" /> : <Keyboard className="w-4 h-4 text-emerald-400" />}
+                                  </div>
+                                )}
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="font-bold text-[10px] px-1 py-0.5 bg-slate-800 text-indigo-300 rounded font-mono">
+                                      #{idx + 1}
+                                    </span>
+                                    <span className="font-bold text-white text-[11px] truncate">
+                                      {step.type === 'click' ? 'CLIQUE' : step.type === 'input' ? 'DIGITAÇÃO' : step.type.toUpperCase()}
+                                    </span>
+                                    {step.timestamp && (
+                                      <span className="text-[9px] text-slate-500 ml-auto font-mono">{step.timestamp}</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 line-clamp-1">{step.description}</p>
+                                  {step.value && (
+                                    <p className="text-[10px] font-mono text-emerald-400 truncate bg-slate-900/60 px-1.5 py-0.5 rounded mt-1">
+                                      📝 "{step.value}"
+                                    </p>
+                                  )}
+                                </div>
+
+                                <button 
+                                  onClick={() => handleRemoveStep(step.id)}
+                                  className="p-1 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-lg transition cursor-pointer"
+                                  title="Remover este passo"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Botão de Análise com IA */}
+                      {recordedSteps.length > 0 && (
+                        <div className="pt-2 border-t border-slate-800">
+                          <button
+                            type="button"
+                            onClick={handleUnderstandProcessWithAi}
+                            disabled={isAnalyzingProcess}
+                            className="w-full py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {isAnalyzingProcess ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>IA Analisando Processo e Visão...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4" />
+                                <span>🧠 Analisar Processo & Criar Macro com IA</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
                 </div>
               )}
 
-
-              {/* Corpo (Abas de Informação e Lista de Passos) */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                
-                {/* Elemento Ativamente Focado / Selecionado */}
-                <div className="p-4 bg-slate-950/60 rounded-2xl border border-indigo-500/20">
-                  <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                    <Terminal className="w-3.5 h-3.5" /> Inspetor de Código
-                  </h4>
-                  
-                  {selectedElement ? (
-                    <div className="space-y-3 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-md font-mono text-[10px]">
-                          {selectedElement.tagName}
-                        </span>
-                        {selectedElement.id && (
-                          <span className="text-slate-400 font-mono">#{selectedElement.id}</span>
-                        )}
-                        {selectedElement.text && (
-                          <span className="text-slate-300 italic truncate max-w-[150px]">
-                            "{selectedElement.text}"
-                          </span>
-                        )}
-                      </div>
-                      
-                      {/* Seletor CSS */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-slate-500">
-                          <span>Seletor CSS</span>
-                          <button 
-                            onClick={() => handleCopy(selectedElement.selector, 'css_sel')}
-                            className="hover:text-indigo-400 flex items-center gap-1 text-[10px]"
-                          >
-                            {copiedStates['css_sel'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                            Copiar
-                          </button>
-                        </div>
-                        <code className="block p-2 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-[10px] break-all leading-tight">
-                          {selectedElement.selector}
-                        </code>
-                      </div>
-
-                      {/* XPath */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-slate-500">
-                          <span>XPath</span>
-                          <button 
-                            onClick={() => handleCopy(selectedElement.xpath, 'xpath_sel')}
-                            className="hover:text-indigo-400 flex items-center gap-1 text-[10px]"
-                          >
-                            {copiedStates['xpath_sel'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                            Copiar
-                          </button>
-                        </div>
-                        <code className="block p-2 bg-slate-900 border border-slate-800 rounded-lg text-amber-400 font-mono text-[10px] break-all leading-tight">
-                          {selectedElement.xpath}
-                        </code>
-                      </div>
-                    </div>
-                  ) : hoveredElement ? (
-                    <div className="space-y-1.5 text-xs text-slate-400">
-                      <p className="text-[11px] text-slate-500 text-left">Passe o mouse ou clique no elemento...</p>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[10px] text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded">
-                          {hoveredElement.tagName}
-                        </span>
-                        {hoveredElement.id && <span className="font-mono text-slate-500">#{hoveredElement.id}</span>}
-                        {hoveredElement.className && <span className="font-mono text-[10px] text-slate-600 truncate max-w-[120px]">.{hoveredElement.className.trim().split(/\s+/)[0]}</span>}
-                      </div>
-                      <code className="block p-1 text-[9px] font-mono text-slate-500 bg-slate-900/30 rounded truncate text-left">
-                        {hoveredElement.selector}
-                      </code>
+              {/* SUB-ABA 2: MACRO COM IA & VARIÁVEIS */}
+              {spySubTab === 'macro' && (
+                <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-3xl p-6 overflow-y-auto text-slate-200 space-y-6">
+                  {!activeMacro ? (
+                    <div className="py-20 text-center space-y-3">
+                      <Workflow className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                      <h3 className="text-lg font-bold text-white">Nenhum Macro Ativo no Momento</h3>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                        Grave suas ações no navegador na aba "1. Gravador & Navegador" e clique em "Analisar Processo com IA" para gerar um macro parametrizado com variáveis.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSpySubTab('recorder')}
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-2xl transition shadow-md"
+                      >
+                        Ir para o Gravador
+                      </button>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-500 italic py-2 text-left">Nenhum elemento inspecionado. Use a ferramenta "Inspecionar" acima.</p>
+                    <div className="space-y-6">
+                      {/* Header do Macro */}
+                      <div className="flex flex-wrap items-center justify-between gap-4 p-5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                        <div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">
+                            Macro Sintetizado por IA
+                          </span>
+                          <h2 className="text-lg font-extrabold text-white mt-1">{activeMacro.nome_processo}</h2>
+                          <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">{activeMacro.descricao_processo}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveActiveMacro}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                          >
+                            <Download className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Salvar na Biblioteca</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handlePullItemsFromPostForge();
+                            }}
+                            className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold rounded-xl transition shadow-lg flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Zap className="w-4 h-4 text-amber-300" />
+                            <span>Enviar para o Executor (RPA)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Grade de 2 Colunas: Variáveis Identificadas + Resumo do Processo */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* Coluna 1: Variáveis Dinâmicas */}
+                        <div className="lg:col-span-6 bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                              <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                              Variáveis Parametrizadas ({activeMacro.variaveis_identificadas?.length || 0})
+                            </h4>
+                            <span className="text-[10px] text-slate-500">Substituíveis em lote</span>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {activeMacro.variaveis_identificadas?.map((v, idx) => (
+                              <div key={idx} className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-1 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <code className="font-mono text-emerald-400 font-bold text-xs bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                    {v.nome_variavel}
+                                  </code>
+                                  <span className="text-[10px] text-slate-500">Passo #{v.passo_index}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-300">{v.descricao}</p>
+                                <p className="text-[10px] text-slate-500 font-mono truncate">Exemplo original: "{v.valor_original}"</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Coluna 2: Resumo Executivo */}
+                        <div className="lg:col-span-6 bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+                          <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                            <ListOrdered className="w-4 h-4 text-emerald-400" />
+                            Etapas do Processo
+                          </h4>
+                          <div className="space-y-2">
+                            {activeMacro.resumo_passo_a_passo?.map((etapa, idx) => (
+                              <div key={idx} className="flex items-start gap-2 text-xs p-2 bg-slate-900/80 rounded-xl border border-slate-800/80">
+                                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span className="text-slate-300 text-[11px] leading-relaxed">{etapa}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sequência de Passos Parametrizados */}
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                          <Terminal className="w-4 h-4 text-cyan-400" />
+                          Sequência de Execução ({activeMacro.macro_parametrizado?.length || 0} ações)
+                        </h4>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {activeMacro.macro_parametrizado?.map((step) => (
+                            <div key={step.ordem} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="w-6 h-6 rounded-lg bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center">
+                                  {step.ordem}
+                                </span>
+                                <span className="font-bold text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono uppercase">
+                                  {step.tipo}
+                                </span>
+                              </div>
+                              <p className="font-bold text-slate-200 text-[11px]">{step.descricao}</p>
+                              {step.valor && (
+                                <div className="p-1.5 bg-slate-900 rounded-lg text-[10px] font-mono text-emerald-400 break-all">
+                                  📝 {step.valor}
+                                </div>
+                              )}
+                              <div className="text-[10px] text-slate-500 font-mono truncate">
+                                📍 {step.seletor}
+                              </div>
+                              {step.tempo_espera_ms && (
+                                <div className="text-[9px] text-slate-400 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-400" /> Espera: {step.tempo_espera_ms}ms
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Códigos Exportáveis */}
+                      <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white flex items-center gap-2">
+                            <FileCode className="w-4 h-4 text-indigo-400" />
+                            Scripts Autônomos em Node.js
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(activeMacro.codigo_puppeteer || '', 'pup_code')}
+                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedStates['pup_code'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                              Puppeteer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(activeMacro.codigo_playwright || '', 'pw_code')}
+                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedStates['pw_code'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                              Playwright
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
                   )}
                 </div>
+              )}
 
-                {/* Histórico do Fluxo Gravado */}
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Fluxo Gravado ({recordedSteps.length})</h4>
-                  
-                  {recordedSteps.length === 0 ? (
-                    <div className="py-10 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
-                      <div className={`p-2.5 rounded-full mb-3 ${isRecording ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-500'}`}>
-                        <Play className="w-5 h-5" />
+              {/* SUB-ABA 3: EXECUTOR EM LARGA ESCALA (RPA) */}
+              {spySubTab === 'executor' && (
+                <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-3xl p-6 overflow-y-auto text-slate-200 space-y-6">
+                  {/* Topo do Executor */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 p-5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                    <div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase">
+                        Motor de Execução em Lote (RPA)
+                      </span>
+                      <h2 className="text-lg font-extrabold text-white mt-1">Executor em Larga Escala</h2>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Macro ativo: <strong className="text-emerald-400">{activeMacro?.nome_processo || 'Nenhum macro selecionado'}</strong>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handlePullItemsFromPostForge}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Images className="w-3.5 h-3.5" />
+                        <span>Puxar Slides do PostForge</span>
+                      </button>
+
+                      {isExecutorRunning ? (
+                        <button
+                          type="button"
+                          onClick={handleStopBatchExecution}
+                          className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Square className="w-3.5 h-3.5 fill-current" />
+                          <span>Interromper Execução</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleStartBatchExecution}
+                          disabled={executorBatchItems.length === 0 || !activeMacro}
+                          className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl transition shadow-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        >
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Iniciar Execução em Lote</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Barra de Progresso em Tempo Real */}
+                  {isExecutorRunning && (
+                    <div className="p-4 bg-slate-950 border border-amber-500/30 rounded-2xl space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-amber-300 flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                          Executando item {executorCurrentIndex + 1} de {executorBatchItems.length}
+                        </span>
+                        <span className="font-mono text-slate-400">
+                          {Math.round(((executorCurrentIndex + 1) / executorBatchItems.length) * 100)}%
+                        </span>
                       </div>
-                      <p className="text-xs font-bold text-slate-400">Ainda não há passos gravados</p>
-                      <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Ative a gravação e interaja com o navegador para capturar suas ações.</p>
+                      <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300"
+                          style={{ width: `${((executorCurrentIndex + 1) / executorBatchItems.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabela de Itens em Lote */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                        <ListChecks className="w-4 h-4 text-indigo-400" />
+                        Fila de Itens para Execução ({executorBatchItems.length})
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newId = `item_${Date.now()}`;
+                            setExecutorBatchItems(prev => [...prev, {
+                              id: newId,
+                              label: `Item ${prev.length + 1}`,
+                              params: { "{prompt_imagem}": "", "{texto_slide}": "" },
+                              status: 'pending'
+                            }]);
+                          }}
+                          className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Adicionar Item
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExecutorBatchItems([])}
+                          disabled={executorBatchItems.length === 0}
+                          className="px-3 py-1 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-300 text-xs rounded-lg transition disabled:opacity-30 cursor-pointer"
+                        >
+                          Limpar Fila
+                        </button>
+                      </div>
+                    </div>
+
+                    {executorBatchItems.length === 0 ? (
+                      <div className="py-16 text-center border border-dashed border-slate-800 rounded-2xl space-y-2">
+                        <Zap className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                        <p className="font-bold text-slate-400 text-xs">Fila de execução vazia</p>
+                        <p className="text-[11px] text-slate-500">Clique em "Puxar Slides do PostForge" ou adicione itens manualmente para rodar em lote.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {executorBatchItems.map((item, idx) => {
+                          const statusBadge = item.status === 'success' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                                              item.status === 'running' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse' :
+                                              item.status === 'failed' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' :
+                                              'bg-slate-800 text-slate-400 border-slate-700';
+
+                          return (
+                            <div 
+                              key={item.id}
+                              className={`p-4 bg-slate-950 border rounded-2xl transition flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                                item.status === 'running' ? 'border-amber-500/50 shadow-md shadow-amber-500/10' : 'border-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <span className="w-7 h-7 rounded-xl bg-slate-900 border border-slate-800 text-white font-black text-xs flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <h5 className="font-bold text-white text-xs">{item.label || `Item ${idx + 1}`}</h5>
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusBadge}`}>
+                                      {item.status === 'success' ? '✓ Concluído' :
+                                       item.status === 'running' ? '⚡ Executando...' :
+                                       item.status === 'failed' ? '✗ Falhou' : 'Pendente'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 truncate font-mono">
+                                    {item.params['{prompt_imagem}'] || item.params['{prompt}'] || 'Sem prompt definido'}
+                                  </p>
+                                  {item.log && (
+                                    <p className="text-[10px] text-slate-400">{item.log}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Snapshot do Resultado */}
+                              {item.screenshot && (
+                                <div 
+                                  onClick={() => setAuditImageModalUrl({ url: item.screenshot!, title: `Resultado: ${item.label}` })}
+                                  className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:border-indigo-500 transition relative group/snap"
+                                  title="Ver captura final em tela cheia"
+                                >
+                                  <img src={item.screenshot} alt="Result" className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-snap:hover:opacity-100 flex items-center justify-center text-white">
+                                    <ZoomIn className="w-3.5 h-3.5" />
+                                  </div>
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setExecutorBatchItems(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-1.5 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
+                                title="Remover item da fila"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-ABA 4: BIBLIOTECA DE MACROS */}
+              {spySubTab === 'library' && (
+                <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-3xl p-6 overflow-y-auto text-slate-200 space-y-6">
+                  <div className="flex items-center justify-between p-5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                    <div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase">
+                        Biblioteca Persistente de Automações
+                      </span>
+                      <h2 className="text-lg font-extrabold text-white mt-1">Macros Salvos em Disco</h2>
+                      <p className="text-xs text-slate-400 mt-0.5">Seus padrões de automação salvos na pasta <code className="text-cyan-400">macros/</code></p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleLoadMacrosList}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${isLoadingMacros ? 'animate-spin' : ''}`} />
+                      <span>Atualizar Lista</span>
+                    </button>
+                  </div>
+
+                  {savedMacrosList.length === 0 ? (
+                    <div className="py-20 text-center space-y-3">
+                      <BookOpen className="w-12 h-12 text-slate-600 mx-auto mb-2" />
+                      <h4 className="text-sm font-bold text-slate-400">Nenhum macro salvo na biblioteca</h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                        Grave suas ações, gere um macro com IA e clique em "Salvar na Biblioteca" para reaproveitá-lo sempre que quiser.
+                      </p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {recordedSteps.map((step, idx) => (
-                        <div key={step.id} className="group flex items-start justify-between p-3 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition text-left text-xs gap-3">
-                          <div className="flex gap-2.5 items-start">
-                            <div className="mt-0.5 p-1 bg-slate-800 rounded-lg text-slate-400">
-                              {step.type === 'click' ? <MousePointer className="w-3.5 h-3.5 text-indigo-400" /> : <Keyboard className="w-3.5 h-3.5 text-emerald-400" />}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {savedMacrosList.map((macro) => (
+                        <div 
+                          key={macro.id}
+                          className="bg-slate-950 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between gap-4 transition shadow-md group"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-mono text-slate-500">
+                                {macro.updatedAt ? new Date(macro.updatedAt).toLocaleDateString('pt-BR') : 'Recente'}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded font-mono">
+                                {macro.macro_parametrizado?.length || 0} ações
+                              </span>
                             </div>
-                            <div>
-                              <p className="font-semibold text-slate-200 text-[11px]">{step.description}</p>
-                              <code className="block mt-1 text-[9px] font-mono text-slate-500 truncate max-w-[180px]">
-                                {step.selector}
-                              </code>
+
+                            <h3 className="font-extrabold text-white text-sm group-hover:text-indigo-300 transition">
+                              {macro.nome_processo}
+                            </h3>
+                            <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                              {macro.descricao_processo}
+                            </p>
+
+                            <div className="pt-2 flex flex-wrap gap-1.5">
+                              {macro.variaveis_identificadas?.slice(0, 3).map((v, i) => (
+                                <span key={i} className="text-[9px] font-mono px-1.5 py-0.5 bg-slate-900 border border-slate-800 text-emerald-400 rounded">
+                                  {v.nome_variavel}
+                                </span>
+                              ))}
                             </div>
                           </div>
-                          <button 
-                            onClick={() => handleRemoveStep(step.id)}
-                            className="p-1 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-lg transition"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+
+                          <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMacro(macro);
+                                setSpySubTab('macro');
+                                addLog('info', 'ESPIÃO', `Macro "${macro.nome_processo}" carregado.`);
+                              }}
+                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer flex-1 justify-center"
+                            >
+                              <Play className="w-3 h-3 fill-current" /> Carregar Macro
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMacro(macro.id)}
+                              className="p-1.5 bg-slate-900 hover:bg-rose-950 text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
+                              title="Excluir macro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* Exibição do Script Gerado para Automação */}
-                {recordedSteps.length > 0 && (
-                  <div className="pt-2 border-t border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">Código de Automação</h4>
-                      <div className="flex bg-slate-800 p-0.5 rounded-lg text-[9px] font-bold">
-                        <button 
-                          onClick={() => setActiveSpyScriptTab('json')}
-                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'json' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                        >
-                          JSON
-                        </button>
-                        <button 
-                          onClick={() => setActiveSpyScriptTab('puppeteer')}
-                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'puppeteer' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                        >
-                          Pup
-                        </button>
-                        <button 
-                          onClick={() => setActiveSpyScriptTab('playwright')}
-                          className={`px-2 py-1 rounded-md transition ${activeSpyScriptTab === 'playwright' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                        >
-                          PW
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 relative flex flex-col">
-                      <div className="absolute right-3 top-3 z-10">
-                        <button 
-                          onClick={() => {
-                            const codeStr = 
-                              activeSpyScriptTab === 'json' ? JSON.stringify(recordedSteps, null, 2) :
-                              activeSpyScriptTab === 'puppeteer' ? 
-                              `const puppeteer = require('puppeteer');\n\n(async () => {\n  const browser = await puppeteer.launch({ headless: false });\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n  // Ações Gravadas:\n${recordedSteps.map(s => {
-                                if (s.type === 'click') {
-                                  return `  await page.waitForSelector('${s.selector}');\n  await page.click('${s.selector}');`;
-                                } else {
-                                  return `  await page.waitForSelector('${s.selector}');\n  await page.type('${s.selector}', '${s.value}');`;
-                                }
-                              }).join('\n\n')}\n\n  await browser.close();\n})();` :
-                              `const { chromium } = require('playwright');\n\n(async () => {\n  const browser = await chromium.launch({ headless: false });\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n  // Ações Gravadas:\n${recordedSteps.map(s => {
-                                if (s.type === 'click') {
-                                  return `  await page.click('${s.selector}');`;
-                                } else {
-                                  return `  await page.fill('${s.selector}', '${s.value}');`;
-                                }
-                              }).join('\n')}\n\n  await browser.close();\n})();`;
-                            
-                            handleCopy(codeStr, 'gen_script');
-                          }}
-                          className="flex items-center gap-1 text-[9px] font-black uppercase text-indigo-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2 py-1 rounded-lg transition"
-                        >
-                          {copiedStates['gen_script'] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                          Copiar
-                        </button>
-                      </div>
-
-                      <div className="max-h-48 overflow-y-auto pr-1">
-                        <code className="block text-[10px] text-green-400 font-mono whitespace-pre text-left leading-relaxed">
-                          {activeSpyScriptTab === 'json' ? (
-                            JSON.stringify(recordedSteps, null, 2)
-                          ) : activeSpyScriptTab === 'puppeteer' ? (
-                            `const puppeteer = require('puppeteer');\n\n(async () => {\n  const browser = await puppeteer.launch();\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n${recordedSteps.map(s => {
-                              if (s.type === 'click') {
-                                return `  // ${s.description}\n  await page.waitForSelector('${s.selector}');\n  await page.click('${s.selector}');`;
-                              } else {
-                                return `  // ${s.description}\n  await page.waitForSelector('${s.selector}');\n  await page.type('${s.selector}', '${s.value}');`;
-                              }
-                            }).join('\n\n')}\n})();`
-                          ) : (
-                            `const { chromium } = require('playwright');\n\n(async () => {\n  const browser = await chromium.launch();\n  const page = await browser.newPage();\n  await page.goto('${spyUrl}');\n\n${recordedSteps.map(s => {
-                              if (s.type === 'click') {
-                                return `  // ${s.description}\n  await page.click('${s.selector}');`;
-                              } else {
-                                return `  // ${s.description}\n  await page.fill('${s.selector}', '${s.value}');`;
-                              }
-                            }).join('\n')}\n})();`
-                          )}
-                        </code>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-              </div>
             </div>
           </div>
         ) : activeTab === 'audit' ? (
@@ -3418,6 +4767,11 @@ export default function App() {
                           <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-black rounded-full">
                             AUDITORIA CONCLUÍDA
                           </span>
+                          {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 && (
+                            <span className="px-2.5 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold rounded-full">
+                              {multiProjectsResult.projetos.length} Projetos Separados
+                            </span>
+                          )}
                           {auditResult.pontuacao_media_geral && (
                             <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-bold rounded-full">
                               Média: {auditResult.pontuacao_media_geral}
@@ -3425,30 +4779,127 @@ export default function App() {
                           )}
                         </div>
                         <h3 className="text-lg font-bold text-white mt-1.5">
-                          Sequência Ordenada ({auditResult.auditoria_imagens?.length || 0} Slides Mapeados)
+                          {multiProjectsResult?.projetos?.[activeMultiProjectIndex]?.titulo_projeto || `Sequência Ordenada (${orderedSlidesList.length} Slides Mapeados)`}
                         </h3>
                       </div>
 
                       {/* Botões de Ação Rápida */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <button
+                          type="button"
+                          onClick={() => setIsPreviewModalOpen(true)}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                          title="Abrir Pré-visualização Completa dos Slides Ordenados e Sobressalentes"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>Preview da Sequência</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleExportAuditReportTXT}
                           className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                           title="Exportar Relatório em TXT"
                         >
                           <FileText className="w-3.5 h-3.5" /> TXT
                         </button>
-                        <button
-                          onClick={handleDownloadOrderedImagesZip}
-                          disabled={isGeneratingZip}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
-                          title="Baixar todas as imagens renomeadas em ordem numérica (.zip)"
-                        >
-                          <FolderArchive className="w-3.5 h-3.5" />
-                          <span>{isGeneratingZip ? 'Gerando ZIP...' : 'Baixar Imagens (.ZIP)'}</span>
-                        </button>
+
+                        {/* Se houver múltiplos projetos, botão para baixar todos os .ZIPs nomeados */}
+                        {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleDownloadAllProjectsZips}
+                              disabled={isDownloadingAllZips || isGeneratingZip}
+                              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg disabled:opacity-50"
+                              title="Baixar todos os projetos separados em arquivos .ZIP diferentes com nomes inteligentes dados pela IA"
+                            >
+                              {isDownloadingAllZips ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
+                              <span>{isDownloadingAllZips ? 'Baixando Todos...' : `Baixar Todos os .ZIPs (${multiProjectsResult.projetos.length})`}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadSingleProjectZip()}
+                              disabled={isGeneratingZip || isDownloadingAllZips}
+                              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/30 transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                              title="Baixar apenas o .ZIP do projeto selecionado"
+                            >
+                              {isGeneratingZip ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                              <span>Baixar este .ZIP</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSingleProjectZip()}
+                            disabled={isGeneratingZip}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+                            title="Baixar todas as imagens renomeadas em ordem numérica (.zip) diretamente para Downloads"
+                          >
+                            {isGeneratingZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
+                            <span>{isGeneratingZip ? 'Gerando ZIP...' : 'Baixar Imagens (.ZIP)'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
+
+                    {/* Seletor de Projetos Identificados pela IA (se houver mais de 1) */}
+                    {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 && (
+                      <div className="pt-2 border-t border-indigo-500/20">
+                        <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Projetos & Roteiros Separados pela IA:</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {multiProjectsResult.projetos.map((proj, pIdx) => {
+                            const isSelected = activeMultiProjectIndex === pIdx;
+                            return (
+                              <button
+                                key={proj.id || pIdx}
+                                type="button"
+                                onClick={() => handleSelectMultiProject(pIdx)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer border ${
+                                  isSelected 
+                                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-500/30' 
+                                    : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 border-slate-700 hover:bg-slate-850'
+                                }`}
+                              >
+                                <span>🎯 {pIdx + 1}. {proj.titulo_projeto}</span>
+                                <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                                  {proj.slides_ordenados?.length || 0} slides
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Banner de Sucesso pós-download com link para abrir a pasta */}
+                    {downloadSuccessInfo && (
+                      <div className="p-3.5 bg-emerald-950/80 text-emerald-200 border border-emerald-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                          <div className="truncate">
+                            <h4 className="text-xs font-bold text-emerald-300">Arquivo ZIP Salvo com Sucesso!</h4>
+                            <p className="text-[10px] text-emerald-200/80 font-mono truncate">
+                              📁 {downloadSuccessInfo.savedPath || downloadSuccessInfo.filename}
+                            </p>
+                          </div>
+                        </div>
+                        {downloadSuccessInfo.savedPath && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenFolder(downloadSuccessInfo.savedPath)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                            title="Abrir pasta de Downloads no Windows Explorer"
+                          >
+                            <FolderArchive className="w-3.5 h-3.5" /> Abrir Pasta
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Resumo Geral da IA */}
                     <div className="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/80 text-xs text-slate-200 leading-relaxed">
@@ -3461,23 +4912,27 @@ export default function App() {
 
                   {/* Grid Sequencial dos Slides Ordenados */}
                   <div className="space-y-4">
-                    {auditResult.auditoria_imagens?.map((item) => {
+                    {orderedSlidesList.map((item, index) => {
                       const matchedImg = uploadedAuditImages.find(img => 
                         img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
                         img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
                         item.imagem_arquivo_correspondente.toLowerCase().includes(img.name.toLowerCase())
                       );
 
-                      const scoreNumber = parseInt(item.pontuacao_consistencia.replace(/[^0-9]/g, '')) || 85;
+                      const scoreNumber = parseInt((item.pontuacao_consistencia || '85').replace(/[^0-9]/g, '')) || 85;
                       const badgeColor = scoreNumber >= 90 
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
                         : scoreNumber >= 75 
                           ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
                           : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
 
+                      const ext = matchedImg?.name.split('.').pop() || 'png';
+                      const cleanBase = matchedImg?.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_") || 'slide';
+                      const sequentialName = `Slide_${String(index + 1).padStart(2, '0')}_${cleanBase}.${ext}`;
+
                       return (
                         <div 
-                          key={item.slide_numero}
+                          key={`${item.slide_numero}-${index}`}
                           className="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-slate-300 shadow-xl flex flex-col md:flex-row gap-5 relative overflow-hidden group hover:border-indigo-500/40 transition-all"
                         >
                           {/* Coluna da Imagem */}
@@ -3491,7 +4946,7 @@ export default function App() {
                                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                   />
                                   <button
-                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${item.slide_numero} - ${matchedImg.name}` })}
+                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${index + 1} - ${matchedImg.name}` })}
                                     className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
                                     title="Expandir Imagem"
                                   >
@@ -3511,19 +4966,24 @@ export default function App() {
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-800/60 p-2 rounded-xl border border-slate-700/60">
-                              <span className="truncate max-w-[130px]" title={item.imagem_arquivo_correspondente}>
-                                📁 {item.imagem_arquivo_correspondente}
+                            <div className="flex flex-col gap-1 text-[10px] text-slate-400 font-mono bg-slate-800/60 p-2 rounded-xl border border-slate-700/60">
+                              <div className="flex items-center justify-between">
+                                <span className="truncate max-w-[130px]" title={item.imagem_arquivo_correspondente}>
+                                  📁 {item.imagem_arquivo_correspondente}
+                                </span>
+                                {matchedImg && (
+                                  <button
+                                    onClick={() => saveAs(matchedImg.dataUrl, sequentialName)}
+                                    className="text-indigo-400 hover:text-indigo-300 p-1 hover:bg-slate-700 rounded-md cursor-pointer transition"
+                                    title="Baixar imagem individual renomeada"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                              <span className="text-emerald-400 text-[9px] truncate" title={`Nome no ZIP: ${sequentialName}`}>
+                                📦 {sequentialName}
                               </span>
-                              {matchedImg && (
-                                <button
-                                  onClick={() => saveAs(matchedImg.dataUrl, `Slide_${item.slide_numero}_${matchedImg.name}`)}
-                                  className="text-indigo-400 hover:text-indigo-300 p-1 hover:bg-slate-700 rounded-md cursor-pointer transition"
-                                  title="Baixar imagem individual"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </button>
-                              )}
                             </div>
                           </div>
 
@@ -3533,16 +4993,48 @@ export default function App() {
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                   <span className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
-                                    {item.slide_numero}
+                                    {index + 1}
                                   </span>
                                   <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-                                    Slide {item.slide_numero}
+                                    Slide {index + 1}
                                   </h4>
                                 </div>
 
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${badgeColor}`}>
-                                  {item.pontuacao_consistencia} Consistência
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  {/* Controles de Reordenação Manual */}
+                                  <div className="flex items-center bg-slate-800/80 p-0.5 rounded-lg border border-slate-700">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveSlideUp(index)}
+                                      disabled={index === 0}
+                                      className="p-1 hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 rounded-md transition cursor-pointer"
+                                      title="Mover Slide para Cima"
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveSlideDown(index)}
+                                      disabled={index === orderedSlidesList.length - 1}
+                                      className="p-1 hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 rounded-md transition cursor-pointer"
+                                      title="Mover Slide para Baixo"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSlideToSurplus(index)}
+                                      className="p-1 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-md transition cursor-pointer"
+                                      title="Mover Imagem para Sobressalentes (Descartar deste Slide)"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${badgeColor}`}>
+                                    {item.pontuacao_consistencia} Consistência
+                                  </span>
+                                </div>
                               </div>
 
                               <div className="space-y-2.5">
@@ -3554,12 +5046,41 @@ export default function App() {
                                   <p className="text-slate-200 leading-relaxed">{item.descricao_esperada}</p>
                                 </div>
 
+                                {/* Elementos Visuais Identificados */}
+                                {item.elementos_visuais_identificados && (
+                                  <div className="p-3 bg-emerald-950/40 rounded-xl border border-emerald-500/30 text-xs">
+                                    <span className="text-[10px] font-bold text-emerald-400 block uppercase tracking-wider mb-0.5 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Elementos Identificados na Imagem:
+                                    </span>
+                                    <p className="text-emerald-100 leading-relaxed">{item.elementos_visuais_identificados}</p>
+                                  </div>
+                                )}
+
                                 {/* Feedback Visual da IA */}
                                 <div className="p-3 bg-indigo-950/40 rounded-xl border border-indigo-500/20 text-xs">
                                   <span className="text-[10px] font-bold text-indigo-400 block uppercase tracking-wider mb-0.5 flex items-center gap-1">
                                     <Sparkles className="w-3 h-3" /> Análise de Consistência & Traço:
                                   </span>
                                   <p className="text-indigo-100 leading-relaxed">{item.feedback_visual}</p>
+                                </div>
+
+                                {/* Seletor Rápido para Trocar Imagem do Slide */}
+                                <div className="flex items-center justify-between p-2 bg-slate-800/40 rounded-xl border border-slate-700/50 text-xs">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                    <RefreshCw className="w-3 h-3 text-indigo-400" /> Trocar Imagem:
+                                  </span>
+                                  <select
+                                    value={item.imagem_arquivo_correspondente}
+                                    onChange={(e) => handleSwapSlideImage(index, e.target.value)}
+                                    className="bg-slate-900 border border-slate-700 hover:border-indigo-500 text-slate-200 text-xs rounded-lg px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[200px] truncate"
+                                  >
+                                    <option value={item.imagem_arquivo_correspondente}>Atual: {item.imagem_arquivo_correspondente}</option>
+                                    {uploadedAuditImages
+                                      .filter(img => img.name !== item.imagem_arquivo_correspondente)
+                                      .map(img => (
+                                        <option key={img.id} value={img.name}>{img.name}</option>
+                                      ))}
+                                  </select>
                                 </div>
                               </div>
                             </div>
@@ -3586,35 +5107,47 @@ export default function App() {
                   </div>
 
                   {/* Seção de Imagens Sobressalentes / Descartadas */}
-                  {auditResult.imagens_sobressalentes && auditResult.imagens_sobressalentes.length > 0 && (
+                  {surplusImagesList.length > 0 && (
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-slate-300 shadow-xl space-y-4">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-                          Imagens Sobressalentes / Não Utilizadas ({auditResult.imagens_sobressalentes.length})
-                        </h4>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                            Imagens Sobressalentes / Não Utilizadas ({surplusImagesList.length})
+                          </h4>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-400">
                         Estas imagens foram analisadas mas não foram selecionadas como a melhor representação para a sequência narrativa:
                       </p>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {auditResult.imagens_sobressalentes.map((surplus, sIdx) => {
+                        {surplusImagesList.map((surplus, sIdx) => {
                           const matchedImg = uploadedAuditImages.find(img => img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase());
                           return (
-                            <div key={sIdx} className="p-3 bg-slate-800/50 rounded-2xl border border-slate-700/60 flex items-center gap-3">
-                              {matchedImg && (
-                                <img 
-                                  src={matchedImg.dataUrl} 
-                                  alt={surplus.nome_arquivo}
-                                  onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
-                                  className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0"
-                                />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-bold text-slate-200 truncate font-mono">{surplus.nome_arquivo}</p>
-                                <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">{surplus.motivo_descarte}</p>
+                            <div key={sIdx} className="p-3 bg-slate-800/50 rounded-2xl border border-slate-700/60 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {matchedImg && (
+                                  <img 
+                                    src={matchedImg.dataUrl} 
+                                    alt={surplus.nome_arquivo} 
+                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
+                                    className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0"
+                                  />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-slate-200 truncate font-mono">{surplus.nome_arquivo}</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">{surplus.motivo_descarte}</p>
+                                </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => handlePromoteSurplusToSlide(surplus)}
+                                className="px-2.5 py-1.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-xl text-[10px] font-bold transition shrink-0 cursor-pointer flex items-center gap-1"
+                                title="Adicionar esta imagem à sequência de slides"
+                              >
+                                <Sparkles className="w-3 h-3" /> Usar
+                              </button>
                             </div>
                           );
                         })}
@@ -3773,7 +5306,7 @@ export default function App() {
 
                 <div className="space-y-2 w-1/2">
                   <label className="block text-xs font-semibold text-slate-900">
-                    {activeTab === 'script' ? 'Número de Cenas' : 'Número de Slides'}
+                    {activeTab === 'script' ? 'Número de Cenas' : 'Slides por Post'}
                   </label>
                   <input 
                     type="number"
@@ -3785,6 +5318,65 @@ export default function App() {
                   />
                 </div>
               </div>
+
+              {/* Seletor de Quantidade de Carrosséis em Lote (1 a 30) */}
+              {activeTab === 'carousel' && (
+                <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-indigo-50/90 to-purple-50/70 border border-indigo-200 rounded-2xl shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      <span>Quantidade de Carrosséis (1 a 30)</span>
+                    </label>
+                    <span className="text-xs font-black text-indigo-600 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+                      {carouselQuantity} {carouselQuantity === 1 ? 'Carrossel' : 'Carrosséis'}
+                    </span>
+                  </div>
+
+                  {/* Atalhos Rápidos */}
+                  <div className="grid grid-cols-6 gap-1.5 pt-0.5">
+                    {[1, 3, 5, 10, 15, 30].map(qty => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setCarouselQuantity(qty)}
+                        className={`py-1.5 text-xs font-black rounded-xl border transition flex items-center justify-center cursor-pointer ${
+                          carouselQuantity === qty
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-500/20'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {qty}x
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Slider & Input */}
+                  <div className="pt-1 flex items-center gap-3">
+                    <input 
+                      type="range"
+                      min="1"
+                      max="30"
+                      value={carouselQuantity}
+                      onChange={(e) => setCarouselQuantity(Number(e.target.value))}
+                      className="w-full accent-indigo-600 cursor-pointer h-2 bg-indigo-100 rounded-lg"
+                    />
+                    <input 
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={carouselQuantity}
+                      onChange={(e) => setCarouselQuantity(Math.max(1, Math.min(30, Number(e.target.value))))}
+                      className="w-14 p-1 text-center font-black text-xs bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <p className="text-[10.5px] text-indigo-950/80 leading-snug">
+                    {carouselQuantity === 1 
+                      ? 'Gera 1 carrossel completo com o tema e configurações acima.' 
+                      : `A IA gerará ${carouselQuantity} carrosséis completos de uma vez (explorando diferentes ganchos/ângulos do tema ou 1 carrossel para cada linha da sua lista).`}
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-slate-900">
@@ -3910,7 +5502,9 @@ export default function App() {
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder={referencePdfs.length > 0 
                     ? "Opcional: O PDF anexado será a fonte principal. Ou insira instruções adicionais aqui..." 
-                    : "Ex: Como lidar com a ansiedade... Ou cole aqui o seu próprio texto para ser adaptado em roteiro."}
+                    : activeTab === 'carousel' && carouselQuantity > 1
+                      ? `Ex: Digite um tema geral (a IA criará ${carouselQuantity} carrosséis com abordagens diferentes) OU cole uma lista de tópicos (1 por linha) para gerar 1 carrossel por item.`
+                      : "Ex: Como lidar com a ansiedade... Ou cole aqui o seu próprio texto para ser adaptado em roteiro."}
                   rows={4}
                   className="w-full p-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition resize-none"
                 />
@@ -4327,17 +5921,99 @@ export default function App() {
                 </div>
               )}
 
+              {/* Seletor de Carrosséis em Lote (se houver mais de 1 carrossel gerado) */}
+              {batchCarouselResults && batchCarouselResults.length > 1 && (
+                <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shrink-0">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-bold text-white">Lote de Carrosséis Gerados ({batchCarouselResults.length})</h3>
+                          <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-black rounded-full">
+                            Carrossel {activeCarouselIndex + 1} de {batchCarouselResults.length}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Alterne entre os carrosséis gerados ou envie todos diretamente para a esteira de Auditoria Visual.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSendAllCarouselsToAudit}
+                        className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                        title="Enviar todos os roteiros para a esteira de Auditoria e Separação de Imagens"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                        <span>⚡ Enviar Todos para Auditoria ({batchCarouselResults.length})</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Abas dos Carrosséis */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 border-t border-slate-800">
+                    {batchCarouselResults.map((car, cIdx) => {
+                      const isSelected = activeCarouselIndex === cIdx;
+                      const title = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+                      return (
+                        <button
+                          key={cIdx}
+                          type="button"
+                          onClick={() => handleSelectCarouselIndex(cIdx)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 border ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-500/30'
+                              : 'bg-slate-800 text-slate-400 hover:text-slate-200 border-slate-700 hover:bg-slate-700'
+                          }`}
+                        >
+                          <span>📑 {cIdx + 1}. {title}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-900 text-slate-400'}`}>
+                            {car.slides?.length || 0} slides
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Export Actions for Carousel */}
-              <div className="flex flex-wrap items-center justify-end gap-2 px-1">
-                <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition">
-                  <FileText className="w-4 h-4" /> TXT
-                </button>
-                <button onClick={exportAsDOCX} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-blue-700 transition">
-                  <FileText className="w-4 h-4" /> DOCX
-                </button>
-                <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm">
-                  <Download className="w-4 h-4" /> PDF
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">
+                    {carouselResult.title ? `📑 ${carouselResult.title}` : '📑 Carrossel Estruturado'}
+                  </h4>
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
+                    {carouselResult.slides?.length || 0} Slides
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {(!batchCarouselResults || batchCarouselResults.length <= 1) && (
+                    <button
+                      type="button"
+                      onClick={handleSendAllCarouselsToAudit}
+                      className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 hover:text-white text-xs font-bold px-3 py-2 rounded-xl border border-indigo-500/40 transition cursor-pointer"
+                      title="Enviar este roteiro para a Auditoria Visual"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Enviar para Auditoria
+                    </button>
+                  )}
+                  <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition cursor-pointer" title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em TXT` : 'Exportar TXT'}>
+                    <FileText className="w-4 h-4" /> {batchCarouselResults.length > 1 ? `TXT (${batchCarouselResults.length} Carrosséis)` : 'TXT'}
+                  </button>
+                  <button onClick={exportAsDOCX} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-blue-700 transition cursor-pointer">
+                    <FileText className="w-4 h-4" /> DOCX
+                  </button>
+                  <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer">
+                    <Download className="w-4 h-4" /> PDF
+                  </button>
+                </div>
               </div>
 
               {/* Instagram Post Description for Carousel */}
@@ -4973,57 +6649,198 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Informação e Campo de Chave API Universal OpenRouter */}
+                  {/* Relatório de Verificação de Saúde das Chaves OpenRouter */}
+                  {openrouterVerificationReport && (
+                    <div className="p-3.5 bg-amber-50/90 border border-amber-200 text-amber-900 text-xs rounded-2xl flex items-center justify-between gap-2 text-left animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          <strong>Verificação OpenRouter concluída às {openrouterVerificationReport.verifiedAt}:</strong> {openrouterVerificationReport.free} chaves ativas com cota disponível, {openrouterVerificationReport.exhausted} esgotadas/inválidas.
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setOpenrouterVerificationReport(null)}
+                        className="text-amber-700 hover:text-amber-900 text-[10px] font-bold p-1 hover:bg-amber-100 rounded-lg cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cards de Resumo das Chaves OpenRouter com Ações de Verificação */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status do Pool de Chaves OpenRouter</h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleResetOpenRouterKeys}
+                          className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                          title="Restaurar status de todas as chaves OpenRouter para Livres"
+                        >
+                          Resetar Status
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleVerifyAllOpenRouterKeys}
+                          disabled={isVerifyingOpenRouterKeys}
+                          className="text-[10px] font-bold text-amber-700 hover:text-amber-900 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isVerifyingOpenRouterKeys ? 'animate-spin' : ''}`} />
+                          <span>{isVerifyingOpenRouterKeys ? 'Verificando...' : 'Medir Cotas de Todas'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Contas/Chaves</p>
+                        <p className="text-2xl font-black text-slate-800 mt-1">{openrouterKeysStats.total}</p>
+                      </div>
+                      <div className="p-3.5 bg-emerald-50/50 border border-emerald-100/80 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wider">Chaves Ativas</p>
+                        <p className="text-2xl font-black text-emerald-600 mt-1">{openrouterKeysStats.free}</p>
+                      </div>
+                      <div className="p-3.5 bg-amber-50/50 border border-amber-100/80 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wider">Esgotadas / 429</p>
+                        <p className="text-2xl font-black text-amber-600 mt-1">{openrouterKeysStats.exhausted}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Informação e Campo de Cadastro de Múltiplas Chaves OpenRouter */}
                   <div className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
                     <div className="p-3 bg-amber-50/80 border border-amber-200/60 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
                       <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">Chave Universal OpenRouter:</span> Uma única chave de API funciona para todos os modelos abaixo (MiniMax, Gemma, Nemotron, DeepSeek, etc.). Cole sua chave abaixo e ela ficará salva automaticamente.
+                        <span className="font-bold">Pool de Múltiplas Contas / Chaves:</span> Cadastre quantas chaves OpenRouter desejar (<span className="font-mono font-bold">sk-or-v1-...</span>). Quando a cota de uma conta se esgotar (429), o sistema alternará automaticamente para a próxima chave, e se todas esgotarem fará failover para o Gemini!
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <span>Chave da API OpenRouter (sk-or-v1-...)</span>
+                        <span>Adicionar Chaves OpenRouter (cole uma por linha ou separadas por vírgula)</span>
                       </label>
                       <a 
                         href="https://openrouter.ai/keys" 
                         target="_blank" 
                         rel="noreferrer"
-                        className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1 font-bold"
+                        className="text-[10px] text-amber-700 hover:underline flex items-center gap-1 font-bold"
                       >
-                        <span>Obter chave gratuita no OpenRouter</span>
+                        <span>Obter chave no OpenRouter</span>
                         <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="password"
-                        value={openrouterKeyInput}
-                        onChange={(e) => setOpenrouterKeyInput(e.target.value)}
-                        placeholder={openrouterConfig.hasKey ? `Chave salva: ${openrouterConfig.apiKeyMasked}` : 'Cole sua chave: sk-or-v1-...'}
-                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                    <div className="space-y-2">
+                      <textarea
+                        value={openrouterMultiKeysInput}
+                        onChange={(e) => setOpenrouterMultiKeysInput(e.target.value)}
+                        placeholder="Cole aqui suas chaves OpenRouter (uma por linha):&#10;sk-or-v1-conta1...&#10;sk-or-v1-conta2..."
+                        rows={2}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                       />
-                      <button
-                        onClick={handleSaveOpenRouterKeyOnly}
-                        disabled={!openrouterKeyInput.trim() || isSavingProviderSettings}
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        <span>Salvar Chave</span>
-                      </button>
-                    </div>
+                      
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{isUploadingOpenRouterKeys ? 'Carregando...' : 'Importar Arquivo .txt'}</span>
+                          <input 
+                            type="file" 
+                            accept=".txt" 
+                            onChange={handleOpenRouterKeysFileUpload} 
+                            className="hidden"
+                            disabled={isUploadingOpenRouterKeys}
+                          />
+                        </label>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-500">
-                      <span className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${openrouterConfig.hasKey ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                        {openrouterConfig.hasKey 
-                          ? `Chave salva e ativa: ${openrouterConfig.apiKeyMasked}` 
-                          : 'Nenhuma chave salva. Cole e clique em Salvar Chave.'}
-                      </span>
-                      <span className="text-[10px] text-slate-400">Salva no arquivo de configuração e .env</span>
+                        <button
+                          onClick={handleAddOpenRouterMultiKeys}
+                          disabled={!openrouterMultiKeysInput.trim() || isUploadingOpenRouterKeys}
+                          className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          {isUploadingOpenRouterKeys ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                          <span>Adicionar Chaves ao Pool</span>
+                        </button>
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Tabela de Chaves OpenRouter Carregadas com Status Detalhado */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chaves Rotativas OpenRouter Cadastradas</h4>
+                      <span className="text-[10px] text-slate-400">{openrouterKeysStats.keysList.length} cadastradas</span>
+                    </div>
+                    
+                    {openrouterKeysStats.keysList.length === 0 ? (
+                      <div className="py-6 text-center border border-slate-100 rounded-2xl bg-slate-50/20">
+                        <Key className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs text-slate-400 font-medium">Nenhuma chave OpenRouter adicionada ao pool.</p>
+                        <p className="text-[10px] text-slate-400/80 mt-0.5">Cole uma ou mais chaves acima para ativar a alternância inteligente.</p>
+                      </div>
+                    ) : (
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-xs">
+                        <div className="max-h-52 overflow-y-auto">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                <th className="p-3">Chave OpenRouter</th>
+                                <th className="p-3">Status & Cota</th>
+                                <th className="p-3 text-center">Sucessos</th>
+                                <th className="p-3 text-center">Falhas</th>
+                                <th className="p-3 text-right">Ações</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {openrouterKeysStats.keysList.map((keyObj) => (
+                                <tr key={keyObj.id} className="hover:bg-slate-50/50 transition">
+                                  <td className="p-3 font-mono text-[11px] text-slate-600">
+                                    <div className="font-bold flex items-center gap-1.5">
+                                      <span>{keyObj.keyMasked}</span>
+                                      {keyObj.label && (
+                                        <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 text-[9px] font-sans font-medium rounded-md">
+                                          {keyObj.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {keyObj.lastVerified && (
+                                      <div className="text-[9px] text-slate-400 font-sans mt-0.5">Verificada: {keyObj.lastVerified}</div>
+                                    )}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${keyObj.status === 'free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                                      {keyObj.status === 'free' ? 'Ativa / Livre' : 'Cota Esgotada (429)'}
+                                    </span>
+                                    {keyObj.creditsRemaining !== undefined && (
+                                      <div className="text-[9px] text-emerald-700 font-semibold mt-0.5 font-mono">
+                                        Saldo: ~${keyObj.creditsRemaining.toFixed(2)} USD
+                                      </div>
+                                    )}
+                                    {keyObj.lastError && (
+                                      <div className="text-[9px] text-amber-700/80 mt-0.5 max-w-[140px] truncate" title={keyObj.lastError}>
+                                        {keyObj.lastError}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-center text-emerald-600 font-bold">{keyObj.successCount}</td>
+                                  <td className="p-3 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>
+                                  <td className="p-3 text-right">
+                                    <button 
+                                      onClick={() => handleRemoveOpenRouterKey(keyObj.id)}
+                                      className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                      title="Remover Chave"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Card do Medidor de Cota e Limites da Chave OpenRouter */}
@@ -5273,40 +7090,524 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal de Zoom de Imagem da Auditoria */}
-      {auditImageModalUrl && (
+      {/* Modal de Pré-visualização Completa dos Slides Ordenados e Separados */}
+      {isPreviewModalOpen && (
         <div 
-          onClick={() => setAuditImageModalUrl(null)}
-          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setIsPreviewModalOpen(false)}
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95"
+            className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95"
           >
-            <div className="p-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between text-white">
-              <span className="text-xs font-bold font-mono truncate max-w-[500px]">{auditImageModalUrl.title}</span>
+            {/* Header do Modal */}
+            <div className="p-4 sm:p-5 bg-slate-850 border-b border-slate-800 flex flex-col gap-3 text-white">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                    <Images className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-bold text-white tracking-wide">
+                        {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1
+                          ? `Preview: ${multiProjectsResult.projetos[activeMultiProjectIndex]?.titulo_projeto || 'Projeto'}`
+                          : 'Preview da Sequência de Imagens Separadas & Ordenadas'}
+                      </h3>
+                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black rounded-full">
+                        {orderedSlidesList.length} Slides Prontos
+                      </span>
+                      {surplusImagesList.length > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold rounded-full">
+                          {surplusImagesList.length} Sobressalentes
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5 truncate">
+                      {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1
+                        ? `Projeto ${activeMultiProjectIndex + 1} de ${multiProjectsResult.projetos.length} identificado pela IA.`
+                        : 'Confira o storyboard organizado pela IA, ajuste a ordem dos slides se desejar e baixe o pacote pronto.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Botões do Topo */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleDownloadAllProjectsZips}
+                        disabled={isDownloadingAllZips || isGeneratingZip}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg disabled:opacity-50"
+                        title="Baixar todos os projetos separados em arquivos .ZIP diferentes com nomes inteligentes dados pela IA"
+                      >
+                        {isDownloadingAllZips ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
+                        <span>{isDownloadingAllZips ? 'Baixando Todos...' : `Baixar Todos os .ZIPs (${multiProjectsResult.projetos.length})`}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadSingleProjectZip()}
+                        disabled={isGeneratingZip || isDownloadingAllZips}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/30 transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                        title="Baixar apenas o .ZIP deste projeto"
+                      >
+                        {isGeneratingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        <span>Baixar este .ZIP</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleDownloadOrderedImagesZip}
+                      disabled={isGeneratingZip}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+                      title="Baixar lote ordenado direto para Downloads"
+                    >
+                      {isGeneratingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
+                      <span>{isGeneratingZip ? 'Baixando...' : 'Baixar ZIP para Downloads'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewModalOpen(false)}
+                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                    title="Fechar Preview (ESC)"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Seletor de Projetos no Modal (se houver mais de 1) */}
+              {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 && (
+                <div className="pt-2 border-t border-slate-800 flex items-center gap-2 overflow-x-auto pb-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Roteiros/Projetos:
+                  </span>
+                  {multiProjectsResult.projetos.map((proj, pIdx) => {
+                    const isSelected = activeMultiProjectIndex === pIdx;
+                    return (
+                      <button
+                        key={proj.id || pIdx}
+                        type="button"
+                        onClick={() => handleSelectMultiProject(pIdx)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 border ${
+                          isSelected 
+                            ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-500/30' 
+                            : 'bg-slate-900 text-slate-400 hover:text-slate-200 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>🎯 {pIdx + 1}. {proj.titulo_projeto}</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                          {proj.slides_ordenados?.length || 0} slides
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Abas Internas do Preview */}
+            <div className="px-4 sm:px-6 pt-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => saveAs(auditImageModalUrl.url, auditImageModalUrl.title.replace(/[^a-zA-Z0-9._-]/g, '_'))}
-                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer"
+                  type="button"
+                  onClick={() => setPreviewTab('ordered')}
+                  className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-t-xl transition flex items-center gap-2 cursor-pointer border-b-2 ${
+                    previewTab === 'ordered'
+                      ? 'bg-slate-800/80 text-indigo-400 border-indigo-500 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/40'
+                  }`}
                 >
-                  <Download className="w-3.5 h-3.5" /> Baixar
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  <span>Sequência Ordenada ({orderedSlidesList.length})</span>
                 </button>
+
                 <button
-                  onClick={() => setAuditImageModalUrl(null)}
-                  className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                  type="button"
+                  onClick={() => setPreviewTab('surplus')}
+                  className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-t-xl transition flex items-center gap-2 cursor-pointer border-b-2 ${
+                    previewTab === 'surplus'
+                      ? 'bg-slate-800/80 text-amber-400 border-amber-500 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/40'
+                  }`}
                 >
-                  <X className="w-5 h-5" />
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Sobressalentes / Descarte ({surplusImagesList.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('report')}
+                  className={`px-3 sm:px-4 py-2 text-xs font-bold rounded-t-xl transition flex items-center gap-2 cursor-pointer border-b-2 ${
+                    previewTab === 'report'
+                      ? 'bg-slate-800/80 text-emerald-400 border-emerald-500 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-800/40'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Parecer & Roteiro</span>
                 </button>
               </div>
+
+              {auditResult?.pontuacao_media_geral && (
+                <div className="hidden sm:flex items-center gap-1.5 text-xs text-indigo-300 font-bold">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Consistência Média: {auditResult.pontuacao_media_geral}</span>
+                </div>
+              )}
             </div>
-            <div className="flex-1 p-4 flex items-center justify-center bg-slate-950 overflow-auto">
-              <img 
-                src={auditImageModalUrl.url} 
-                alt={auditImageModalUrl.title} 
-                className="max-h-[75vh] w-auto object-contain rounded-xl shadow-lg"
-              />
+
+            {/* Conteúdo das Abas */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-950/60">
+              
+              {/* ABA 1: Sequência Ordenada */}
+              {previewTab === 'ordered' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400 pb-1">
+                    <span>Ordem cronológica dos slides. Use os botões ⬆️ ⬇️ em cada card para reposicionar:</span>
+                    <span className="font-mono text-[11px] text-slate-500">{orderedSlidesList.length} arquivos mapeados</span>
+                  </div>
+
+                  {orderedSlidesList.length === 0 ? (
+                    <div className="py-16 text-center text-slate-500 space-y-2">
+                      <Images className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+                      <p className="font-bold text-slate-400">Nenhum slide na sequência ativa</p>
+                      <p className="text-xs">Promova imagens da aba "Sobressalentes" ou execute uma nova auditoria.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {orderedSlidesList.map((item, index) => {
+                        const matchedImg = uploadedAuditImages.find(img => 
+                          img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
+                          img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
+                          item.imagem_arquivo_correspondente.toLowerCase().includes(img.name.toLowerCase())
+                        );
+
+                        const ext = matchedImg?.name.split('.').pop() || 'png';
+                        const cleanBase = matchedImg?.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_") || 'slide';
+                        const sequentialName = `Slide_${String(index + 1).padStart(2, '0')}_${cleanBase}.${ext}`;
+
+                        const scoreNumber = parseInt((item.pontuacao_consistencia || '85').replace(/[^0-9]/g, '')) || 85;
+                        const badgeColor = scoreNumber >= 90 
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                          : scoreNumber >= 75 
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+
+                        return (
+                          <div 
+                            key={`${item.slide_numero}-${index}`}
+                            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-md hover:border-indigo-500/40 transition group"
+                          >
+                            {/* Topo do Card */}
+                            <div>
+                              <div className="flex items-center justify-between mb-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                                    {index + 1}
+                                  </span>
+                                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                                    Slide {index + 1}
+                                  </h4>
+                                </div>
+
+                                {/* Controles de Ordem */}
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSlideUp(index)}
+                                    disabled={index === 0}
+                                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-20 rounded-md transition cursor-pointer"
+                                    title="Mover para esquerda/cima"
+                                  >
+                                    <ChevronUp className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSlideDown(index)}
+                                    disabled={index === orderedSlidesList.length - 1}
+                                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-20 rounded-md transition cursor-pointer"
+                                    title="Mover para direita/baixo"
+                                  >
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSlideToSurplus(index)}
+                                    className="p-1 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 rounded-md transition cursor-pointer"
+                                    title="Descartar deste slide"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Imagem do Slide */}
+                              <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800 mb-3 group/img">
+                                {matchedImg ? (
+                                  <>
+                                    <img 
+                                      src={matchedImg.dataUrl} 
+                                      alt={item.imagem_arquivo_correspondente} 
+                                      className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                    />
+                                    <button
+                                      onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${index + 1} - ${matchedImg.name}` })}
+                                      className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
+                                      title="Expandir Imagem"
+                                    >
+                                      <div className="p-1.5 bg-slate-900/80 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                        <ZoomIn className="w-3.5 h-3.5" /> Ver Grande
+                                      </div>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs p-3 text-center">
+                                    <ImageIcon className="w-6 h-6 mb-1 text-slate-600" />
+                                    <span className="truncate max-w-full font-mono text-[10px]">{item.imagem_arquivo_correspondente}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Nomes dos Arquivos */}
+                              <div className="space-y-1 mb-2.5 text-[10px] font-mono">
+                                <div className="text-slate-400 truncate" title={`Original: ${item.imagem_arquivo_correspondente}`}>
+                                  📁 Original: {item.imagem_arquivo_correspondente}
+                                </div>
+                                <div className="text-emerald-400 font-bold truncate" title={`Nome no ZIP: ${sequentialName}`}>
+                                  📦 No ZIP: {sequentialName}
+                                </div>
+                              </div>
+
+                              {/* Descrição e Análise */}
+                              <div className="space-y-1.5 text-xs">
+                                <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800 text-slate-300 text-[11px] leading-relaxed">
+                                  <span className="font-bold text-slate-400 block text-[9px] uppercase">Roteiro:</span>
+                                  <p className="line-clamp-2">{item.descricao_esperada}</p>
+                                </div>
+
+                                {item.elementos_visuais_identificados && (
+                                  <div className="p-2 bg-emerald-950/30 rounded-lg border border-emerald-500/20 text-emerald-200 text-[10px] leading-relaxed">
+                                    <span className="font-bold text-emerald-400 block text-[9px] uppercase flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Elementos Identificados:
+                                    </span>
+                                    <p className="line-clamp-2">{item.elementos_visuais_identificados}</p>
+                                  </div>
+                                )}
+
+                                {item.feedback_visual && (
+                                  <div className="p-2 bg-indigo-950/30 rounded-lg border border-indigo-500/20 text-indigo-200 text-[10px] leading-relaxed">
+                                    <span className="font-bold text-indigo-400 block text-[9px] uppercase">IA:</span>
+                                    <p className="line-clamp-2">{item.feedback_visual}</p>
+                                  </div>
+                                )}
+
+                                {/* Trocar Imagem no Preview */}
+                                <div className="flex items-center justify-between p-1.5 bg-slate-950/50 rounded-lg border border-slate-800 text-[10px]">
+                                  <span className="text-slate-400 font-bold uppercase flex items-center gap-1">
+                                    <RefreshCw className="w-3 h-3 text-indigo-400" /> Trocar:
+                                  </span>
+                                  <select
+                                    value={item.imagem_arquivo_correspondente}
+                                    onChange={(e) => handleSwapSlideImage(index, e.target.value)}
+                                    className="bg-slate-900 border border-slate-700 text-slate-300 text-[10px] rounded px-1.5 py-0.5 font-mono max-w-[150px] truncate focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                  >
+                                    <option value={item.imagem_arquivo_correspondente}>Atual: {item.imagem_arquivo_correspondente}</option>
+                                    {uploadedAuditImages
+                                      .filter(img => img.name !== item.imagem_arquivo_correspondente)
+                                      .map(img => (
+                                        <option key={img.id} value={img.name}>{img.name}</option>
+                                      ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Rodapé do Card */}
+                            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                                {item.pontuacao_consistencia}
+                              </span>
+                              {matchedImg && (
+                                <button
+                                  type="button"
+                                  onClick={() => saveAs(matchedImg.dataUrl, sequentialName)}
+                                  className="text-slate-400 hover:text-indigo-300 text-[10px] flex items-center gap-1 font-bold transition cursor-pointer"
+                                  title="Baixar este slide isolado"
+                                >
+                                  <Download className="w-3 h-3" /> Baixar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA 2: Sobressalentes / Descarte */}
+              {previewTab === 'surplus' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400 pb-1">
+                    <span>Imagens que não foram incluídas na sequência principal. Clique em <strong>"+ Usar como Slide"</strong> para reintegrá-las:</span>
+                    <span className="font-mono text-[11px] text-slate-500">{surplusImagesList.length} arquivos</span>
+                  </div>
+
+                  {surplusImagesList.length === 0 ? (
+                    <div className="py-16 text-center text-slate-500 space-y-2">
+                      <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500 mb-2" />
+                      <p className="font-bold text-slate-300">Todas as imagens foram utilizadas!</p>
+                      <p className="text-xs text-slate-500">Nenhuma imagem sobressalente descartada.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {surplusImagesList.map((surplus, sIdx) => {
+                        const matchedImg = uploadedAuditImages.find(img => img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase());
+                        return (
+                          <div 
+                            key={sIdx} 
+                            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-md"
+                          >
+                            <div className="space-y-2.5">
+                              {matchedImg && (
+                                <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                                  <img 
+                                    src={matchedImg.dataUrl} 
+                                    alt={surplus.nome_arquivo}
+                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
+                                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                                  />
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-xs font-bold text-slate-200 font-mono truncate">{surplus.nome_arquivo}</p>
+                                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed bg-slate-950/60 p-2 rounded-lg border border-slate-800">
+                                  {surplus.motivo_descarte}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handlePromoteSurplusToSlide(surplus)}
+                              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Adicionar como Slide {orderedSlidesList.length + 1}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA 3: Parecer & Roteiro */}
+              {previewTab === 'report' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Resumo da IA */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-indigo-400" /> Parecer de Continuidade Visual da IA
+                    </h4>
+                    <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl text-xs text-slate-200 leading-relaxed max-h-72 overflow-y-auto">
+                      {auditResult?.resumo_geral_consistencia || 'Nenhum resumo disponível.'}
+                    </div>
+                  </div>
+
+                  {/* Roteiro de Referência */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-slate-400" /> Roteiro Utilizado na Auditoria
+                    </h4>
+                    <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl text-xs text-slate-300 leading-relaxed font-mono whitespace-pre-wrap max-h-72 overflow-y-auto">
+                      {auditScriptInput || 'Nenhum roteiro inserido.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
+
+            {/* Rodapé do Modal com Informações de Download e Botões */}
+            <div className="p-4 sm:p-5 bg-slate-850 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              {/* Lado Esquerdo: Info de Download */}
+              <div className="flex items-center gap-2 min-w-0">
+                {downloadSuccessInfo ? (
+                  <div className="flex items-center gap-2 text-xs text-emerald-300 font-semibold truncate">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="truncate">Salvo em: {downloadSuccessInfo.savedPath || downloadSuccessInfo.filename}</span>
+                    {downloadSuccessInfo.savedPath && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFolder(downloadSuccessInfo.savedPath)}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold transition shrink-0 cursor-pointer shadow-xs ml-1 flex items-center gap-1"
+                      >
+                        <FolderArchive className="w-3 h-3" /> Abrir Pasta
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400">
+                    O arquivo ZIP conterá a pasta <strong>imagens_ordenadas</strong> com cada slide numerado.
+                  </span>
+                )}
+              </div>
+
+              {/* Lado Direito: Ações */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Fechar Preview
+                </button>
+
+                {multiProjectsResult?.projetos && multiProjectsResult.projetos.length > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadAllProjectsZips}
+                      disabled={isDownloadingAllZips || isGeneratingZip}
+                      className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl transition flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                      title="Baixar todos os projetos separados em arquivos .ZIP diferentes"
+                    >
+                      {isDownloadingAllZips ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
+                      <span>{isDownloadingAllZips ? 'Baixando Todos...' : `Baixar Todos os .ZIPs (${multiProjectsResult.projetos.length})`}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadSingleProjectZip()}
+                      disabled={isGeneratingZip || isDownloadingAllZips || orderedSlidesList.length === 0}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/30 transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Baixar apenas o .ZIP do projeto selecionado"
+                    >
+                      {isGeneratingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      <span>Baixar este .ZIP</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleDownloadOrderedImagesZip}
+                    disabled={isGeneratingZip || orderedSlidesList.length === 0}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                  >
+                    {isGeneratingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
+                    <span>{isGeneratingZip ? 'Gerando e Salvando ZIP...' : 'Baixar Imagens (.ZIP)'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
           </div>
         </div>
       )}
@@ -5536,6 +7837,66 @@ export default function App() {
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
           )}
         </button>
+      )}
+
+      {/* Modal de Zoom em Alta Resolução (Lightbox) no Nível Mais Alto (z-[100]) */}
+      {auditImageModalUrl && (
+        <div 
+          onClick={() => setAuditImageModalUrl(null)}
+          className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl animate-in zoom-in-95"
+          >
+            {/* Header do Lightbox */}
+            <div className="p-4 bg-slate-850 border-b border-slate-800 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2.5 min-w-0 pr-3">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                  <ZoomIn className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs sm:text-sm font-bold text-white truncate font-mono">
+                    {auditImageModalUrl.title}
+                  </h4>
+                  <p className="text-[10px] text-slate-400">Pressione ESC ou clique fora para fechar</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => saveAs(auditImageModalUrl.url, auditImageModalUrl.title.replace(/[^a-zA-Z0-9._-]/g, '_'))}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                  title="Baixar imagem individual"
+                >
+                  <Download className="w-3.5 h-3.5" /> <span>Baixar Imagem</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditImageModalUrl(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                  title="Fechar (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Imagem em Tamanho Grande */}
+            <div 
+              onClick={() => setAuditImageModalUrl(null)}
+              className="flex-1 p-4 sm:p-6 flex items-center justify-center bg-slate-950 overflow-auto cursor-zoom-out"
+            >
+              <img 
+                src={auditImageModalUrl.url} 
+                alt={auditImageModalUrl.title} 
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[78vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800"
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
