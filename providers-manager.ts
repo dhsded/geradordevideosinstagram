@@ -112,12 +112,15 @@ export class ProvidersManager {
   }
 
   public getOpenRouterKey(): string {
-    const directKey = (this.config.openrouter.apiKey || '').trim().replace(/^["']+|["']+$/g, '');
-    if (directKey) return directKey;
-
+    // Prioridade 1: chave ativa do pool (gerenciada e validada)
     const poolKey = (openrouterKeysManager.getActiveKey() || '').trim().replace(/^["']+|["']+$/g, '');
     if (poolKey) return poolKey;
 
+    // Prioridade 2: chave direta do config (legado)
+    const directKey = (this.config.openrouter.apiKey || '').trim().replace(/^["']+|["']+$/g, '');
+    if (directKey) return directKey;
+
+    // Prioridade 3: variável de ambiente
     return (process.env.OPENROUTER_API_KEY || '').trim().replace(/^["']+|["']+$/g, '');
   }
 
