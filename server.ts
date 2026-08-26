@@ -437,6 +437,7 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
       res.json({
         ...providersManager.getPublicConfig(),
         geminiStats: keysManager.getStats(),
+        openrouterStats: openrouterKeysManager.getStats(),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -446,10 +447,17 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
   app.post("/api/providers/settings", (req, res) => {
     try {
       const { activeProvider, openrouter, gemini } = req.body;
+      if (openrouter?.apiKey) {
+        const cleanKey = String(openrouter.apiKey).trim().replace(/^["']+|["']+$/g, '');
+        if (cleanKey && cleanKey.length >= 8) {
+          openrouterKeysManager.addKeys([cleanKey], 'Chave Principal');
+        }
+      }
       providersManager.updateConfig({ activeProvider, openrouter, gemini });
       res.json({
         ...providersManager.getPublicConfig(),
         geminiStats: keysManager.getStats(),
+        openrouterStats: openrouterKeysManager.getStats(),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

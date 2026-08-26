@@ -895,12 +895,93 @@ export default function App() {
     }
   };
 
+  const handleKeysFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingKeys(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text
+          .split(/[\r\n,;]+/)
+          .map(l => l.trim().replace(/^["']+|["']+$/g, '').trim())
+          .filter(l => l && !l.startsWith('#'));
+        if (lines.length === 0) {
+          alert('Nenhuma chave encontrada no arquivo .txt selecionado.');
+          setIsUploadingKeys(false);
+          return;
+        }
+        const res = await apiFetch('/api/keys/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: lines }),
+          signal: AbortSignal.timeout(30000)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setKeysStats(data);
+          addLog('success', 'CHAVES', `${data.total || lines.length} chave(s) Gemini carregada(s) com sucesso.`);
+          await fetchProvidersAndStats();
+        } else {
+          throw new Error(data.error || `Erro HTTP ${res.status} ao importar chaves Gemini.`);
+        }
+      } catch (err: any) {
+        setKeyManagerError(`Erro ao carregar arquivo de chaves Gemini: ${err.message}`);
+      } finally {
+        setIsUploadingKeys(false);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleResetKeys = async () => {
+    try {
+      const res = await apiFetch('/api/keys/reset', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setKeysStats(data);
+        addLog('success', 'CHAVES', 'Todas as chaves Gemini foram reativadas (status: Livre).');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleRemoveKey = async (id: string) => {
+    try {
+      const res = await apiFetch(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setKeysStats(data);
+        addLog('info', 'CHAVES', 'Chave Gemini removida.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleClearKeys = async () => {
+    if (!confirm('Deseja realmente remover todas as chaves Gemini cadastradas?')) return;
+    try {
+      const res = await apiFetch('/api/keys/clear', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setKeysStats(data);
+        addLog('info', 'CHAVES', 'Todas as chaves Gemini foram removidas.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
   const handleVerifyAllKeys = async () => {
     setIsVerifyingKeys(true);
     setKeyManagerError(null);
     addLog('info', 'CHAVES', 'Iniciando teste de saúde de todas as chaves Gemini...');
     try {
-      const res = await fetch(getApiUrl('/api/keys/verify-all'), { method: 'POST' });
+      const res = await apiFetch('/api/keys/verify-all', { method: 'POST', signal: AbortSignal.timeout(30000) });
       const text = await res.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch {}
@@ -931,7 +1012,7 @@ export default function App() {
 
   const fetchProvidersAndStats = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/providers'));
+      const response = await apiFetch('/api/providers');
       if (response.ok) {
         const data = await response.json();
         if (data.activeProvider) {
@@ -950,6 +1031,9 @@ export default function App() {
         }
         if (data.geminiStats) {
           setKeysStats(data.geminiStats);
+        }
+        if (data.openrouterStats) {
+          setOpenrouterKeysStats(data.openrouterStats);
         }
       }
       await fetchOpenRouterKeys();
@@ -1486,128 +1570,6 @@ export default function App() {
     }
   };
 
-  const handleKeysFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploadingKeys(true);
-    setKeyManagerError(null);
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const lines = text.split('\n');
-        const extractedKeys: string[] = [];
-        
-        lines.forEach(line => {
-          const clean = line.trim();
-          if (clean && clean.startsWith('AIzaSy')) {
-            extractedKeys.push(clean);
-          }
-        });
-
-        if (extractedKeys.length === 0) {
-          setKeyManagerError('Nenhuma chave Gemini válida (iniciando com AIzaSy) foi encontrada no arquivo.');
-          setIsUploadingKeys(false);
-          return;
-        }
-
-        const response = await fetch(getApiUrl('/api/keys/upload'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: extractedKeys })
-        });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Erro ao subir chaves.');
-        }
-
-        const data = await response.json();
-        setKeysStats(data);
-      } catch (err: any) {
-        console.error(err);
-        setKeyManagerError(err.message || 'Ocorreu um erro no processamento do arquivo.');
-      } finally {
-        setIsUploadingKeys(false);
-        e.target.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleRemoveKey = async (id: string) => {
-    try {
-      setKeyManagerError(null);
-      // Atualização otimista imediata na UI
-      setKeysStats(prev => ({
-        ...prev,
-        total: Math.max(0, prev.total - 1),
-        free: Math.max(0, prev.free - (prev.keysList.find(k => k.id === id)?.status === 'free' ? 1 : 0)),
-        exhausted: Math.max(0, prev.exhausted - (prev.keysList.find(k => k.id === id)?.status === 'exhausted' ? 1 : 0)),
-        keysList: prev.keysList.filter(k => k.id !== id)
-      }));
-
-      const response = await fetch(getApiUrl(`/api/keys?id=${encodeURIComponent(id)}`), {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setKeysStats(data);
-      } else {
-        const errData = await response.json();
-        setKeyManagerError(errData.error || 'Erro ao remover chave.');
-        fetchProvidersAndStats();
-      }
-    } catch (err: any) {
-      console.error(err);
-      setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
-      fetchProvidersAndStats();
-    }
-  };
-
-  const handleResetKeys = async () => {
-    try {
-      setKeyManagerError(null);
-      const response = await fetch(getApiUrl('/api/keys/reset'), { method: 'POST' });
-      if (response.ok) {
-        const data = await response.json();
-        setKeysStats(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleClearKeys = async () => {
-    if (!window.confirm('Tem certeza que deseja apagar todas as chaves cadastradas?')) return;
-    try {
-      setKeyManagerError(null);
-      // Atualização otimista imediata na UI
-      setKeysStats({ total: 0, free: 0, exhausted: 0, keysList: [] });
-
-      const response = await fetch(getApiUrl('/api/keys/clear'), { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setKeysStats(data);
-      } else {
-        const errData = await response.json();
-        setKeyManagerError(errData.error || 'Erro ao limpar chaves.');
-        fetchProvidersAndStats();
-      }
-    } catch (err: any) {
-      console.error(err);
-      setKeyManagerError(err.message || 'Erro ao conectar ao servidor.');
-      fetchProvidersAndStats();
-    }
-  };
-
   const handleSelectActiveProvider = async (prov: 'gemini' | 'openrouter') => {
     try {
       setKeyManagerError(null);
@@ -1629,7 +1591,7 @@ export default function App() {
     setIsSavingProviderSettings(true);
     setKeyManagerError(null);
     setTestResult(null);
-    const key = openrouterKeyInput.trim();
+    const key = openrouterKeyInput.trim().replace(/^["']+|["']+$/g, '');
     try {
       const payload: any = {
         activeProvider: makeActive ? 'openrouter' : activeProvider,
@@ -1642,21 +1604,27 @@ export default function App() {
         payload.openrouter.apiKey = key;
       }
 
-      const res = await fetch(getApiUrl('/api/providers/settings'), {
+      const res = await apiFetch('/api/providers/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30000)
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Erro ao salvar configurações.');
       }
       const data = await res.json();
       setActiveProvider(data.activeProvider);
       setOpenrouterConfig(data.openrouter);
+      if (data.openrouterStats) {
+        setOpenrouterKeysStats(data.openrouterStats);
+      }
       setOpenrouterKeyInput('');
       setTestResult({ success: true, message: 'Configurações do OpenRouter salvas com sucesso!' });
+      addLog('success', 'OPENROUTER', 'Configurações salvas e pool sincronizado!');
       fetchOpenRouterQuota(key || undefined);
+      await fetchOpenRouterKeys();
     } catch (err: any) {
       setKeyManagerError(err.message || 'Erro ao salvar configurações.');
     } finally {
@@ -1667,7 +1635,7 @@ export default function App() {
   const handleSelectOpenRouterModel = async (modelId: string) => {
     setOpenrouterModelInput(modelId);
     try {
-      await fetch(getApiUrl('/api/providers/settings'), {
+      await apiFetch('/api/providers/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1681,33 +1649,40 @@ export default function App() {
   };
 
   const handleSaveOpenRouterKeyOnly = async () => {
-    const key = openrouterKeyInput.trim();
+    const key = openrouterKeyInput.trim().replace(/^["']+|["']+$/g, '');
     if (!key) return;
     setIsSavingProviderSettings(true);
     setKeyManagerError(null);
     try {
-      const res = await fetch(getApiUrl('/api/providers/settings'), {
+      const res = await apiFetch('/api/providers/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           openrouter: {
             apiKey: key,
             baseUrl: openrouterBaseUrlInput.trim() || 'https://openrouter.ai/api/v1',
-            model: openrouterModelInput.trim() || 'minimax/minimax-m3:free'
+            model: openrouterModelInput.trim() || 'nvidia/nemotron-3-ultra-550b-a55b:free'
           }
-        })
+        }),
+        signal: AbortSignal.timeout(30000)
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Erro ao salvar chave.');
       }
       const data = await res.json();
       setOpenrouterConfig(data.openrouter);
+      if (data.openrouterStats) {
+        setOpenrouterKeysStats(data.openrouterStats);
+      }
       setOpenrouterKeyInput('');
-      setTestResult({ success: true, message: 'Chave universal do OpenRouter salva com sucesso!' });
+      setTestResult({ success: true, message: 'Chave do OpenRouter salva com sucesso!' });
+      addLog('success', 'OPENROUTER', 'Chave OpenRouter configurada e adicionada ao pool com sucesso!');
       fetchOpenRouterQuota(key);
+      await fetchOpenRouterKeys();
     } catch (err: any) {
       setKeyManagerError(err.message || 'Erro ao salvar chave.');
+      addLog('error', 'OPENROUTER', `Erro ao salvar chave: ${err.message}`);
     } finally {
       setIsSavingProviderSettings(false);
     }
@@ -6699,6 +6674,38 @@ export default function App() {
                         <Check className="w-3.5 h-3.5" /> Definir OpenRouter como IA Ativa
                       </button>
                     )}
+                  </div>
+
+                  {/* Configuração de Chave Principal (Chave Única) */}
+                  <div className="p-5 bg-white border border-amber-200/90 rounded-2xl shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Key className="w-4 h-4 text-amber-600" />
+                        <span>Chave da API OpenRouter (sk-or-v1-...)</span>
+                      </label>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${openrouterConfig.hasKey ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                        {openrouterConfig.hasKey ? `Ativa: ${openrouterConfig.apiKeyMasked}` : 'Nenhuma chave cadastrada'}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={openrouterKeyInput}
+                        onChange={(e) => setOpenrouterKeyInput(e.target.value)}
+                        placeholder={openrouterConfig.hasKey ? "••••••••••••••••••••••••••••••••" : "Cole aqui sua chave sk-or-v1-..."}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:bg-white transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveOpenRouterKeyOnly}
+                        disabled={!openrouterKeyInput.trim() || isSavingProviderSettings}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                      >
+                        {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>Salvar Chave</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Relatório de Verificação de Saúde das Chaves OpenRouter */}

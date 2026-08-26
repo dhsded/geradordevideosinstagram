@@ -131,9 +131,9 @@ export class OpenRouterKeysManager {
       fs.writeFileSync(KEYS_FILE, JSON.stringify(this.keys, null, 2), 'utf-8');
       console.log(`[OpenRouterKeysManager] Salvo com sucesso (${this.keys.length} chaves) em: ${KEYS_FILE}`);
 
-      // Sincronizar também com openrouter-keys.json na raiz do projeto se existir
+      // Sincronizar também com openrouter-keys.json na raiz do projeto
       const localFile = path.join(process.cwd(), 'openrouter-keys.json');
-      if (localFile !== KEYS_FILE && fs.existsSync(localFile)) {
+      if (localFile !== KEYS_FILE) {
         try {
           fs.writeFileSync(localFile, JSON.stringify(this.keys, null, 2), 'utf-8');
         } catch (e) {
