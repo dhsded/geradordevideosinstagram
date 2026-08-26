@@ -644,6 +644,12 @@ export default function App() {
         setOpenrouterKeysStats(data.openrouterStats);
       }
 
+      if (data?.notConfigured) {
+        setOpenrouterQuota(null);
+        setQuotaError(null);
+        return;
+      }
+
       if (!data || data.success === false) {
         throw new Error(data?.error || `Não foi possível obter a cota do OpenRouter (Status ${res.status})`);
       }
@@ -1722,11 +1728,11 @@ export default function App() {
       } else {
         body.model = geminiModel;
       }
-      const res = await fetch(getApiUrl('/api/providers/test'), {
+      const res = await apiFetch('/api/providers/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(20000)
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1736,7 +1742,7 @@ export default function App() {
       addLog('success', 'TESTE', `Conexão com ${prov.toUpperCase()} validada com sucesso!`);
     } catch (err: any) {
       const errorMsg = err.name === 'TimeoutError'
-        ? 'Tempo limite esgotado ao testar conexão (15s).'
+        ? 'Tempo limite esgotado ao testar conexão (20s).'
         : (err.message || 'Erro no teste de conexão.');
       setTestResult({ success: false, message: errorMsg });
       addLog('error', 'TESTE', `Falha no teste do ${prov.toUpperCase()}: ${errorMsg}`);

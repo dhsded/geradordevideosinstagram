@@ -563,7 +563,9 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
       if (!rawKey) {
         return res.json({ 
           success: false,
-          error: "Nenhuma chave OpenRouter cadastrada. Adicione uma ou mais chaves (sk-or-v1-...) no pool ou no campo de chave acima para consultar cota e saldo." 
+          notConfigured: true,
+          error: "Nenhuma chave OpenRouter cadastrada. Adicione uma chave (sk-or-v1-...) para ver as métricas.",
+          openrouterStats: openrouterKeysManager.getStats()
         });
       }
 
