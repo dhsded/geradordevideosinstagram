@@ -20,11 +20,31 @@ enum Type {
 
 const getApiUrl = (endpoint: string): string => {
   if (typeof window !== 'undefined') {
-    if (window.location.port === '5173' || !window.location.origin.startsWith('http')) {
-      return `http://127.0.0.1:3000${endpoint}`;
+    const origin = window.location.origin || '';
+    if (window.location.port === '5173' || !origin.startsWith('http') || origin.startsWith('file:')) {
+      const host = window.location.hostname && window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1';
+      return `http://${host}:3000${endpoint}`;
     }
   }
   return endpoint;
+};
+
+const apiFetch = async (endpoint: string, options: RequestInit = {}): Promise<Response> => {
+  const primaryUrl = getApiUrl(endpoint);
+  try {
+    return await fetch(primaryUrl, options);
+  } catch (err: any) {
+    if (primaryUrl.startsWith('http://127.0.0.1:3000')) {
+      const fallbackUrl = primaryUrl.replace('http://127.0.0.1:3000', 'http://localhost:3000');
+      return await fetch(fallbackUrl, options);
+    } else if (primaryUrl.startsWith('http://localhost:3000')) {
+      const fallbackUrl = primaryUrl.replace('http://localhost:3000', 'http://127.0.0.1:3000');
+      return await fetch(fallbackUrl, options);
+    } else if (!primaryUrl.startsWith('http')) {
+      return await fetch(`http://127.0.0.1:3000${endpoint}`, options);
+    }
+    throw err;
+  }
 };
 
 export type DialogueLanguage = 'pt' | 'en' | 'es' | 'all';
@@ -605,12 +625,12 @@ export default function App() {
     setQuotaError(null);
     addLog('info', 'COTA', 'Consultando saldo e limites na API OpenRouter...');
     try {
-      const url = keyToUse 
-        ? getApiUrl(`/api/providers/openrouter/quota?apiKey=${encodeURIComponent(keyToUse)}`)
-        : getApiUrl('/api/providers/openrouter/quota');
+      const endpoint = keyToUse 
+        ? `/api/providers/openrouter/quota?apiKey=${encodeURIComponent(keyToUse)}`
+        : '/api/providers/openrouter/quota';
 
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(10000)
+      const res = await apiFetch(endpoint, {
+        signal: AbortSignal.timeout(15000)
       });
       const text = await res.text();
       let data: any = null;
@@ -709,7 +729,7 @@ export default function App() {
 
   const fetchOpenRouterKeys = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/openrouter-keys'));
+      const res = await apiFetch('/api/openrouter-keys');
       if (res.ok) {
         const data = await res.json();
         setOpenrouterKeysStats(data);
@@ -730,11 +750,11 @@ export default function App() {
     setIsUploadingOpenRouterKeys(true);
     setKeyManagerError(null);
     try {
-      const res = await fetch(getApiUrl('/api/openrouter-keys'), {
+      const res = await apiFetch('/api/openrouter-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys: rawKeys, labelPrefix: 'Conta' }),
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(30000)
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -751,7 +771,7 @@ export default function App() {
         throw new Error(data.error || `Erro HTTP ${res.status} ao adicionar chaves.`);
       }
     } catch (err: any) {
-      const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (12s).' : (err.message || 'Erro ao adicionar chaves.');
+      const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (30s).' : (err.message || 'Erro ao adicionar chaves.');
       setKeyManagerError(`Erro ao adicionar chaves OpenRouter: ${msg}`);
       addLog('error', 'OPENROUTER', `Falha ao adicionar chaves: ${msg}`);
     } finally {
@@ -776,11 +796,11 @@ export default function App() {
           setIsUploadingOpenRouterKeys(false);
           return;
         }
-        const res = await fetch(getApiUrl('/api/openrouter-keys'), {
+        const res = await apiFetch('/api/openrouter-keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keys: lines, labelPrefix: 'Arquivo' }),
-          signal: AbortSignal.timeout(12000)
+          signal: AbortSignal.timeout(30000)
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
@@ -794,7 +814,7 @@ export default function App() {
           throw new Error(data.error || `Erro HTTP ${res.status} ao importar arquivo.`);
         }
       } catch (err: any) {
-        const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (12s).' : (err.message || 'Erro ao carregar arquivo de chaves.');
+        const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (30s).' : (err.message || 'Erro ao carregar arquivo de chaves.');
         setKeyManagerError(`Erro ao carregar arquivo de chaves OpenRouter: ${msg}`);
       } finally {
         setIsUploadingOpenRouterKeys(false);
@@ -806,7 +826,7 @@ export default function App() {
 
   const handleResetOpenRouterKeys = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/openrouter-keys/reset'), { method: 'POST' });
+      const res = await apiFetch('/api/openrouter-keys/reset', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setOpenrouterKeysStats(data);
@@ -819,7 +839,7 @@ export default function App() {
 
   const handleRemoveOpenRouterKey = async (id: string) => {
     try {
-      const res = await fetch(getApiUrl(`/api/openrouter-keys/${encodeURIComponent(id)}`), { method: 'DELETE' });
+      const res = await apiFetch(`/api/openrouter-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (res.ok) {
         const data = await res.json();
         setOpenrouterKeysStats(data);
@@ -835,7 +855,7 @@ export default function App() {
     setKeyManagerError(null);
     addLog('info', 'OPENROUTER', 'Iniciando verificação de cotas de todas as chaves OpenRouter...');
     try {
-      const res = await fetch(getApiUrl('/api/openrouter-keys/verify-all'), { method: 'POST' });
+      const res = await apiFetch('/api/openrouter-keys/verify-all', { method: 'POST', signal: AbortSignal.timeout(30000) });
       const text = await res.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch {}
@@ -864,7 +884,7 @@ export default function App() {
   const handleClearOpenRouterKeys = async () => {
     if (!confirm('Deseja realmente remover todas as chaves OpenRouter cadastradas?')) return;
     try {
-      const res = await fetch(getApiUrl('/api/openrouter-keys/clear'), { method: 'POST' });
+      const res = await apiFetch('/api/openrouter-keys/clear', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setOpenrouterKeysStats(data);
