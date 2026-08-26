@@ -1725,30 +1725,69 @@ export default function App() {
     setKeyManagerError(null);
     addLog('info', 'TESTE', `Iniciando teste de conexão com o provedor ${prov.toUpperCase()}...`);
     try {
-      const body: any = { provider: prov };
       if (prov === 'openrouter') {
-        const cleanKey = openrouterKeyInput.trim().replace(/^["']+|["']+$/g, '');
-        if (cleanKey) body.apiKey = cleanKey;
-        body.baseUrl = openrouterBaseUrlInput.trim();
-        body.model = openrouterModelInput.trim();
+        // Para OpenRouter, testar TODAS as chaves do pool individualmente
+        const poolKeys = openrouterKeysStats?.keysList || [];
+        if (poolKeys.length === 0) {
+          throw new Error('Nenhuma chave OpenRouter cadastrada no pool. Adicione pelo menos uma chave (sk-or-v1-...) antes de testar.');
+        }
+
+        addLog('info', 'TESTE', `Verificando ${poolKeys.length} chave(s) OpenRouter no pool...`);
+        const res = await apiFetch('/api/openrouter-keys/verify-all', {
+          method: 'POST',
+          signal: AbortSignal.timeout(60000)
+        });
+        const text = await res.text();
+        let data: any = null;
+        try { data = JSON.parse(text); } catch {}
+
+        if (!res.ok) {
+          throw new Error(data?.error || `Erro HTTP ${res.status} ao verificar chaves.`);
+        }
+
+        // Atualizar relatório e stats
+        setOpenrouterVerificationReport({
+          verifiedAt: data.verifiedAt,
+          total: data.total,
+          free: data.free,
+          exhausted: data.exhausted
+        });
+        await fetchOpenRouterKeys();
+
+        if (data.free > 0) {
+          const details = (data.results || [])
+            .map((r: any) => `${r.label || r.keyMasked}: ${r.status === 'free' ? '✅' : '❌'} ${r.message}`)
+            .join('\n');
+          setTestResult({
+            success: true,
+            message: `${data.free}/${data.total} chave(s) OpenRouter ativa(s) e prontas para uso!\n${details}`
+          });
+          addLog('success', 'TESTE', `Conexão OpenRouter validada: ${data.free}/${data.total} chaves ativas.`);
+        } else {
+          const details = (data.results || [])
+            .map((r: any) => `${r.label || r.keyMasked}: ${r.message}`)
+            .join(' | ');
+          throw new Error(`Nenhuma das ${data.total} chave(s) OpenRouter está ativa. Detalhes: ${details}`);
+        }
       } else {
-        body.model = geminiModel;
+        // Teste Gemini (inalterado)
+        const body: any = { provider: prov, model: geminiModel };
+        const res = await apiFetch('/api/providers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(20000)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Falha no teste de conexão (Status HTTP ${res.status}).`);
+        }
+        setTestResult({ success: true, message: data.message });
+        addLog('success', 'TESTE', `Conexão com ${prov.toUpperCase()} validada com sucesso!`);
       }
-      const res = await apiFetch('/api/providers/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20000)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Falha no teste de conexão (Status HTTP ${res.status}).`);
-      }
-      setTestResult({ success: true, message: data.message });
-      addLog('success', 'TESTE', `Conexão com ${prov.toUpperCase()} validada com sucesso!`);
     } catch (err: any) {
       const errorMsg = err.name === 'TimeoutError'
-        ? 'Tempo limite esgotado ao testar conexão (20s).'
+        ? 'Tempo limite esgotado ao testar conexão (60s).'
         : (err.message || 'Erro no teste de conexão.');
       setTestResult({ success: false, message: errorMsg });
       addLog('error', 'TESTE', `Falha no teste do ${prov.toUpperCase()}: ${errorMsg}`);
@@ -6445,10 +6484,18 @@ export default function App() {
                   ) : (
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   )}
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="font-bold">{testResult.success ? 'Conexão Estabelecida!' : 'Erro na Conexão:'}</p>
-                    <p className="mt-0.5 text-slate-600">{testResult.message}</p>
+                    {testResult.message.split('\n').map((line, idx) => (
+                      <p key={idx} className={`${idx === 0 ? 'mt-1 font-semibold' : 'mt-0.5'} text-slate-600 text-[11px] break-words`}>{line}</p>
+                    ))}
                   </div>
+                  <button
+                    onClick={() => setTestResult(null)}
+                    className={`${testResult.success ? 'text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100' : 'text-rose-700 hover:text-rose-900 hover:bg-rose-100'} text-[10px] font-bold p-1 rounded-lg cursor-pointer shrink-0`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
               )}
 
