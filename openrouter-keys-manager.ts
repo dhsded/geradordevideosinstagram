@@ -208,18 +208,35 @@ export class OpenRouterKeysManager {
   public addKeys(newKeys: string[], labelPrefix?: string): number {
     let countAdded = 0;
     for (const rawKey of newKeys) {
-      const cleanKey = String(rawKey || '').trim().replace(/^["']+|["']+$/g, '').trim();
-      if (cleanKey && cleanKey.length >= 8 && !this.keys.some(k => k.key === cleanKey)) {
-        this.keys.push({
-          id: this.generateId(),
-          key: cleanKey,
-          label: labelPrefix ? `${labelPrefix} ${this.keys.length + 1}` : undefined,
-          status: 'free',
-          successCount: 0,
-          errorCount: 0,
-          addedAt: new Date().toISOString()
-        });
-        countAdded++;
+      let cleanKey = String(rawKey || '')
+        .trim()
+        .replace(/^["']+|["']+$/g, '')
+        .replace(/^Bearer\s+/i, '')
+        .replace(/[\/\/#].*$/, '')
+        .trim();
+
+      if (cleanKey && cleanKey.length >= 8) {
+        const existing = this.keys.find(k => k.key === cleanKey);
+        if (existing) {
+          // Reativar chave caso já estivesse no pool mas marcada como esgotada
+          existing.status = 'free';
+          existing.lastError = undefined;
+          if (labelPrefix && !existing.label) {
+            existing.label = `${labelPrefix} ${this.keys.indexOf(existing) + 1}`;
+          }
+          countAdded++;
+        } else {
+          this.keys.push({
+            id: this.generateId(),
+            key: cleanKey,
+            label: labelPrefix ? `${labelPrefix} ${this.keys.length + 1}` : `Chave ${this.keys.length + 1}`,
+            status: 'free',
+            successCount: 0,
+            errorCount: 0,
+            addedAt: new Date().toISOString()
+          });
+          countAdded++;
+        }
       }
     }
     if (countAdded > 0) {

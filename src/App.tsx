@@ -770,13 +770,9 @@ export default function App() {
       if (res.ok) {
         setOpenrouterKeysStats(data);
         setOpenrouterMultiKeysInput('');
-        if (data.addedCount > 0) {
-          addLog('success', 'OPENROUTER', `${data.addedCount} chave(s) OpenRouter adicionada(s) ao pool com sucesso!`);
-          fetchOpenRouterQuota(rawKeys[0]);
-        } else {
-          addLog('info', 'OPENROUTER', 'As chaves inseridas já constavam no pool cadastrado.');
-        }
+        addLog('success', 'OPENROUTER', `${data.addedCount || rawKeys.length} chave(s) OpenRouter adicionada(s) ao pool com sucesso!`);
         await fetchOpenRouterKeys();
+        await fetchProvidersAndStats();
       } else {
         throw new Error(data.error || `Erro HTTP ${res.status} ao adicionar chaves.`);
       }
@@ -793,6 +789,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploadingOpenRouterKeys(true);
+    setKeyManagerError(null);
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -816,16 +813,15 @@ export default function App() {
         if (res.ok) {
           setOpenrouterKeysStats(data);
           addLog('success', 'OPENROUTER', `${data.addedCount || lines.length} chave(s) OpenRouter importada(s) com sucesso.`);
-          if (lines.length > 0) {
-            fetchOpenRouterQuota(lines[0]);
-          }
           await fetchOpenRouterKeys();
+          await fetchProvidersAndStats();
         } else {
           throw new Error(data.error || `Erro HTTP ${res.status} ao importar arquivo.`);
         }
       } catch (err: any) {
         const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (30s).' : (err.message || 'Erro ao carregar arquivo de chaves.');
         setKeyManagerError(`Erro ao carregar arquivo de chaves OpenRouter: ${msg}`);
+        addLog('error', 'OPENROUTER', `Falha ao carregar arquivo de chaves OpenRouter: ${msg}`);
       } finally {
         setIsUploadingOpenRouterKeys(false);
       }
@@ -6684,38 +6680,6 @@ export default function App() {
                         <Check className="w-3.5 h-3.5" /> Definir OpenRouter como IA Ativa
                       </button>
                     )}
-                  </div>
-
-                  {/* Configuração de Chave Principal (Chave Única) */}
-                  <div className="p-5 bg-white border border-amber-200/90 rounded-2xl shadow-xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Key className="w-4 h-4 text-amber-600" />
-                        <span>Chave da API OpenRouter (sk-or-v1-...)</span>
-                      </label>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${openrouterConfig.hasKey ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
-                        {openrouterConfig.hasKey ? `Ativa: ${openrouterConfig.apiKeyMasked}` : 'Nenhuma chave cadastrada'}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        value={openrouterKeyInput}
-                        onChange={(e) => setOpenrouterKeyInput(e.target.value)}
-                        placeholder={openrouterConfig.hasKey ? "••••••••••••••••••••••••••••••••" : "Cole aqui sua chave sk-or-v1-..."}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:bg-white transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveOpenRouterKeyOnly}
-                        disabled={!openrouterKeyInput.trim() || isSavingProviderSettings}
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
-                      >
-                        {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        <span>Salvar Chave</span>
-                      </button>
-                    </div>
                   </div>
 
                   {/* Relatório de Verificação de Saúde das Chaves OpenRouter */}
