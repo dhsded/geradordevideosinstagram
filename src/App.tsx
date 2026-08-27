@@ -4700,9 +4700,10 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('analysis')}
-              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition ${activeTab === 'analysis' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${activeTab === 'analysis' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Análise
+              <Instagram className="w-3.5 h-3.5 text-pink-500" />
+              <span>Análise e Clonagem</span>
             </button>
             <button 
               onClick={() => setActiveTab('spy')}
