@@ -545,6 +545,39 @@ export default function App() {
     }
   ];
 
+  const POPULAR_GROQ_MODELS = [
+    {
+      id: 'llama-3.3-70b-versatile',
+      name: 'Llama 3.3 70B Versatile (Recomendado)',
+      tag: '128k Contexto • Mais Inteligente',
+      desc: 'Qualidade máxima de texto, alta coerência em português, ideal para carrosséis e roteiros detalhados'
+    },
+    {
+      id: 'llama-3.1-8b-instant',
+      name: 'Llama 3.1 8B Instant (Ultra Rápido)',
+      tag: 'Velocidade Extrema • 128k Contexto',
+      desc: 'Inferência em milissegundos para geração imediata de prompts e legendas'
+    },
+    {
+      id: 'mixtral-8x7b-32768',
+      name: 'Mixtral 8x7B (MoE)',
+      tag: '32k Contexto • Raciocínio Balanceado',
+      desc: 'Arquitetura de Mixture of Experts para síntese de documentos e ganchos'
+    },
+    {
+      id: 'gemma2-9b-it',
+      name: 'Google Gemma 2 9B Instruct',
+      tag: '8k Contexto • Google no Groq',
+      desc: 'Modelo ágil e compacto de alta fidelidade a instruções'
+    },
+    {
+      id: 'deepseek-r1-distill-llama-70b',
+      name: 'DeepSeek R1 Distill Llama 70B',
+      tag: 'Raciocínio Profundo • R1',
+      desc: 'Poder de raciocínio passo a passo do DeepSeek R1 acelerado na LPU da Groq'
+    }
+  ];
+
   const GEMINI_AVAILABLE_MODELS = [
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Padrão Recomendado - Ultra Rápido)' },
     { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Mais Recente)' },
@@ -553,8 +586,8 @@ export default function App() {
   ];
 
   // Estados da Central de I.As e Provedores
-  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openrouter'>('gemini');
-  const [selectedProviderTab, setSelectedProviderTab] = useState<'gemini' | 'openrouter'>('gemini');
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openrouter' | 'groq'>('gemini');
+  const [selectedProviderTab, setSelectedProviderTab] = useState<'gemini' | 'openrouter' | 'groq'>('gemini');
   const [geminiModel, setGeminiModel] = useState<string>('gemini-2.5-flash');
   const [openrouterConfig, setOpenrouterConfig] = useState<{
     hasKey: boolean;
@@ -571,6 +604,70 @@ export default function App() {
   const [openrouterBaseUrlInput, setOpenrouterBaseUrlInput] = useState('https://openrouter.ai/api/v1');
   const [openrouterModelInput, setOpenrouterModelInput] = useState('nvidia/nemotron-3-ultra-550b-a55b:free');
   const [isCustomOpenRouterModel, setIsCustomOpenRouterModel] = useState(false);
+
+  const [groqConfig, setGroqConfig] = useState<{
+    hasKey: boolean;
+    apiKeyMasked: string;
+    baseUrl: string;
+    model: string;
+  }>({
+    hasKey: false,
+    apiKeyMasked: '',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.3-70b-versatile'
+  });
+  const [groqKeyInput, setGroqKeyInput] = useState('');
+  const [groqBaseUrlInput, setGroqBaseUrlInput] = useState('https://api.groq.com/openai/v1');
+  const [groqModelInput, setGroqModelInput] = useState('llama-3.3-70b-versatile');
+  const [isCustomGroqModel, setIsCustomGroqModel] = useState(false);
+
+  // Estados de Múltiplas Chaves Groq com Pool Rotativo
+  const [groqKeysStats, setGroqKeysStats] = useState<{
+    total: number;
+    free: number;
+    exhausted: number;
+    keysList: Array<{
+      id: string;
+      keyMasked: string;
+      label?: string;
+      status: 'free' | 'exhausted';
+      successCount: number;
+      errorCount: number;
+      addedAt: string;
+      lastVerified?: string;
+      lastError?: string;
+      requestsRemaining?: number;
+      requestsLimit?: number;
+      tokensRemaining?: number;
+      tokensLimit?: number;
+      resetRequests?: string;
+      resetTokens?: string;
+    }>;
+  }>({ total: 0, free: 0, exhausted: 0, keysList: [] });
+  const [groqMultiKeysInput, setGroqMultiKeysInput] = useState('');
+  const [isUploadingGroqKeys, setIsUploadingGroqKeys] = useState(false);
+  const [isVerifyingGroqKeys, setIsVerifyingGroqKeys] = useState(false);
+  const [groqVerificationReport, setGroqVerificationReport] = useState<{
+    verifiedAt: string;
+    total: number;
+    free: number;
+    exhausted: number;
+  } | null>(null);
+
+  const [groqQuota, setGroqQuota] = useState<{
+    status?: string;
+    message?: string;
+    requestsRemaining?: number;
+    requestsLimit?: number;
+    tokensRemaining?: number;
+    tokensLimit?: number;
+    resetRequests?: string;
+    resetTokens?: string;
+    lastUpdated?: string;
+  } | null>(null);
+  const [isLoadingGroqQuota, setIsLoadingGroqQuota] = useState(false);
+  const [groqQuotaError, setGroqQuotaError] = useState<string | null>(null);
+
   const [isTestingProvider, setIsTestingProvider] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSavingProviderSettings, setIsSavingProviderSettings] = useState(false);
@@ -890,6 +987,232 @@ export default function App() {
     }
   };
 
+  // ==========================================
+  // MÉTODOS GROQ CLOUD (MULTI-KEYS & QUOTA)
+  // ==========================================
+  const fetchGroqQuota = async (keyOverride?: string) => {
+    const keyToUse = (keyOverride !== undefined ? keyOverride : groqKeyInput.trim()).trim();
+    setIsLoadingGroqQuota(true);
+    setGroqQuotaError(null);
+    addLog('info', 'COTA', 'Consultando saldo e limites na API Groq Cloud...');
+    try {
+      const endpoint = keyToUse 
+        ? `/api/providers/groq/quota?apiKey=${encodeURIComponent(keyToUse)}`
+        : '/api/providers/groq/quota';
+
+      const res = await apiFetch(endpoint, {
+        signal: AbortSignal.timeout(15000)
+      });
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Resposta inesperada do servidor (Status HTTP ${res.status}): ${text.slice(0, 100)}`);
+      }
+
+      if (data.groqStats) {
+        setGroqKeysStats(data.groqStats);
+      }
+
+      if (data?.notConfigured) {
+        setGroqQuota(null);
+        setGroqQuotaError(null);
+        return;
+      }
+
+      if (!data || data.success === false) {
+        throw new Error(data?.error || `Não foi possível obter a cota do Groq (Status ${res.status})`);
+      }
+
+      const quotaObj = {
+        status: data.keyInfo?.status || 'free',
+        message: data.keyInfo?.message,
+        requestsRemaining: data.keyInfo?.requestsRemaining,
+        requestsLimit: data.keyInfo?.requestsLimit,
+        tokensRemaining: data.keyInfo?.tokensRemaining,
+        tokensLimit: data.keyInfo?.tokensLimit,
+        resetRequests: data.keyInfo?.resetRequests,
+        resetTokens: data.keyInfo?.resetTokens,
+        lastUpdated: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      };
+
+      setGroqQuota(quotaObj);
+      addLog('success', 'COTA', `Métricas Groq: ${quotaObj.requestsRemaining !== undefined ? `${quotaObj.requestsRemaining}/${quotaObj.requestsLimit || '?'}` : 'Ativa'} reqs restantes | ${quotaObj.tokensRemaining !== undefined ? `${Math.round(quotaObj.tokensRemaining / 1000)}k` : '?'} tokens livres`);
+    } catch (err: any) {
+      const errorMsg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao consultar Groq (15s).' : (err.message || 'Erro ao carregar cota da chave.');
+      console.warn('Erro ao carregar cota Groq:', err);
+      setGroqQuotaError(errorMsg);
+      addLog('error', 'COTA', `Falha ao consultar cota Groq: ${errorMsg}`);
+    } finally {
+      setIsLoadingGroqQuota(false);
+    }
+  };
+
+  const fetchGroqKeys = async () => {
+    try {
+      const res = await apiFetch('/api/groq-keys');
+      if (res.ok) {
+        const data = await res.json();
+        setGroqKeysStats(data);
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar chaves Groq:', e);
+    }
+  };
+
+  const handleAddGroqMultiKeys = async () => {
+    if (!groqMultiKeysInput.trim()) return;
+    const rawKeys = groqMultiKeysInput
+      .split(/[\r\n,;]+/)
+      .map(k => k.trim().replace(/^["']+|["']+$/g, '').trim())
+      .filter(Boolean);
+    if (rawKeys.length === 0) return;
+
+    setIsUploadingGroqKeys(true);
+    setKeyManagerError(null);
+    try {
+      const res = await apiFetch('/api/groq-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: rawKeys, labelPrefix: 'Chave Groq' }),
+        signal: AbortSignal.timeout(30000)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setGroqKeysStats(data);
+        setGroqMultiKeysInput('');
+        addLog('success', 'GROQ', `${data.addedCount || rawKeys.length} chave(s) Groq adicionada(s) ao pool com sucesso!`);
+        await fetchGroqKeys();
+        await fetchProvidersAndStats();
+      } else {
+        throw new Error(data.error || `Erro HTTP ${res.status} ao adicionar chaves.`);
+      }
+    } catch (err: any) {
+      const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (30s).' : (err.message || 'Erro ao adicionar chaves.');
+      setKeyManagerError(`Erro ao adicionar chaves Groq: ${msg}`);
+      addLog('error', 'GROQ', `Falha ao adicionar chaves: ${msg}`);
+    } finally {
+      setIsUploadingGroqKeys(false);
+    }
+  };
+
+  const handleGroqKeysFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingGroqKeys(true);
+    setKeyManagerError(null);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text
+          .split(/[\r\n,;]+/)
+          .map(l => l.trim().replace(/^["']+|["']+$/g, '').trim())
+          .filter(l => l && !l.startsWith('#'));
+        if (lines.length === 0) {
+          alert('Nenhuma chave encontrada no arquivo .txt selecionado.');
+          setIsUploadingGroqKeys(false);
+          return;
+        }
+        const res = await apiFetch('/api/groq-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: lines, labelPrefix: 'Arquivo' }),
+          signal: AbortSignal.timeout(30000)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setGroqKeysStats(data);
+          addLog('success', 'GROQ', `${data.addedCount || lines.length} chave(s) Groq importada(s) com sucesso.`);
+          await fetchGroqKeys();
+          await fetchProvidersAndStats();
+        } else {
+          throw new Error(data.error || `Erro HTTP ${res.status} ao importar arquivo.`);
+        }
+      } catch (err: any) {
+        const msg = err.name === 'TimeoutError' ? 'Tempo limite esgotado ao contatar o backend (30s).' : (err.message || 'Erro ao carregar arquivo de chaves.');
+        setKeyManagerError(`Erro ao carregar arquivo de chaves Groq: ${msg}`);
+        addLog('error', 'GROQ', `Falha ao carregar arquivo de chaves Groq: ${msg}`);
+      } finally {
+        setIsUploadingGroqKeys(false);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleResetGroqKeys = async () => {
+    try {
+      const res = await apiFetch('/api/groq-keys/reset', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setGroqKeysStats(data);
+        addLog('success', 'GROQ', 'Todas as chaves Groq foram reativadas (status: Livre).');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleRemoveGroqKey = async (id: string) => {
+    try {
+      const res = await apiFetch(`/api/groq-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setGroqKeysStats(data);
+        addLog('info', 'GROQ', 'Chave Groq removida.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
+  const handleVerifyAllGroqKeys = async () => {
+    setIsVerifyingGroqKeys(true);
+    setKeyManagerError(null);
+    addLog('info', 'GROQ', 'Iniciando verificação de cotas de todas as chaves Groq...');
+    try {
+      const res = await apiFetch('/api/groq-keys/verify-all', { method: 'POST', signal: AbortSignal.timeout(30000) });
+      const text = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
+      }
+
+      setGroqVerificationReport({
+        verifiedAt: data.verifiedAt,
+        total: data.total,
+        free: data.free,
+        exhausted: data.exhausted
+      });
+      await fetchGroqKeys();
+      addLog('success', 'GROQ', `Verificação de cotas Groq concluída: ${data.free} ativas, ${data.exhausted} esgotadas/inválidas.`);
+    } catch (err: any) {
+      console.error('Erro na verificação de chaves Groq:', err);
+      setKeyManagerError(err.message || 'Erro ao verificar chaves Groq.');
+      addLog('error', 'GROQ', `Falha ao testar chaves Groq: ${err.message}`);
+    } finally {
+      setIsVerifyingGroqKeys(false);
+    }
+  };
+
+  const handleClearGroqKeys = async () => {
+    if (!confirm('Deseja realmente remover todas as chaves Groq cadastradas?')) return;
+    try {
+      const res = await apiFetch('/api/groq-keys/clear', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setGroqKeysStats(data);
+        addLog('info', 'GROQ', 'Todas as chaves Groq foram removidas.');
+      }
+    } catch (e: any) {
+      setKeyManagerError(e.message);
+    }
+  };
+
   const handleKeysFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1024,14 +1347,26 @@ export default function App() {
             fetchOpenRouterQuota();
           }
         }
+        if (data.groq) {
+          setGroqConfig(data.groq);
+          setGroqBaseUrlInput(data.groq.baseUrl || 'https://api.groq.com/openai/v1');
+          setGroqModelInput(data.groq.model || 'llama-3.3-70b-versatile');
+          if (data.groq.hasKey) {
+            fetchGroqQuota();
+          }
+        }
         if (data.geminiStats) {
           setKeysStats(data.geminiStats);
         }
         if (data.openrouterStats) {
           setOpenrouterKeysStats(data.openrouterStats);
         }
+        if (data.groqStats) {
+          setGroqKeysStats(data.groqStats);
+        }
       }
       await fetchOpenRouterKeys();
+      await fetchGroqKeys();
     } catch (err) {
       console.error('Erro ao buscar estatísticas de provedores:', err);
     }
@@ -1040,11 +1375,16 @@ export default function App() {
   React.useEffect(() => {
     fetchProvidersAndStats();
     fetchOpenRouterKeys();
+    fetchGroqKeys();
   }, []);
 
   React.useEffect(() => {
-    if (isKeyManagerOpen && selectedProviderTab === 'openrouter') {
-      fetchOpenRouterQuota();
+    if (isKeyManagerOpen) {
+      if (selectedProviderTab === 'openrouter') {
+        fetchOpenRouterQuota();
+      } else if (selectedProviderTab === 'groq') {
+        fetchGroqQuota();
+      }
     }
   }, [isKeyManagerOpen, selectedProviderTab]);
 
@@ -1244,7 +1584,7 @@ export default function App() {
     addLog('ai', 'ESPIÃO', `Iniciando análise com IA de ${recordedSteps.length} passos gravados...`);
 
     try {
-      const modelToUse = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
+      const modelToUse = activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel);
       const response = await fetch(getApiUrl('/api/spy/understand-process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1565,7 +1905,7 @@ export default function App() {
     }
   };
 
-  const handleSelectActiveProvider = async (prov: 'gemini' | 'openrouter') => {
+  const handleSelectActiveProvider = async (prov: 'gemini' | 'openrouter' | 'groq') => {
     try {
       setKeyManagerError(null);
       const res = await fetch(getApiUrl('/api/providers/settings'), {
@@ -1683,6 +2023,107 @@ export default function App() {
     }
   };
 
+  const handleSaveGroqSettings = async (makeActive = false) => {
+    setIsSavingProviderSettings(true);
+    setKeyManagerError(null);
+    setTestResult(null);
+    const key = groqKeyInput.trim().replace(/^["']+|["']+$/g, '');
+    try {
+      const payload: any = {
+        activeProvider: makeActive ? 'groq' : activeProvider,
+        groq: {
+          baseUrl: groqBaseUrlInput.trim() || 'https://api.groq.com/openai/v1',
+          model: groqModelInput.trim() || 'llama-3.3-70b-versatile',
+        }
+      };
+      if (key) {
+        payload.groq.apiKey = key;
+      }
+
+      const res = await apiFetch('/api/providers/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Erro ao salvar configurações.');
+      }
+      const data = await res.json();
+      setActiveProvider(data.activeProvider);
+      setGroqConfig(data.groq);
+      if (data.groqStats) {
+        setGroqKeysStats(data.groqStats);
+      }
+      setGroqKeyInput('');
+      setTestResult({ success: true, message: 'Configurações do Groq Cloud salvas com sucesso!' });
+      addLog('success', 'GROQ', 'Configurações salvas e pool Groq sincronizado!');
+      fetchGroqQuota(key || undefined);
+      await fetchGroqKeys();
+    } catch (err: any) {
+      setKeyManagerError(err.message || 'Erro ao salvar configurações.');
+    } finally {
+      setIsSavingProviderSettings(false);
+    }
+  };
+
+  const handleSelectGroqModel = async (modelId: string) => {
+    setGroqModelInput(modelId);
+    try {
+      await apiFetch('/api/providers/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groq: { model: modelId }
+        })
+      });
+      setGroqConfig(prev => ({ ...prev, model: modelId }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveGroqKeyOnly = async () => {
+    const key = groqKeyInput.trim().replace(/^["']+|["']+$/g, '');
+    if (!key) return;
+    setIsSavingProviderSettings(true);
+    setKeyManagerError(null);
+    try {
+      const res = await apiFetch('/api/providers/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groq: {
+            apiKey: key,
+            baseUrl: groqBaseUrlInput.trim() || 'https://api.groq.com/openai/v1',
+            model: groqModelInput.trim() || 'llama-3.3-70b-versatile'
+          }
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Erro ao salvar chave.');
+      }
+      const data = await res.json();
+      setGroqConfig(data.groq);
+      if (data.groqStats) {
+        setGroqKeysStats(data.groqStats);
+      }
+      setGroqKeyInput('');
+      setTestResult({ success: true, message: 'Chave do Groq Cloud salva com sucesso!' });
+      addLog('success', 'GROQ', 'Chave Groq configurada e adicionada ao pool com sucesso!');
+      fetchGroqQuota(key);
+      await fetchGroqKeys();
+    } catch (err: any) {
+      setKeyManagerError(err.message || 'Erro ao salvar chave.');
+      addLog('error', 'GROQ', `Erro ao salvar chave: ${err.message}`);
+    } finally {
+      setIsSavingProviderSettings(false);
+    }
+  };
+
   const handleSaveGeminiModel = async (model: string) => {
     setGeminiModel(model);
     try {
@@ -1698,7 +2139,7 @@ export default function App() {
     }
   };
 
-  const handleTestProvider = async (prov: 'gemini' | 'openrouter') => {
+  const handleTestProvider = async (prov: 'gemini' | 'openrouter' | 'groq') => {
     setIsTestingProvider(true);
     setTestResult(null);
     setKeyManagerError(null);
@@ -1747,6 +2188,50 @@ export default function App() {
             .map((r: any) => `${r.label || r.keyMasked}: ${r.message}`)
             .join(' | ');
           throw new Error(`Nenhuma das ${data.total} chave(s) OpenRouter está ativa. Detalhes: ${details}`);
+        }
+      } else if (prov === 'groq') {
+        // Para Groq, testar TODAS as chaves do pool individualmente
+        const poolKeys = groqKeysStats?.keysList || [];
+        if (poolKeys.length === 0) {
+          throw new Error('Nenhuma chave Groq cadastrada no pool. Adicione pelo menos uma chave (gsk_...) antes de testar.');
+        }
+
+        addLog('info', 'TESTE', `Verificando ${poolKeys.length} chave(s) Groq no pool...`);
+        const res = await apiFetch('/api/groq-keys/verify-all', {
+          method: 'POST',
+          signal: AbortSignal.timeout(60000)
+        });
+        const text = await res.text();
+        let data: any = null;
+        try { data = JSON.parse(text); } catch {}
+
+        if (!res.ok) {
+          throw new Error(data?.error || `Erro HTTP ${res.status} ao verificar chaves Groq.`);
+        }
+
+        // Atualizar relatório e stats
+        setGroqVerificationReport({
+          verifiedAt: data.verifiedAt,
+          total: data.total,
+          free: data.free,
+          exhausted: data.exhausted
+        });
+        await fetchGroqKeys();
+
+        if (data.free > 0) {
+          const details = (data.results || [])
+            .map((r: any) => `${r.label || r.keyMasked}: ${r.status === 'free' ? '✅' : '❌'} ${r.message}`)
+            .join('\n');
+          setTestResult({
+            success: true,
+            message: `${data.free}/${data.total} chave(s) Groq ativa(s) e com cota disponível!\n${details}`
+          });
+          addLog('success', 'TESTE', `Conexão Groq validada: ${data.free}/${data.total} chaves ativas.`);
+        } else {
+          const details = (data.results || [])
+            .map((r: any) => `${r.label || r.keyMasked}: ${r.message}`)
+            .join(' | ');
+          throw new Error(`Nenhuma das ${data.total} chave(s) Groq está ativa. Detalhes: ${details}`);
         }
       } else {
         // Teste Gemini (inalterado)
@@ -3050,7 +3535,7 @@ export default function App() {
           videoData: videoFile.data,
           mimeType: videoFile.mimeType,
           provider: activeProvider,
-          model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
+          model: activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel)
         })
       });
 
@@ -3096,7 +3581,7 @@ export default function App() {
     setResult(null);
     setCarouselResult(null);
 
-    const modelName = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
+    const modelName = activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel);
     addLog('ai', 'GERADOR', `Iniciando geração de ${activeTab === 'script' ? 'Roteiro de Vídeo' : 'Carrossel'} (Nicho: ${niche}, Idioma: ${dialogueLanguage.toUpperCase()}) via ${activeProvider.toUpperCase()} (${modelName})...`);
 
     try {
@@ -3409,7 +3894,7 @@ export default function App() {
           parts,
           responseSchema,
           provider: activeProvider,
-          model: activeProvider === 'openrouter' ? openrouterModelInput : geminiModel
+          model: activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel)
         })
       });
 
@@ -3587,7 +4072,21 @@ export default function App() {
             className="flex items-center gap-2 px-3 py-1.5 text-[10px] sm:text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded-xl shadow-xs transition cursor-pointer select-none group"
             title="Abrir Central de I.As e Provedores"
           >
-            {activeProvider === 'openrouter' ? (
+            {activeProvider === 'groq' ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+                <Zap className="w-3.5 h-3.5 text-orange-500 group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline font-bold">Groq Cloud</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-black rounded-md bg-orange-50 text-orange-700 border border-orange-200/80 max-w-[130px] truncate">
+                  {groqModelInput.replace('llama-3.3-70b-versatile', 'Llama 3.3 70B').replace('llama-3.1-8b-instant', 'Llama 3.1 8B')}
+                </span>
+                {groqKeysStats.total > 0 && (
+                  <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-black rounded-md ${groqKeysStats.free > 0 ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                    {groqKeysStats.free}/{groqKeysStats.total}
+                  </span>
+                )}
+              </>
+            ) : activeProvider === 'openrouter' ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
                 <Cpu className="w-3.5 h-3.5 text-amber-500 group-hover:rotate-12 transition-transform" />
@@ -6469,7 +6968,7 @@ export default function App() {
                   setTestResult(null);
                   setKeyManagerError(null);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
                   selectedProviderTab === 'gemini'
                     ? 'bg-white text-indigo-700 border-indigo-200/80 shadow-xs'
                     : 'bg-slate-100/70 hover:bg-slate-100 text-slate-600 border-transparent'
@@ -6491,18 +6990,47 @@ export default function App() {
 
               <button
                 onClick={() => {
+                  setSelectedProviderTab('groq');
+                  setTestResult(null);
+                  setKeyManagerError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                  selectedProviderTab === 'groq'
+                    ? 'bg-white text-orange-700 border-orange-200/80 shadow-xs'
+                    : 'bg-slate-100/70 hover:bg-slate-100 text-slate-600 border-transparent'
+                }`}
+              >
+                <Zap className={`w-4 h-4 ${selectedProviderTab === 'groq' ? 'text-orange-600' : 'text-slate-400'}`} />
+                <span>Groq Cloud (Ultra Rápido)</span>
+                {activeProvider === 'groq' && (
+                  <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 border border-orange-200 text-[9px] font-extrabold rounded-full">
+                    Ativo
+                  </span>
+                )}
+                {groqKeysStats.total > 0 && activeProvider !== 'groq' && (
+                  <span className="px-1.5 py-0.5 bg-slate-200/80 text-slate-600 text-[9px] font-bold rounded-full">
+                    {groqKeysStats.free} chaves
+                  </span>
+                )}
+                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black rounded-md">
+                  FREE
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
                   setSelectedProviderTab('openrouter');
                   setTestResult(null);
                   setKeyManagerError(null);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer border ${
                   selectedProviderTab === 'openrouter'
                     ? 'bg-white text-amber-700 border-amber-200/80 shadow-xs'
                     : 'bg-slate-100/70 hover:bg-slate-100 text-slate-600 border-transparent'
                 }`}
               >
                 <Cpu className={`w-4 h-4 ${selectedProviderTab === 'openrouter' ? 'text-amber-600' : 'text-slate-400'}`} />
-                <span>OpenRouter (Nemotron Free)</span>
+                <span>OpenRouter (Nemotron)</span>
                 {activeProvider === 'openrouter' && (
                   <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-extrabold rounded-full">
                     Ativo
@@ -6525,11 +7053,11 @@ export default function App() {
                   </div>
                   <div>
                     <h5 className="text-xs font-bold text-slate-100 flex items-center gap-2">
-                      <span>Alta Disponibilidade & Failover Bidirecional</span>
+                      <span>Alta Disponibilidade & Failover Triplo (Gemini ⇄ Groq ⇄ OpenRouter)</span>
                       <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[9px] font-black rounded-full border border-emerald-500/30">ATIVO</span>
                     </h5>
                     <p className="text-[11px] text-slate-300 mt-0.5">
-                      Se as cotas do Gemini esgotarem (429), o PostForge alterna instantaneamente para OpenRouter (e vice-versa) sem parar sua produção.
+                      Se as cotas do seu provedor ativo esgotarem (429), o PostForge alterna instantaneamente para Groq Cloud, Gemini ou OpenRouter sem parar seu fluxo de produção.
                     </p>
                   </div>
                 </div>
@@ -7220,6 +7748,346 @@ export default function App() {
                 </div>
               )}
 
+              {/* ======================= ABA GROQ CLOUD ======================= */}
+              {selectedProviderTab === 'groq' && (
+                <div className="space-y-6 text-left">
+                  {/* Card de Status Ativo do Groq */}
+                  <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-orange-600 text-white flex items-center justify-center">
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">Provedor Groq Cloud (LPU Ultra-Fast)</h4>
+                        <p className="text-[11px] text-slate-500">
+                          {activeProvider === 'groq' 
+                            ? 'Este é o motor atualmente ativo para geração de roteiros e carrosséis com altíssima velocidade.' 
+                            : 'Atualmente inativo. Clique ao lado para ativar o Groq Cloud como motor principal.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {activeProvider === 'groq' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded-xl border border-orange-300">
+                        <Check className="w-3.5 h-3.5" /> IA Ativa
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleSelectActiveProvider('groq')}
+                        className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Definir Groq como IA Ativa
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Feedback de Relatório de Verificação de Chaves Groq */}
+                  {groqVerificationReport && (
+                    <div className="p-3.5 bg-orange-50 border border-orange-200 text-orange-950 text-xs rounded-2xl flex items-center justify-between gap-2 text-left animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-orange-600 shrink-0" />
+                        <span>
+                          <strong>Cotas Groq auditadas às {groqVerificationReport.verifiedAt}:</strong> {groqVerificationReport.free} chaves com cota ativa, {groqVerificationReport.exhausted} esgotadas/inválidas.
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setGroqVerificationReport(null)}
+                        className="text-orange-700 hover:text-orange-900 text-[10px] font-bold p-1 hover:bg-orange-100 rounded-lg cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Card de Medidor de Cota em Tempo Real do Groq */}
+                  <div className="p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                        <span className="text-xs font-bold tracking-wide uppercase text-slate-300">Telemetria de Cota Groq (LPU Headers)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fetchGroqQuota()}
+                        disabled={isLoadingGroqQuota}
+                        className="text-[10px] font-bold text-orange-300 hover:text-orange-200 bg-orange-500/20 hover:bg-orange-500/30 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingGroqQuota ? 'animate-spin' : ''}`} />
+                        <span>{isLoadingGroqQuota ? 'Consultando...' : 'Atualizar Cota'}</span>
+                      </button>
+                    </div>
+
+                    {groqQuota ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/80">
+                          <p className="text-[10px] uppercase font-bold text-slate-400">Requisições Restantes (RPM)</p>
+                          <p className="text-xl font-black text-emerald-400 mt-0.5">
+                            {groqQuota.requestsRemaining !== undefined ? groqQuota.requestsRemaining.toLocaleString() : 'Ilimitado'}
+                            {groqQuota.requestsLimit ? <span className="text-xs text-slate-400 font-normal"> / {groqQuota.requestsLimit}</span> : null}
+                          </p>
+                          {groqQuota.resetRequests && (
+                            <p className="text-[9px] text-slate-400 mt-1">Reseta em: {groqQuota.resetRequests}</p>
+                          )}
+                        </div>
+                        <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/80">
+                          <p className="text-[10px] uppercase font-bold text-slate-400">Tokens Restantes (TPM)</p>
+                          <p className="text-xl font-black text-orange-400 mt-0.5">
+                            {groqQuota.tokensRemaining !== undefined ? `${(groqQuota.tokensRemaining / 1000).toFixed(0)}k` : 'Ilimitado'}
+                            {groqQuota.tokensLimit ? <span className="text-xs text-slate-400 font-normal"> / ${(groqQuota.tokensLimit / 1000).toFixed(0)}k</span> : null}
+                          </p>
+                          {groqQuota.resetTokens && (
+                            <p className="text-[9px] text-slate-400 mt-1">Reseta em: {groqQuota.resetTokens}</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 text-center">
+                        <p className="text-xs text-slate-400 font-medium">
+                          {groqQuotaError || 'Adicione suas chaves Groq (gsk_...) para monitorar as cotas em tempo real.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Cadastro e Upload de Múltiplas Chaves Groq */}
+                  <div className="p-4 bg-orange-50/40 border border-orange-200/70 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Key className="w-3.5 h-3.5 text-orange-600" />
+                          <span>Pool de Chaves Groq Cloud (Multi-Chaves)</span>
+                        </h4>
+                        <p className="text-[10px] text-slate-500">Cole uma ou mais chaves (gsk_...) ou carregue um arquivo .txt</p>
+                      </div>
+                      
+                      <label className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[11px] font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5">
+                        <Upload className="w-3 h-3 text-orange-600" />
+                        <span>{isUploadingGroqKeys ? 'Importando...' : 'Importar .txt'}</span>
+                        <input 
+                          type="file" 
+                          accept=".txt" 
+                          onChange={handleGroqKeysFileUpload} 
+                          className="hidden" 
+                          disabled={isUploadingGroqKeys}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <textarea
+                        value={groqMultiKeysInput}
+                        onChange={(e) => setGroqMultiKeysInput(e.target.value)}
+                        placeholder="Cole uma ou várias chaves Groq (gsk_...) separadas por linha..."
+                        rows={2}
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 resize-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddGroqMultiKeys}
+                        disabled={!groqMultiKeysInput.trim() || isUploadingGroqKeys}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 self-stretch sm:self-auto"
+                      >
+                        {isUploadingGroqKeys ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>Adicionar ao Pool</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tabela de Chaves Groq com Telemetria e Estatísticas */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Chaves no Pool Groq</h4>
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-[10px] font-black rounded-full">
+                          {groqKeysStats.free}/{groqKeysStats.total} Ativas
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleResetGroqKeys}
+                          className="text-[10px] font-bold text-slate-600 hover:text-slate-800 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                        >
+                          Reativar Esgotadas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleVerifyAllGroqKeys}
+                          disabled={isVerifyingGroqKeys}
+                          className="text-[10px] font-bold text-orange-700 hover:text-orange-900 px-2.5 py-1 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isVerifyingGroqKeys ? 'animate-spin' : ''}`} />
+                          <span>{isVerifyingGroqKeys ? 'Auditando...' : 'Medir Cotas de Todas'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {groqKeysStats.keysList.length === 0 ? (
+                      <div className="py-6 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                        <Key className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                        <p className="text-xs text-slate-500 font-medium">Nenhuma chave Groq cadastrada no pool.</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Adicione chaves gratuitas obtidas em console.groq.com/keys para rotacionar.</p>
+                      </div>
+                    ) : (
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                        <div className="max-h-48 overflow-y-auto">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                                <th className="p-2.5">Chave / Label</th>
+                                <th className="p-2.5">Status</th>
+                                <th className="p-2.5">Cota Restante</th>
+                                <th className="p-2.5 text-center">Sucessos</th>
+                                <th className="p-2.5 text-center">Falhas</th>
+                                <th className="p-2.5 text-right">Ação</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {groqKeysStats.keysList.map((keyObj) => (
+                                <tr key={keyObj.id} className="hover:bg-orange-50/30 transition">
+                                  <td className="p-2.5 font-mono text-[11px] text-slate-600">
+                                    <div className="font-bold text-slate-800">{keyObj.label || keyObj.keyMasked}</div>
+                                    <div className="text-[9px] text-slate-400 font-mono">{keyObj.keyMasked}</div>
+                                  </td>
+                                  <td className="p-2.5">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                      keyObj.status === 'free' 
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    }`}>
+                                      {keyObj.status === 'free' ? 'Ativa / Livre' : 'Cota Esgotada (429)'}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-[10px] text-slate-600 font-mono">
+                                    {keyObj.requestsRemaining !== undefined ? (
+                                      <div>{keyObj.requestsRemaining} reqs • {keyObj.tokensRemaining ? `${Math.round(keyObj.tokensRemaining / 1000)}k tok` : ''}</div>
+                                    ) : (
+                                      <span className="text-slate-400">Não testada</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 text-center text-emerald-600 font-bold">{keyObj.successCount}</td>
+                                  <td className="p-2.5 text-center text-rose-500 font-bold">{keyObj.errorCount}</td>
+                                  <td className="p-2.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveGroqKey(keyObj.id)}
+                                      className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                      title="Remover Chave"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Seleção de Modelos Groq Cloud */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">Selecione o Modelo Groq Desejado (Clique para Ativar)</h4>
+                        <p className="text-[10px] text-slate-400">Todos os modelos abaixo operam na infraestrutura LPU ultra-rápida do Groq</p>
+                      </div>
+                      <button
+                        onClick={() => setIsCustomGroqModel(!isCustomGroqModel)}
+                        className="text-[10px] font-bold text-orange-600 hover:text-orange-800 transition cursor-pointer"
+                      >
+                        {isCustomGroqModel ? 'Ver Lista Recomendada' : 'Digitar Outro Modelo'}
+                      </button>
+                    </div>
+
+                    {!isCustomGroqModel ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {POPULAR_GROQ_MODELS.map((m) => {
+                          const isSelected = groqModelInput === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => handleSelectGroqModel(m.id)}
+                              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                isSelected
+                                  ? 'bg-orange-50/80 border-orange-400 ring-2 ring-orange-500/20 shadow-xs'
+                                  : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-800">{m.name}</span>
+                                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black rounded-md">
+                                  FREE
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">{m.desc}</p>
+                              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400">
+                                <span className="font-semibold text-orange-700/90">{m.tag}</span>
+                                {isSelected ? (
+                                  <span className="font-bold text-orange-700 flex items-center gap-0.5 bg-orange-100 px-2 py-0.5 rounded-md">
+                                    <Check className="w-3 h-3" /> Ativo
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 group-hover:text-slate-600">Clique para Usar</span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                        <label className="text-xs font-bold text-slate-700">Identificador do Modelo no Groq</label>
+                        <input
+                          type="text"
+                          value={groqModelInput}
+                          onChange={(e) => handleSelectGroqModel(e.target.value)}
+                          placeholder="ex: llama-3.3-70b-versatile ou mixtral-8x7b-32768"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20"
+                        />
+                        <p className="text-[10px] text-slate-400">Consulte os modelos disponíveis em console.groq.com/docs/models.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Configuração de Base URL do Groq */}
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
+                    <label className="text-xs font-bold text-slate-700 block">Base URL da API Groq</label>
+                    <input
+                      type="text"
+                      value={groqBaseUrlInput}
+                      onChange={(e) => setGroqBaseUrlInput(e.target.value)}
+                      placeholder="https://api.groq.com/openai/v1"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20"
+                    />
+                  </div>
+
+                  {/* Ações do Groq: Testar e Salvar */}
+                  <div className="flex flex-wrap gap-2 justify-end pt-2">
+                    <button
+                      onClick={() => handleTestProvider('groq')}
+                      disabled={isTestingProvider}
+                      className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isTestingProvider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span>Testar Conexão</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveGroqSettings(true)}
+                      disabled={isSavingProviderSettings}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isSavingProviderSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>Salvar e Definir como IA Ativa</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Rodapé do Modal */}
@@ -7243,14 +8111,55 @@ export default function App() {
                     </button>
                   </>
                 )}
+                {selectedProviderTab === 'groq' && (
+                  <>
+                    <button 
+                      onClick={handleResetGroqKeys}
+                      disabled={groqKeysStats.exhausted === 0}
+                      className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Reativar Esgotadas
+                    </button>
+                    <button 
+                      onClick={handleClearGroqKeys}
+                      disabled={groqKeysStats.total === 0}
+                      className="px-3.5 py-1.5 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Limpar Tudo
+                    </button>
+                    <button 
+                      onClick={() => handleSaveGroqSettings(false)}
+                      disabled={isSavingProviderSettings}
+                      className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Salvar Alterações
+                    </button>
+                  </>
+                )}
                 {selectedProviderTab === 'openrouter' && (
-                  <button 
-                    onClick={() => handleSaveOpenRouterSettings(false)}
-                    disabled={isSavingProviderSettings}
-                    className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
-                  >
-                    Salvar Alterações
-                  </button>
+                  <>
+                    <button 
+                      onClick={handleResetOpenRouterKeys}
+                      disabled={openrouterKeysStats.exhausted === 0}
+                      className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Reativar Esgotadas
+                    </button>
+                    <button 
+                      onClick={handleClearOpenRouterKeys}
+                      disabled={openrouterKeysStats.total === 0}
+                      className="px-3.5 py-1.5 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 disabled:opacity-50 disabled:hover:bg-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Limpar Tudo
+                    </button>
+                    <button 
+                      onClick={() => handleSaveOpenRouterSettings(false)}
+                      disabled={isSavingProviderSettings}
+                      className="px-3.5 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+                    >
+                      Salvar Alterações
+                    </button>
+                  </>
                 )}
               </div>
               <button 

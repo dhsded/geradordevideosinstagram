@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { keysManager } from "./keys-manager";
 import { openrouterKeysManager } from "./openrouter-keys-manager";
+import { groqKeysManager } from "./groq-keys-manager";
 import { providersManager } from "./providers-manager";
 
 export interface AIContentPart {
@@ -15,7 +16,7 @@ export interface AIGenerateOptions {
   prompt?: string;
   parts: AIContentPart[];
   responseSchema?: any;
-  provider?: 'gemini' | 'openrouter';
+  provider?: 'gemini' | 'openrouter' | 'groq';
   model?: string;
 }
 
@@ -23,7 +24,7 @@ export interface AIAnalyzeOptions {
   prompt: string;
   videoData?: string;
   mimeType?: string;
-  provider?: 'gemini' | 'openrouter';
+  provider?: 'gemini' | 'openrouter' | 'groq';
   model?: string;
 }
 
@@ -37,10 +38,10 @@ export interface AILogEntry {
 
 export interface AIGenerateResult {
   text: string;
-  provider: 'gemini' | 'openrouter';
+  provider: 'gemini' | 'openrouter' | 'groq';
   model: string;
   failoverUsed?: boolean;
-  originalProvider?: 'gemini' | 'openrouter';
+  originalProvider?: 'gemini' | 'openrouter' | 'groq';
   failoverReason?: string;
   elapsedMs?: number;
   logs?: AILogEntry[];
@@ -171,10 +172,8 @@ export class AIService {
             extractedPdfContext += (extractedPdfContext ? '\n\n' : '') + 
               `=== CONTEÚDO EXTRAÍDO DO LIVRO / DOCUMENTO PDF ANEXADO ===\n${pdfText}\n=== FIM DO CONTEÚDO PDF ===`;
           }
-          // Mantém a parte inline para o Gemini poder ler nativamente caso deseje
           processedParts.push(part);
         } else {
-          // Imagens de personagens, estilo ou contexto
           processedParts.push(part);
         }
       }
@@ -185,7 +184,7 @@ export class AIService {
 
   /**
    * Ponto de entrada unificado para geração de conteúdo (Roteiros de Vídeo e Carrosséis)
-   * Com alternância bidirecional inteligente entre Gemini e OpenRouter caso todas as cotas se esgotem
+   * Com alternância inteligente entre Gemini, Groq e OpenRouter caso as cotas se esgotem
    */
   public async generate(options: AIGenerateOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
@@ -219,6 +218,76 @@ export class AIService {
       parts: partsWithPdf
     };
 
+    // --- ROTA 1: GROQ CLOUD ---
+    if (activeProvider === 'groq') {
+      try {
+        addLocalLog('ai', 'GROQ', `Iniciando geração via Groq Cloud (${options.model || providersManager.getGroqModel()})...`);
+        const result = await this.generateWithGroq(execOptions, addLocalLog);
+        const totalElapsed = Date.now() - tStart;
+        addLocalLog('success', 'GROQ', `Geração concluída com sucesso no Groq em ${(totalElapsed / 1000).toFixed(1)}s!`);
+        return {
+          ...result,
+          elapsedMs: totalElapsed,
+          logs: [...collectedLogs, ...(result.logs || [])]
+        };
+      } catch (groqErr: any) {
+        const groqElapsed = ((Date.now() - tStart) / 1000).toFixed(1);
+        addLocalLog('warning', 'FAILOVER', `Groq atingiu limite/erro (${groqElapsed}s: ${groqErr.message}). Tentando failover com Google Gemini...`);
+        console.warn(`[Failover] Groq falhou (${groqErr.message}). Verificando Gemini...`);
+
+        // Failover 1: Gemini
+        const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+        if (geminiKeyAvailable) {
+          try {
+            const tGeminiStart = Date.now();
+            const geminiOptions: AIGenerateOptions = {
+              ...execOptions,
+              provider: 'gemini',
+              model: providersManager.getConfig().gemini.preferredModel || 'gemini-2.5-flash'
+            };
+            addLocalLog('ai', 'GEMINI', `Solicitando geração via Google Gemini (${geminiOptions.model})...`);
+            const geminiResult = await this.generateWithGemini(geminiOptions, addLocalLog);
+            const geminiElapsed = ((Date.now() - tGeminiStart) / 1000).toFixed(1);
+            addLocalLog('success', 'GEMINI', `Google Gemini respondeu com sucesso em ${geminiElapsed}s!`);
+            
+            const totalElapsed = Date.now() - tStart;
+            return {
+              ...geminiResult,
+              failoverUsed: true,
+              originalProvider: 'groq',
+              failoverReason: `Groq congestionado (${groqElapsed}s). Geração concluída com sucesso via Google Gemini em ${geminiElapsed}s!`,
+              elapsedMs: totalElapsed,
+              logs: [...collectedLogs, ...(geminiResult.logs || [])]
+            };
+          } catch (gemErr: any) {
+            addLocalLog('warning', 'FAILOVER', `Google Gemini também atingiu limite. Tentando OpenRouter...`);
+          }
+        }
+
+        // Failover 2: OpenRouter
+        const openrouterKeyAvailable = openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey();
+        if (openrouterKeyAvailable) {
+          const openrouterOptions: AIGenerateOptions = {
+            ...execOptions,
+            provider: 'openrouter',
+            model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+          };
+          const orResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
+          const totalElapsed = Date.now() - tStart;
+          return {
+            ...orResult,
+            failoverUsed: true,
+            originalProvider: 'groq',
+            failoverReason: `Groq e Gemini indisponíveis. Geração concluída via OpenRouter.`,
+            elapsedMs: totalElapsed,
+            logs: [...collectedLogs, ...(orResult.logs || [])]
+          };
+        }
+        throw groqErr;
+      }
+    }
+
+    // --- ROTA 2: OPENROUTER ---
     if (activeProvider === 'openrouter') {
       try {
         addLocalLog('ai', 'OPENROUTER', `Iniciando geração via OpenRouter (${options.model || 'modelo padrão'})...`);
@@ -232,9 +301,34 @@ export class AIService {
         };
       } catch (openrouterErr: any) {
         const orElapsed = ((Date.now() - tStart) / 1000).toFixed(1);
-        addLocalLog('warning', 'FAILOVER', `OpenRouter atingiu limite/demora (${orElapsed}s: ${openrouterErr.message}). Alternando imediatamente para Google Gemini...`);
-        console.warn(`[Failover] OpenRouter falhou (${openrouterErr.message}). Verificando Gemini...`);
+        addLocalLog('warning', 'FAILOVER', `OpenRouter atingiu limite/demora (${orElapsed}s: ${openrouterErr.message}). Alternando imediatamente para Groq ou Gemini...`);
 
+        // Tentar Groq se houver chave
+        const groqKeyAvailable = groqKeysManager.getActiveKey() || providersManager.getGroqKey();
+        if (groqKeyAvailable) {
+          try {
+            const groqOptions: AIGenerateOptions = {
+              ...execOptions,
+              provider: 'groq',
+              model: providersManager.getGroqModel() || 'llama-3.3-70b-versatile'
+            };
+            addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
+            const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
+            const totalElapsed = Date.now() - tStart;
+            return {
+              ...groqResult,
+              failoverUsed: true,
+              originalProvider: 'openrouter',
+              failoverReason: `OpenRouter falhou. Concluído com sucesso via Groq Cloud!`,
+              elapsedMs: totalElapsed,
+              logs: [...collectedLogs, ...(groqResult.logs || [])]
+            };
+          } catch (gErr: any) {
+            console.warn('[Failover] Groq também falhou:', gErr.message);
+          }
+        }
+
+        // Tentar Gemini
         const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
         if (geminiKeyAvailable) {
           const tGeminiStart = Date.now();
@@ -260,49 +354,75 @@ export class AIService {
         }
         throw openrouterErr;
       }
-    } else {
-      try {
-        addLocalLog('ai', 'GEMINI', `Iniciando geração via Google Gemini (${options.model || 'gemini-2.5-flash'})...`);
-        const result = await this.generateWithGemini(execOptions, addLocalLog);
-        const totalElapsed = Date.now() - tStart;
-        addLocalLog('success', 'GEMINI', `Geração concluída com sucesso no Google Gemini em ${(totalElapsed / 1000).toFixed(1)}s!`);
-        return {
-          ...result,
-          elapsedMs: totalElapsed,
-          logs: [...collectedLogs, ...(result.logs || [])]
-        };
-      } catch (geminiErr: any) {
-        addLocalLog('warning', 'FAILOVER', `Google Gemini atingiu limite (${geminiErr.message}). Tentando failover com OpenRouter...`);
-        const openrouterKeyAvailable = openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey();
-        if (openrouterKeyAvailable) {
-          const openrouterOptions: AIGenerateOptions = {
+    }
+
+    // --- ROTA 3: GEMINI (PADRÃO) ---
+    try {
+      addLocalLog('ai', 'GEMINI', `Iniciando geração via Google Gemini (${options.model || 'gemini-2.5-flash'})...`);
+      const result = await this.generateWithGemini(execOptions, addLocalLog);
+      const totalElapsed = Date.now() - tStart;
+      addLocalLog('success', 'GEMINI', `Geração concluída com sucesso no Google Gemini em ${(totalElapsed / 1000).toFixed(1)}s!`);
+      return {
+        ...result,
+        elapsedMs: totalElapsed,
+        logs: [...collectedLogs, ...(result.logs || [])]
+      };
+    } catch (geminiErr: any) {
+      addLocalLog('warning', 'FAILOVER', `Google Gemini atingiu limite (${geminiErr.message}). Tentando failover com Groq Cloud ou OpenRouter...`);
+      
+      // Tentar Groq primeiro
+      const groqKeyAvailable = groqKeysManager.getActiveKey() || providersManager.getGroqKey();
+      if (groqKeyAvailable) {
+        try {
+          const groqOptions: AIGenerateOptions = {
             ...execOptions,
-            provider: 'openrouter',
-            model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+            provider: 'groq',
+            model: providersManager.getGroqModel() || 'llama-3.3-70b-versatile'
           };
-          const openrouterResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
+          addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
+          const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
           const totalElapsed = Date.now() - tStart;
           return {
-            ...openrouterResult,
+            ...groqResult,
             failoverUsed: true,
             originalProvider: 'gemini',
-            failoverReason: `Todas as chaves do Gemini atingiram o limite de cotas (${geminiErr.message})`,
+            failoverReason: `Chaves do Gemini atingiram limite. Geração concluída com sucesso via Groq Cloud!`,
             elapsedMs: totalElapsed,
-            logs: [...collectedLogs, ...(openrouterResult.logs || [])]
+            logs: [...collectedLogs, ...(groqResult.logs || [])]
           };
+        } catch (gErr: any) {
+          console.warn('[Failover] Groq falhou no failover do Gemini:', gErr.message);
         }
-        throw geminiErr;
       }
+
+      // Tentar OpenRouter
+      const openrouterKeyAvailable = openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey();
+      if (openrouterKeyAvailable) {
+        const openrouterOptions: AIGenerateOptions = {
+          ...execOptions,
+          provider: 'openrouter',
+          model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+        };
+        const openrouterResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
+        const totalElapsed = Date.now() - tStart;
+        return {
+          ...openrouterResult,
+          failoverUsed: true,
+          originalProvider: 'gemini',
+          failoverReason: `Todas as chaves do Gemini atingiram o limite de cotas (${geminiErr.message})`,
+          elapsedMs: totalElapsed,
+          logs: [...collectedLogs, ...(openrouterResult.logs || [])]
+        };
+      }
+      throw geminiErr;
     }
   }
 
   /**
    * Ponto de entrada unificado para análise de vídeos e posts
-   * Com alternância bidirecional inteligente em caso de esgotamento de cotas
    */
   public async analyze(options: AIAnalyzeOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
-
     const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
     const parts: AIContentPart[] = [{ text: options.prompt }];
 
@@ -315,6 +435,31 @@ export class AIService {
       });
     }
 
+    if (activeProvider === 'groq') {
+      try {
+        return await this.generateWithGroq({
+          prompt: options.prompt,
+          parts: [{ text: options.prompt }],
+          model: options.model
+        });
+      } catch (groqErr: any) {
+        const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+        if (geminiKeyAvailable) {
+          const geminiResult = await this.generateWithGemini({
+            parts,
+            model: preferredModel
+          });
+          return {
+            ...geminiResult,
+            failoverUsed: true,
+            originalProvider: 'groq',
+            failoverReason: `Cota do Groq esgotada (${groqErr.message})`
+          };
+        }
+        throw groqErr;
+      }
+    }
+
     if (activeProvider === 'openrouter') {
       try {
         return await this.generateWithOpenRouter({
@@ -323,12 +468,11 @@ export class AIService {
           model: options.model
         });
       } catch (openrouterErr: any) {
-        console.warn(`[Failover Análise] Falha no OpenRouter (${openrouterErr.message}). Tentando failover com Gemini...`);
         const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
         if (geminiKeyAvailable) {
           const geminiResult = await this.generateWithGemini({
             parts,
-            model: providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash"
+            model: preferredModel
           });
           return {
             ...geminiResult,
@@ -339,153 +483,165 @@ export class AIService {
         }
         throw openrouterErr;
       }
-    } else {
-      try {
-        return await this.generateWithGemini({
-          parts,
-          model: preferredModel
+    }
+
+    // Padrão Gemini
+    try {
+      return await this.generateWithGemini({
+        parts,
+        model: preferredModel
+      });
+    } catch (geminiErr: any) {
+      const groqKeyAvailable = groqKeysManager.getActiveKey() || providersManager.getGroqKey();
+      if (groqKeyAvailable) {
+        const groqResult = await this.generateWithGroq({
+          prompt: options.prompt,
+          parts: [{ text: options.prompt }],
+          model: providersManager.getGroqModel() || "llama-3.3-70b-versatile"
         });
-      } catch (geminiErr: any) {
-        console.warn(`[Failover Análise] Falha no Gemini (${geminiErr.message}). Tentando failover com OpenRouter...`);
-        const openrouterKeyAvailable = providersManager.getOpenRouterKey();
-        if (openrouterKeyAvailable) {
-          const openrouterResult = await this.generateWithOpenRouter({
-            prompt: options.prompt,
-            parts: [{ text: options.prompt }],
-            model: providersManager.getOpenRouterModel() || "minimax/minimax-m3:free"
-          });
-          return {
-            ...openrouterResult,
-            failoverUsed: true,
-            originalProvider: 'gemini',
-            failoverReason: `Cotas do Gemini esgotadas (${geminiErr.message})`
-          };
-        }
-        throw geminiErr;
+        return {
+          ...groqResult,
+          failoverUsed: true,
+          originalProvider: 'gemini',
+          failoverReason: `Gemini esgotado. Análise concluída via Groq Cloud.`
+        };
       }
+
+      const openrouterKeyAvailable = providersManager.getOpenRouterKey();
+      if (openrouterKeyAvailable) {
+        const openrouterResult = await this.generateWithOpenRouter({
+          prompt: options.prompt,
+          parts: [{ text: options.prompt }],
+          model: providersManager.getOpenRouterModel() || "minimax/minimax-m3:free"
+        });
+        return {
+          ...openrouterResult,
+          failoverUsed: true,
+          originalProvider: 'gemini',
+          failoverReason: `Todas as chaves Gemini esgotadas (${geminiErr.message})`
+        };
+      }
+      throw geminiErr;
     }
   }
 
   /**
-   * Execução através do Google Gemini SDK com rotação automática de chaves gratuitas
+   * Executa a geração utilizando o Google Gemini com rotação de chaves no pool
    */
-  private async generateWithGemini(options: AIGenerateOptions, logger?: (level: any, cat: string, msg: string) => void): Promise<AIGenerateResult> {
-    const configModel = providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
-    const requestedModel = (options.model && !options.model.includes('/')) ? options.model : configModel;
-    const preferredModel = requestedModel || "gemini-2.5-flash";
-    const triedKeys = new Set<string>();
+  private async generateWithGemini(
+    options: AIGenerateOptions,
+    logger?: (level: 'info' | 'success' | 'warning' | 'error' | 'ai', category: string, message: string) => void
+  ): Promise<AIGenerateResult> {
+    const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
+    const modelsToTry = [preferredModel];
+    if (!modelsToTry.includes("gemini-2.5-flash")) modelsToTry.push("gemini-2.5-flash");
+    if (!modelsToTry.includes("gemini-3.6-flash")) modelsToTry.push("gemini-3.6-flash");
 
-    const modelsToTry = [...new Set([
-      preferredModel,
-      "gemini-2.5-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash-lite",
-      "gemini-3.1-pro-preview"
-    ])];
+    let currentModelIndex = 0;
+    const triedKeys = new Set<string>();
 
     while (true) {
       let activeKey = keysManager.getActiveKey();
       let isFallback = false;
 
       if (!activeKey) {
-        activeKey = (process.env.GEMINI_API_KEY || '').trim();
+        activeKey = (process.env.GEMINI_API_KEY || "").trim();
         isFallback = true;
       }
 
       if (!activeKey) {
-        throw new Error("Nenhuma chave Gemini disponível. Por favor, adicione chaves no Menu de I.As ou no arquivo .env.");
+        throw new Error("Nenhuma chave Gemini disponível. Por favor, adicione suas chaves no Gerenciador de Chaves ou configure a variável GEMINI_API_KEY no arquivo .env.");
       }
 
-      if (!isFallback && triedKeys.has(activeKey)) {
-        throw new Error("Todas as chaves rotativas do Gemini configuradas foram testadas e atingiram o limite temporário (429/cota). Tente usar o OpenRouter ou adicione novas chaves.");
+      if (triedKeys.has(activeKey)) {
+        throw new Error("Todas as chaves do Gemini cadastradas atingiram o limite temporário ou esgotamento de cotas.");
       }
 
-      if (!isFallback) {
-        triedKeys.add(activeKey);
-      }
+      triedKeys.add(activeKey);
 
       const maskedKey = maskKeyForLog(activeKey);
-      let success = false;
-      let keyIsExhaustedOrInvalid = false;
-      let resultText = '';
-      let usedModel = preferredModel;
+      const ai = new GoogleGenAI({ apiKey: activeKey });
+      let currentModel = modelsToTry[currentModelIndex];
 
-      for (const currentModel of modelsToTry) {
-        try {
-          const t0 = Date.now();
-          if (logger) logger('ai', 'GEMINI', `Consultando modelo ${currentModel} (chave ${maskedKey})...`);
-          const ai = new GoogleGenAI({ apiKey: activeKey });
-          
-          const response = await ai.models.generateContent({
-            model: currentModel,
-            contents: { parts: options.parts },
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: options.responseSchema,
-            }
-          });
+      if (logger) logger('ai', 'GEMINI', `Tentando modelo ${currentModel} com a chave ${maskedKey}...`);
+      console.log(`[Gemini] Tentando com a chave ${maskedKey} no modelo ${currentModel}...`);
 
-          if (response && response.text) {
-            resultText = response.text;
-            usedModel = currentModel;
-            success = true;
-            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-            if (logger) logger('success', 'GEMINI', `Modelo ${currentModel} respondeu com sucesso em ${elapsed}s!`);
-            break;
-          } else {
-            throw new Error("Resposta do Gemini sem texto.");
-          }
-        } catch (error: any) {
-          const errorMsg = error.message || error.toString();
-          const errorCode = error.status || error.code;
-          console.warn(`[Gemini] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, errorMsg);
+      const config: any = {
+        temperature: 0.7,
+      };
 
-          if (errorMsg.includes("404") || errorMsg.includes("NOT_FOUND") || errorMsg.includes("is not found") || errorMsg.includes("no longer available")) {
-            continue; // Pular diretamente para o próximo modelo válido
-          }
-
-          if (
-            errorCode === 429 ||
-            errorMsg.includes("429") ||
-            errorMsg.includes("RESOURCE_EXHAUSTED") ||
-            errorMsg.includes("quota") ||
-            errorMsg.includes("rate limit")
-          ) {
-            keyIsExhaustedOrInvalid = true;
-            if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} atingiu limite de cota (429). Rotacionando para próxima chave...`);
-            break;
-          }
-
-          if (
-            (errorCode === 400 && (
-              errorMsg.includes("API_KEY_INVALID") ||
-              errorMsg.includes("API key not valid") ||
-              errorMsg.includes("key expired")
-            )) ||
-            errorCode === 401 ||
-            errorCode === 403
-          ) {
-            keyIsExhaustedOrInvalid = true;
-            if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} inválida ou expirada. Rotacionando para próxima chave...`);
-            break;
-          }
-        }
+      if (options.responseSchema) {
+        config.responseMimeType = "application/json";
+        config.responseSchema = options.responseSchema;
       }
 
-      if (success) {
-        if (!isFallback) {
-          keysManager.recordSuccess(activeKey);
+      const contents = options.parts.map(p => {
+        if (p.text) return { text: p.text };
+        if (p.inlineData) return { inlineData: p.inlineData };
+        return { text: "" };
+      });
+
+      try {
+        const response = await ai.models.generateContent({
+          model: currentModel,
+          contents: contents,
+          config: config
+        });
+
+        const text = response.text || "";
+        if (!text) {
+          throw new Error("Gemini retornou resposta vazia.");
         }
+
+        if (logger) logger('success', 'GEMINI', `Modelo ${currentModel} gerou conteúdo com sucesso!`);
+        keysManager.recordSuccess(activeKey);
+
         return {
-          text: resultText,
+          text,
           provider: 'gemini',
-          model: usedModel
+          model: currentModel
         };
-      } else {
-        if (!isFallback && keyIsExhaustedOrInvalid) {
-          keysManager.markExhausted(activeKey);
-        } else if (!isFallback) {
-          keysManager.recordError(activeKey);
+      } catch (err: any) {
+        const errorMessage = err.message || "";
+        const isQuotaError = 
+          errorMessage.includes("429") || 
+          errorMessage.includes("RESOURCE_EXHAUSTED") || 
+          errorMessage.includes("quota") ||
+          errorMessage.includes("rate limit") ||
+          errorMessage.includes("limit exceeded");
+
+        const isInvalidKey = 
+          errorMessage.includes("API_KEY_INVALID") || 
+          errorMessage.includes("invalid API key") ||
+          errorMessage.includes("API key not valid");
+
+        const isModelNotFoundError = 
+          errorMessage.includes("404") || 
+          errorMessage.includes("NOT_FOUND") || 
+          errorMessage.includes("models/");
+
+        console.warn(`[Gemini] Erro na chave ${maskedKey} (${currentModel}):`, errorMessage);
+
+        if (isModelNotFoundError && currentModelIndex < modelsToTry.length - 1) {
+          currentModelIndex++;
+          triedKeys.delete(activeKey);
+          if (logger) logger('warning', 'GEMINI', `Modelo ${currentModel} indisponível. Alternando para ${modelsToTry[currentModelIndex]}...`);
+          continue;
+        }
+
+        if (isQuotaError || isInvalidKey) {
+          const reason = isInvalidKey ? 'Chave de API Inválida' : 'Cota Diária/Minuto Esgotada (429)';
+          keysManager.markExhausted(activeKey, reason);
+          if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} esgotada/inválida. Rotacionando para próxima chave do pool...`);
+          if (isFallback) {
+            throw new Error(`A chave principal do Gemini atingiu o limite ou é inválida: ${errorMessage}`);
+          }
+          continue;
+        }
+
+        keysManager.recordError(activeKey, errorMessage);
+        if (isFallback) {
+          throw err;
         }
         continue;
       }
@@ -493,9 +649,204 @@ export class AIService {
   }
 
   /**
-   * Execução através do OpenRouter API compatível com OpenAI, com suporte a pool rotativo de múltiplas chaves
+   * Executa a geração utilizando o Groq Cloud (LPU ultra rápida e modelos Llama 3.3 / Gemma / Mixtral)
    */
-  private async generateWithOpenRouter(options: AIGenerateOptions, logger?: (level: any, cat: string, msg: string) => void): Promise<AIGenerateResult> {
+  private async generateWithGroq(
+    options: AIGenerateOptions,
+    logger?: (level: 'info' | 'success' | 'warning' | 'error' | 'ai', category: string, message: string) => void
+  ): Promise<AIGenerateResult> {
+    const triedKeys = new Set<string>();
+    const baseUrl = providersManager.getGroqBaseUrl();
+    const configuredModel = providersManager.getGroqModel();
+    const primaryModel = options.model || configuredModel || "llama-3.3-70b-versatile";
+
+    const modelsToTry = [
+      primaryModel,
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "mixtral-8x7b-32768"
+    ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+
+    let schemaInstruction = "";
+    if (options.responseSchema) {
+      schemaInstruction = `\n\nESQUEMA JSON ESTRITO OBRIGATÓRIO (Responda APENAS com um objeto JSON válido estritamente aderente a esta estrutura, sem blocos de texto antes ou depois):\n${JSON.stringify(options.responseSchema, null, 2)}`;
+    }
+
+    const systemMessage = {
+      role: "system",
+      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON.${schemaInstruction}`
+    };
+
+    let combinedText = "";
+    for (const p of options.parts || []) {
+      if (p.text) {
+        combinedText += (combinedText ? "\n\n" : "") + p.text;
+      }
+    }
+
+    const userMessage = {
+      role: "user",
+      content: combinedText + "\n\nIMPORTANTE: Retorne APENAS o JSON válido."
+    };
+
+    while (true) {
+      let activeKey = groqKeysManager.getActiveKey();
+      let isFallback = false;
+
+      if (!activeKey) {
+        activeKey = providersManager.getGroqKey();
+        isFallback = true;
+      }
+
+      if (!activeKey) {
+        throw new Error("Nenhuma chave Groq Cloud configurada. Por favor, adicione suas chaves Groq (gsk_...) no Menu de I.As ou no arquivo .env.");
+      }
+
+      if (triedKeys.has(activeKey)) {
+        throw new Error("Todas as chaves do Groq cadastradas atingiram o limite temporário ou esgotamento de cotas.");
+      }
+
+      triedKeys.add(activeKey);
+
+      const maskedKey = maskKeyForLog(activeKey);
+      let success = false;
+      let keyIsExhaustedOrInvalid = false;
+      let exhaustionReason = '';
+      let resultText = '';
+      let usedModel = primaryModel;
+      let lastError: any = null;
+
+      for (const currentModel of modelsToTry) {
+        const t0 = Date.now();
+        if (logger) logger('ai', 'GROQ', `Tentando modelo ${currentModel} (chave ${maskedKey})...`);
+        console.log(`[Groq] Solicitando modelo ${currentModel} com chave ${maskedKey}...`);
+
+        try {
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${activeKey}`
+            },
+            signal: AbortSignal.timeout(15000),
+            body: JSON.stringify({
+              model: currentModel,
+              messages: [systemMessage, userMessage],
+              temperature: 0.7,
+              response_format: { type: "json_object" }
+            })
+          });
+
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          const headers = response.headers;
+
+          // Atualizar contadores de taxa com os headers retornados pelo Groq
+          const reqRemaining = headers.get('x-ratelimit-remaining-requests') ? parseInt(headers.get('x-ratelimit-remaining-requests')!, 10) : undefined;
+          const tokRemaining = headers.get('x-ratelimit-remaining-tokens') ? parseInt(headers.get('x-ratelimit-remaining-tokens')!, 10) : undefined;
+
+          if (!response.ok) {
+            const errText = await response.text();
+            let errJson: any = null;
+            try { errJson = JSON.parse(errText); } catch {}
+            const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+
+            console.warn(`[Groq] Erro no modelo ${currentModel} (${response.status}, ${elapsed}s) com chave ${maskedKey}:`, errMsg);
+
+            if (response.status === 401 || errMsg.toLowerCase().includes("invalid api key") || errMsg.toLowerCase().includes("unauthorized")) {
+              keyIsExhaustedOrInvalid = true;
+              exhaustionReason = `Chave Groq inválida (${response.status}): ${errMsg}`;
+              if (logger) logger('warning', 'GROQ', `Chave ${maskedKey} inválida (${response.status}).`);
+              break;
+            }
+
+            if (response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("quota")) {
+              if (logger) logger('warning', 'GROQ', `Chave ${maskedKey} atingiu Rate Limit no Groq (${response.status}, ${elapsed}s). Rotacionando chave...`);
+              keyIsExhaustedOrInvalid = true;
+              exhaustionReason = `Rate limit (429): ${errMsg}`;
+              break;
+            }
+
+            if (logger) logger('warning', 'GROQ', `Modelo ${currentModel} retornou erro (${response.status}, ${elapsed}s).`);
+            lastError = new Error(`Groq ${currentModel}: ${errMsg}`);
+            continue;
+          }
+
+          const data: any = await response.json();
+          const rawContent = data?.choices?.[0]?.message?.content;
+          if (!rawContent) {
+            throw new Error(`Groq retornou resposta vazia no modelo ${currentModel}.`);
+          }
+
+          let cleanText = rawContent.trim();
+          if (cleanText.startsWith('```json')) {
+            cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (cleanText.startsWith('```')) {
+            cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+
+          try {
+            JSON.parse(cleanText);
+          } catch (parseErr) {
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              cleanText = jsonMatch[0];
+              JSON.parse(cleanText);
+            } else {
+              throw new Error(`Modelo ${currentModel} no Groq não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
+            }
+          }
+
+          console.log(`[Groq] Geração concluída com sucesso usando modelo ${currentModel} (${elapsed}s, chave ${maskedKey})!`);
+          if (logger) logger('success', 'GROQ', `Modelo ${currentModel} respondeu com sucesso em ${elapsed}s!`);
+          resultText = cleanText;
+          usedModel = currentModel;
+          success = true;
+          break;
+        } catch (err: any) {
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          lastError = err;
+          if (err.message?.includes("Chave Groq inválida") || err.message?.includes("Rate limit")) {
+            keyIsExhaustedOrInvalid = true;
+            exhaustionReason = err.message;
+            break;
+          }
+          if (err.name === 'TimeoutError' || err.message?.includes('aborted')) {
+            if (logger) logger('warning', 'GROQ', `Modelo ${currentModel} demorou mais de 15s no Groq.`);
+          } else {
+            if (logger) logger('warning', 'GROQ', `Falha no modelo ${currentModel} (${elapsed}s): ${err.message}`);
+          }
+          console.warn(`[Groq] Falha no modelo ${currentModel}:`, err.message);
+        }
+      }
+
+      if (success) {
+        groqKeysManager.recordSuccess(activeKey);
+        return { 
+          text: resultText,
+          provider: 'groq',
+          model: usedModel
+        };
+      } else {
+        if (keyIsExhaustedOrInvalid) {
+          groqKeysManager.markExhausted(activeKey, exhaustionReason);
+        } else {
+          groqKeysManager.recordError(activeKey);
+        }
+        if (isFallback) {
+          throw lastError || new Error("Groq falhou.");
+        }
+        continue;
+      }
+    }
+  }
+
+  /**
+   * Executa a geração utilizando o gateway OpenRouter
+   */
+  private async generateWithOpenRouter(
+    options: AIGenerateOptions,
+    logger?: (level: 'info' | 'success' | 'warning' | 'error' | 'ai', category: string, message: string) => void
+  ): Promise<AIGenerateResult> {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getOpenRouterBaseUrl();
     const configuredModel = providersManager.getOpenRouterModel();
@@ -503,7 +854,6 @@ export class AIService {
 
     const hasImages = (options.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/'));
 
-    // Modelos de alta taxa de sucesso no OpenRouter
     const visionModels = [
       "google/gemini-2.0-flash-exp:free",
       "google/gemini-2.5-flash",
@@ -578,7 +928,6 @@ export class AIService {
         throw new Error("Nenhuma chave OpenRouter configurada. Por favor, adicione suas chaves OpenRouter (sk-or-v1-...) no Menu de I.As ou no arquivo .env.");
       }
 
-      // Prevenir loop infinito: se a chave (pool ou fallback) já foi tentada, encerrar
       if (triedKeys.has(activeKey)) {
         throw new Error("Todas as chaves do OpenRouter cadastradas atingiram o limite temporário ou esgotamento de cotas.");
       }
@@ -607,7 +956,7 @@ export class AIService {
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
             },
-            signal: AbortSignal.timeout(6000), // Timeout rápido de 6s para failover instantâneo
+            signal: AbortSignal.timeout(6000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],

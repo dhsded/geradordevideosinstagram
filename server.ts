@@ -9,6 +9,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
 import { openrouterKeysManager } from "./openrouter-keys-manager";
+import { groqKeysManager } from "./groq-keys-manager";
 import { providersManager } from "./providers-manager";
 
 dotenv.config();
@@ -217,6 +218,104 @@ export async function startServer(port = 3000) {
         openrouterKeysManager.removeKey(target);
       }
       res.json(openrouterKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // GROQ CLOUD MULTI-KEYS ENDPOINTS
+  // ==========================================
+  app.get("/api/groq-keys", (req, res) => {
+    try {
+      res.json(groqKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/groq-keys/upload", (req, res) => {
+    try {
+      const { keys, labelPrefix } = req.body;
+      if (!Array.isArray(keys)) {
+        return res.status(400).json({ error: "O campo 'keys' deve ser uma lista de strings (gsk_...)." });
+      }
+      const addedCount = groqKeysManager.addKeys(keys, labelPrefix);
+      res.json({
+        ...groqKeysManager.getStats(),
+        addedCount
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/groq-keys", (req, res) => {
+    try {
+      const { keys, labelPrefix } = req.body;
+      if (!Array.isArray(keys)) {
+        return res.status(400).json({ error: "O campo 'keys' deve ser uma lista de strings (gsk_...)." });
+      }
+      const addedCount = groqKeysManager.addKeys(keys, labelPrefix);
+      res.json({
+        ...groqKeysManager.getStats(),
+        addedCount
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/groq-keys/reset", (req, res) => {
+    try {
+      groqKeysManager.resetStatuses();
+      res.json(groqKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.all(["/api/groq-keys/verify-all", "/api/groq-keys/check-all"], async (req, res) => {
+    try {
+      const results = await groqKeysManager.verifyAllKeys();
+      res.json(results);
+    } catch (error: any) {
+      console.error("Erro ao verificar chaves Groq:", error);
+      res.status(500).json({ error: error.message || "Erro ao verificar cotas das chaves Groq" });
+    }
+  });
+
+  app.post("/api/groq-keys/clear", (req, res) => {
+    try {
+      groqKeysManager.clearAll();
+      res.json(groqKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/groq-keys", (req, res) => {
+    try {
+      const target = req.body?.id || req.body?.key || req.query?.id || req.query?.key;
+      if (!target) {
+        return res.status(400).json({ error: "O identificador da chave é obrigatório para exclusão." });
+      }
+      groqKeysManager.removeKey(String(target));
+      res.json(groqKeysManager.getStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/groq-keys/:id", (req, res) => {
+    try {
+      const target = req.params.id;
+      if (target === "all") {
+        groqKeysManager.clearAll();
+      } else {
+        groqKeysManager.removeKey(target);
+      }
+      res.json(groqKeysManager.getStats());
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -454,6 +553,7 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
         ...providersManager.getPublicConfig(),
         geminiStats: keysManager.getStats(),
         openrouterStats: openrouterKeysManager.getStats(),
+        groqStats: groqKeysManager.getStats(),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -462,18 +562,25 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
 
   app.post("/api/providers/settings", (req, res) => {
     try {
-      const { activeProvider, openrouter, gemini } = req.body;
+      const { activeProvider, openrouter, groq, gemini } = req.body;
       if (openrouter?.apiKey) {
         const cleanKey = String(openrouter.apiKey).trim().replace(/^["']+|["']+$/g, '');
         if (cleanKey && cleanKey.length >= 8) {
           openrouterKeysManager.addKeys([cleanKey], 'Chave Principal');
         }
       }
-      providersManager.updateConfig({ activeProvider, openrouter, gemini });
+      if (groq?.apiKey) {
+        const cleanKey = String(groq.apiKey).trim().replace(/^["']+|["']+$/g, '');
+        if (cleanKey && cleanKey.length >= 8) {
+          groqKeysManager.addKeys([cleanKey], 'Chave Principal');
+        }
+      }
+      providersManager.updateConfig({ activeProvider, openrouter, groq, gemini });
       res.json({
         ...providersManager.getPublicConfig(),
         geminiStats: keysManager.getStats(),
         openrouterStats: openrouterKeysManager.getStats(),
+        groqStats: groqKeysManager.getStats(),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -485,7 +592,61 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
       const { provider, model, apiKey, baseUrl } = req.body;
       const targetProvider = provider || providersManager.getActiveProvider();
 
-      if (targetProvider === "openrouter") {
+      if (targetProvider === "groq") {
+        const keyToUse = (apiKey || providersManager.getGroqKey() || groqKeysManager.getActiveKey() || '').trim().replace(/^["']+|["']+$/g, '');
+        const urlToUse = baseUrl || providersManager.getGroqBaseUrl();
+        const modelToUse = model || providersManager.getGroqModel();
+
+        if (!keyToUse) {
+          return res.status(400).json({ error: "Chave da API Groq não informada. Insira sua chave (gsk_...) no campo ou cadastre no pool de chaves." });
+        }
+
+        const t0 = Date.now();
+        const testRes = await fetch(`${urlToUse}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${keyToUse}`
+          },
+          body: JSON.stringify({
+            model: modelToUse,
+            messages: [{ role: "user", content: "Responda em formato JSON: {\"status\": \"ok\", \"message\": \"conectado\"}" }],
+            response_format: { type: "json_object" },
+            max_tokens: 30
+          }),
+          signal: AbortSignal.timeout(12000)
+        });
+
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+
+        if (!testRes.ok) {
+          const errText = await testRes.text();
+          let errJson: any = null;
+          try { errJson = JSON.parse(errText); } catch {}
+          const rawMsg = errJson?.error?.message || errJson?.message || errText || `Erro HTTP ${testRes.status}`;
+
+          if (testRes.status === 401 || rawMsg.toLowerCase().includes('invalid api key')) {
+            return res.status(401).json({
+              error: "Chave Groq inválida ou não autorizada. Acesse console.groq.com/keys para obter uma chave gratuita."
+            });
+          }
+
+          if (testRes.status === 429 || rawMsg.toLowerCase().includes('rate limit') || rawMsg.toLowerCase().includes('quota')) {
+            return res.status(429).json({
+              error: `Limite de taxa temporário no Groq (429): ${rawMsg.slice(0, 150)}`
+            });
+          }
+
+          return res.status(testRes.status).json({ error: rawMsg });
+        }
+
+        const data: any = await testRes.json();
+        return res.json({ 
+          success: true, 
+          message: `Conexão ultra rápida com Groq Cloud estabelecida em ${elapsed}s usando ${modelToUse}!`,
+          sample: data?.choices?.[0]?.message?.content
+        });
+      } else if (targetProvider === "openrouter") {
         const keyToUse = (apiKey || providersManager.getOpenRouterKey() || openrouterKeysManager.getActiveKey() || '').trim().replace(/^["']+|["']+$/g, '');
         const urlToUse = baseUrl || providersManager.getOpenRouterBaseUrl();
         const modelToUse = model || providersManager.getOpenRouterModel();
@@ -687,6 +848,58 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
   app.post("/api/providers/openrouter/quota", handleOpenRouterQuota);
   app.get("/api/providers/openrouter-quota", handleOpenRouterQuota);
   app.post("/api/providers/openrouter-quota", handleOpenRouterQuota);
+
+  // Rota para consulta de cota, saldo e limites da chave Groq Cloud
+  const handleGroqQuota = async (req: express.Request, res: express.Response) => {
+    try {
+      const queryKey = (req.query.apiKey as string) || (req.body?.apiKey as string);
+      const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+      let rawKey = (queryKey || authHeader || '').trim().replace(/^["']+|["']+$/g, '');
+
+      if (!rawKey) {
+        rawKey = (groqKeysManager.getActiveKey() || providersManager.getGroqKey() || '').trim().replace(/^["']+|["']+$/g, '');
+      }
+
+      if (!rawKey) {
+        return res.json({ 
+          success: false,
+          notConfigured: true,
+          error: "Nenhuma chave Groq cadastrada. Adicione uma chave (gsk_...) para ver as métricas.",
+          groqStats: groqKeysManager.getStats()
+        });
+      }
+
+      const verifyResult = await groqKeysManager.verifySingleKey(rawKey);
+
+      return res.json({
+        success: verifyResult.active,
+        error: verifyResult.active ? undefined : verifyResult.message,
+        keyInfo: {
+          status: verifyResult.status,
+          message: verifyResult.message,
+          requestsRemaining: verifyResult.requestsRemaining,
+          requestsLimit: verifyResult.requestsLimit,
+          tokensRemaining: verifyResult.tokensRemaining,
+          tokensLimit: verifyResult.tokensLimit,
+          resetRequests: verifyResult.resetRequests,
+          resetTokens: verifyResult.resetTokens
+        },
+        activeKey: rawKey.length > 10 ? `${rawKey.substring(0, 7)}...${rawKey.substring(rawKey.length - 4)}` : 'Ativa',
+        groqStats: groqKeysManager.getStats()
+      });
+    } catch (error: any) {
+      console.error("Groq Quota Handler Error:", error);
+      return res.json({ 
+        success: false, 
+        error: error.message || "Erro ao consultar cota do Groq" 
+      });
+    }
+  };
+
+  app.get("/api/providers/groq/quota", handleGroqQuota);
+  app.post("/api/providers/groq/quota", handleGroqQuota);
+  app.get("/api/providers/groq-quota", handleGroqQuota);
+  app.post("/api/providers/groq-quota", handleGroqQuota);
 
   // API Routes - Modular Multi-Provider Generate & Analyze
   app.post("/api/generate", async (req, res) => {
