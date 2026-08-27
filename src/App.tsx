@@ -2089,6 +2089,48 @@ export default function App() {
     }
   };
 
+  // Injetar supressor de Passkeys (Windows Hello) e Anti-Captcha no Webview do Instagram
+  React.useEffect(() => {
+    if (!showInstagramBrowser) return;
+
+    const attachWebviewGuards = () => {
+      const wv = instagramWebviewRef.current;
+      if (!wv) return;
+
+      const injectGuards = () => {
+        const antiPasskeyScript = `
+          (() => {
+            try {
+              // 1. Bloquear detecção de Passkey / Chave de Segurança do Windows
+              delete window.PublicKeyCredential;
+              if (navigator.credentials) {
+                navigator.credentials.get = function() {
+                  return Promise.reject(new DOMException('Passkeys disabled on this client', 'NotSupportedError'));
+                };
+                navigator.credentials.create = function() {
+                  return Promise.reject(new DOMException('Passkeys disabled on this client', 'NotSupportedError'));
+                };
+              }
+              // 2. Mascarar webdriver e simular Chrome Desktop
+              Object.defineProperty(navigator, 'webdriver', { get: function() { return undefined; } });
+              if (!window.chrome) {
+                window.chrome = { runtime: {}, app: {}, loadTimes: function() {}, csi: function() {} };
+              }
+            } catch (e) {}
+          })()
+        `;
+        wv.executeJavaScript(antiPasskeyScript).catch(() => {});
+      };
+
+      wv.addEventListener('dom-ready', injectGuards);
+      wv.addEventListener('did-navigate', injectGuards);
+      wv.addEventListener('did-navigate-in-page', injectGuards);
+    };
+
+    const timer = setTimeout(attachWebviewGuards, 150);
+    return () => clearTimeout(timer);
+  }, [showInstagramBrowser]);
+
   const handleStartCloningProcess = async () => {
     if (!instagramVideoPreview && !videoFile && !clonerTranscriptInput.trim()) {
       alert('Por favor, capture um vídeo do Instagram, faça upload de um arquivo ou forneça a transcrição para clonagem.');
@@ -9117,14 +9159,47 @@ module.exports = { runCompleteWorkflow };`
                 </div>
               </div>
 
+              {/* Banner de Segurança Anti-Passkey & Sessão Persistente */}
+              <div className="bg-indigo-950/70 px-4 py-2 border-b border-indigo-800/50 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-200 shrink-0">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    <strong className="text-white">Modo Seguro Ativo:</strong> Chaves do Windows bloqueadas para login direto com usuário e senha. Seus cookies e login são salvos permanentemente.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInstagramBrowserUrl('https://www.instagram.com/accounts/login/');
+                      if (instagramWebviewRef.current) instagramWebviewRef.current.loadURL('https://www.instagram.com/accounts/login/');
+                    }}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] font-bold rounded-lg transition border border-slate-700 cursor-pointer"
+                  >
+                    🔑 Ir para Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInstagramBrowserUrl('https://www.instagram.com/reels/');
+                      if (instagramWebviewRef.current) instagramWebviewRef.current.loadURL('https://www.instagram.com/reels/');
+                    }}
+                    className="px-2.5 py-1 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-[11px] font-bold rounded-lg transition shadow-xs cursor-pointer"
+                  >
+                    🎬 Ir para Reels
+                  </button>
+                </div>
+              </div>
+
               {/* Webview do Instagram */}
               <div className="flex-1 bg-black relative">
                 {/* @ts-ignore */}
                 <webview
                   ref={instagramWebviewRef}
                   src={instagramBrowserUrl}
+                  partition="persist:instagram_session"
                   style={{ width: '100%', height: '100%', border: 'none' }}
-                  useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                  useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
                   allowpopups="true"
                 />
               </div>

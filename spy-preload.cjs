@@ -1,5 +1,56 @@
 const { ipcRenderer } = require('electron');
 
+// =========================================================================
+// 1. SUPRESSÃO DE CHAVE DE ACESSO DO WINDOWS (PASSKEYS / WEBAUTHN) & STEALTH
+// =========================================================================
+// Desativa WebAuthn/Passkeys para impedir o popup "Segurança do Windows: Salvar ou usar chave de acesso"
+// e mascara atributos de automação para evitar desafios de Captcha no Instagram/Meta.
+try {
+  if (typeof window !== 'undefined') {
+    // 1. Bloquear detecção de Passkey / Windows Hello
+    try {
+      Object.defineProperty(window, 'PublicKeyCredential', {
+        value: undefined,
+        configurable: true,
+        writable: true
+      });
+    } catch (e) {}
+
+    if (navigator.credentials) {
+      navigator.credentials.get = () => Promise.reject(new DOMException('Passkeys disabled on this client', 'NotSupportedError'));
+      navigator.credentials.create = () => Promise.reject(new DOMException('Passkeys disabled on this client', 'NotSupportedError'));
+    }
+
+    // 2. Mascarar webdriver e flags de automação
+    try {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true
+      });
+    } catch (e) {}
+
+    // 3. Simular runtime padrão do Google Chrome
+    if (!window.chrome) {
+      window.chrome = {
+        runtime: {},
+        app: {},
+        loadTimes: function() {},
+        csi: function() {}
+      };
+    }
+
+    // 4. Idiomas padrão
+    try {
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['pt-BR', 'pt', 'en-US', 'en'],
+        configurable: true
+      });
+    } catch (e) {}
+  }
+} catch (stealthErr) {
+  console.warn('[Preload Stealth] Aviso:', stealthErr);
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   console.log('[Spy Preload] Injetado com sucesso no navegador embutido.');
 

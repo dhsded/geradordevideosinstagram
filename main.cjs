@@ -169,6 +169,20 @@ function createMainWindow() {
     console.log(`[Electron Download] Salvando arquivo para: ${targetFile}`);
   });
 
+  // Configuração da Sessão Persistente do Instagram (Anti-Captcha & Salvar Login)
+  try {
+    const igSession = session.fromPartition('persist:instagram_session');
+    igSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+    igSession.on('will-download', (event, item) => {
+      const downloadsFolder = path.join(os.homedir(), 'Downloads');
+      const targetFile = path.join(downloadsFolder, item.getFilename());
+      item.setSavePath(targetFile);
+      console.log(`[Electron Download Instagram] Salvando arquivo para: ${targetFile}`);
+    });
+  } catch (igSessErr) {
+    console.warn('[Instagram Session] Aviso ao configurar partição:', igSessErr.message);
+  }
+
   // Exibir tela de Splash instantânea enquanto o backend compila/inicia
   const splashHtml = `
     <!DOCTYPE html>
