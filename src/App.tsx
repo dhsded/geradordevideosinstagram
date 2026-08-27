@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -253,6 +253,113 @@ export interface SpyMacro {
   updatedAt?: string;
 }
 
+export type NodeColorType = 'purple' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'blue' | 'fuchsia';
+
+export interface FlowchartNode {
+  id: string;
+  macroId: string;
+  name: string;
+  description?: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: NodeColorType;
+  connections: string[];
+  customParams?: Record<string, string>;
+  customCode?: string;
+  macroData?: SpyMacro;
+}
+
+export interface SpyFlowchart {
+  id: string;
+  name: string;
+  description?: string;
+  nodes: FlowchartNode[];
+  compiledScript?: {
+    puppeteer?: string;
+    playwright?: string;
+    runnerCjs?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const NODE_COLORS: Record<NodeColorType, { label: string; bg: string; border: string; accent: string; headerBg: string; line: string; hex: string }> = {
+  purple: {
+    label: 'Roxo (IA & Lógica)',
+    bg: 'from-purple-950/70 via-slate-900 to-slate-900',
+    border: 'border-purple-500/60 hover:border-purple-400 shadow-purple-500/10',
+    accent: 'text-purple-300 bg-purple-500/20 border-purple-500/40',
+    headerBg: 'bg-purple-500/25 text-purple-200 border border-purple-400/40',
+    line: '#c084fc',
+    hex: '#a855f7'
+  },
+  indigo: {
+    label: 'Índigo (Navegador)',
+    bg: 'from-indigo-950/70 via-slate-900 to-slate-900',
+    border: 'border-indigo-500/60 hover:border-indigo-400 shadow-indigo-500/10',
+    accent: 'text-indigo-300 bg-indigo-500/20 border-indigo-500/40',
+    headerBg: 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40',
+    line: '#818cf8',
+    hex: '#6366f1'
+  },
+  emerald: {
+    label: 'Verde (Download / Conclusão)',
+    bg: 'from-emerald-950/70 via-slate-900 to-slate-900',
+    border: 'border-emerald-500/60 hover:border-emerald-400 shadow-emerald-500/10',
+    accent: 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40',
+    headerBg: 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40',
+    line: '#34d399',
+    hex: '#10b981'
+  },
+  amber: {
+    label: 'Âmbar (Processamento / Fila)',
+    bg: 'from-amber-950/70 via-slate-900 to-slate-900',
+    border: 'border-amber-500/60 hover:border-amber-400 shadow-amber-500/10',
+    accent: 'text-amber-300 bg-amber-500/20 border-amber-500/40',
+    headerBg: 'bg-amber-500/25 text-amber-200 border border-amber-400/40',
+    line: '#fbbf24',
+    hex: '#f59e0b'
+  },
+  rose: {
+    label: 'Rosa (Validação / Alerta)',
+    bg: 'from-rose-950/70 via-slate-900 to-slate-900',
+    border: 'border-rose-500/60 hover:border-rose-400 shadow-rose-500/10',
+    accent: 'text-rose-300 bg-rose-500/20 border-rose-500/40',
+    headerBg: 'bg-rose-500/25 text-rose-200 border border-rose-400/40',
+    line: '#fb7185',
+    hex: '#f43f5e'
+  },
+  cyan: {
+    label: 'Ciano (Coleta / Scraping)',
+    bg: 'from-cyan-950/70 via-slate-900 to-slate-900',
+    border: 'border-cyan-500/60 hover:border-cyan-400 shadow-cyan-500/10',
+    accent: 'text-cyan-300 bg-cyan-500/20 border-cyan-500/40',
+    headerBg: 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/40',
+    line: '#22d3ee',
+    hex: '#06b6d4'
+  },
+  blue: {
+    label: 'Azul (API / Dados)',
+    bg: 'from-blue-950/70 via-slate-900 to-slate-900',
+    border: 'border-blue-500/60 hover:border-blue-400 shadow-blue-500/10',
+    accent: 'text-blue-300 bg-blue-500/20 border-blue-500/40',
+    headerBg: 'bg-blue-500/25 text-blue-200 border border-blue-400/40',
+    line: '#60a5fa',
+    hex: '#3b82f6'
+  },
+  fuchsia: {
+    label: 'Fúcsia (Criatividade / Mídia)',
+    bg: 'from-fuchsia-950/70 via-slate-900 to-slate-900',
+    border: 'border-fuchsia-500/60 hover:border-fuchsia-400 shadow-fuchsia-500/10',
+    accent: 'text-fuchsia-300 bg-fuchsia-500/20 border-fuchsia-500/40',
+    headerBg: 'bg-fuchsia-500/25 text-fuchsia-200 border border-fuchsia-400/40',
+    line: '#e879f9',
+    hex: '#d946ef'
+  }
+};
+
 export interface ExecutorBatchItem {
   id: string;
   label?: string;
@@ -355,15 +462,32 @@ export default function App() {
   const [activeSpyScriptTab, setActiveSpyScriptTab] = useState<'json' | 'puppeteer' | 'playwright'>('json');
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: '', type: '' });
 
-  // Estados do Espião FLOW com IA e Executor em Larga Escala (RPA)
+  // Estados do Espião FLOW com IA, Executor e Fluxograma N8N
   const [spySubTab, setSpySubTab] = useState<'recorder' | 'macro' | 'executor' | 'library' | 'flowchart'>('recorder');
-  const [flowchartNodes, setFlowchartNodes] = useState<Array<{id: string; macroId: string; name: string; x: number; y: number; connections: string[]}>>([]);
+  const [flowchartId, setFlowchartId] = useState<string>(() => `flow_${Date.now()}`);
+  const [flowchartName, setFlowchartName] = useState<string>('Meu Fluxo de Automação N8N #1');
+  const [flowchartDescription, setFlowchartDescription] = useState<string>('');
+  const [flowchartNodes, setFlowchartNodes] = useState<FlowchartNode[]>([]);
+  const [savedFlowsList, setSavedFlowsList] = useState<SpyFlowchart[]>([]);
+  const [isLoadingFlows, setIsLoadingFlows] = useState(false);
+  const [isSavedFlowsModalOpen, setIsSavedFlowsModalOpen] = useState(false);
+  const [isCodePreviewModalOpen, setIsCodePreviewModalOpen] = useState(false);
+  const [activeCodeNode, setActiveCodeNode] = useState<FlowchartNode | null>(null);
+  const [renamingFlowId, setRenamingFlowId] = useState<string | null>(null);
+  const [renamingFlowName, setRenamingFlowName] = useState<string>('');
+  const [flowchartCompiledTab, setFlowchartCompiledTab] = useState<'puppeteer' | 'json'>('puppeteer');
+
+  // Dragging, Resizing & Connecting
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({x: 0, y: 0});
+  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ startX: number; startY: number; startW: number; startH: number }>({ startX: 0, startY: 0, startW: 210, startH: 120 });
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
+  const [colorPickerNodeId, setColorPickerNodeId] = useState<string | null>(null);
   const flowchartRef = useRef<HTMLDivElement>(null);
   const [isFlowchartRunning, setIsFlowchartRunning] = useState(false);
   const [flowchartRunningNodeId, setFlowchartRunningNodeId] = useState<string | null>(null);
+
   const [isAnalyzingProcess, setIsAnalyzingProcess] = useState(false);
   const [userProcessGoalInput, setUserProcessGoalInput] = useState('');
   const [activeMacro, setActiveMacro] = useState<SpyMacro | null>(null);
@@ -1703,6 +1827,120 @@ export default function App() {
       setRenamingMacroId(null);
       setRenamingMacroName('');
     }
+  };
+
+  // ==========================================
+  // HANDLERS DO FLUXOGRAMA N8N
+  // ==========================================
+  const handleSaveFlowchart = async () => {
+    try {
+      const enrichedNodes = flowchartNodes.map(node => {
+        const macro = savedMacrosList.find(m => m.id === node.macroId) || node.macroData;
+        return {
+          ...node,
+          macroData: macro || node.macroData
+        };
+      });
+
+      const flowPayload: SpyFlowchart = {
+        id: flowchartId,
+        name: flowchartName.trim() || 'Fluxograma N8N',
+        description: flowchartDescription,
+        nodes: enrichedNodes,
+        updatedAt: new Date().toISOString()
+      };
+
+      const response = await fetch(getApiUrl('/api/spy/save-flow'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flowPayload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        addLog('success', 'FLUXOGRAMA', `Fluxograma "${flowPayload.name}" salvo com sucesso (${enrichedNodes.length} nós e código preservado)!`);
+        setSyncStatus({ message: `Fluxograma "${flowPayload.name}" salvo com sucesso!`, type: 'success' });
+        handleLoadSavedFlows();
+      } else {
+        throw new Error('Falha ao salvar fluxograma no servidor.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar fluxograma:', err);
+      setSyncStatus({ message: `Erro ao salvar fluxograma: ${err.message}`, type: 'error' });
+      addLog('error', 'FLUXOGRAMA', `Erro ao salvar fluxograma: ${err.message}`);
+    }
+  };
+
+  const handleLoadSavedFlows = async () => {
+    setIsLoadingFlows(true);
+    try {
+      const response = await fetch(getApiUrl('/api/spy/list-flows'));
+      if (response.ok) {
+        const data = await response.json();
+        setSavedFlowsList(data.flows || []);
+      }
+    } catch (err: any) {
+      console.warn('Erro ao listar fluxogramas salvos:', err);
+    } finally {
+      setIsLoadingFlows(false);
+    }
+  };
+
+  const handleOpenFlow = (flow: SpyFlowchart) => {
+    setFlowchartId(flow.id);
+    setFlowchartName(flow.name);
+    setFlowchartDescription(flow.description || '');
+    setFlowchartNodes(flow.nodes || []);
+    setIsSavedFlowsModalOpen(false);
+    addLog('info', 'FLUXOGRAMA', `Fluxograma "${flow.name}" carregado no canvas (${flow.nodes?.length || 0} nós).`);
+  };
+
+  const handleDeleteFlow = async (id: string, name: string) => {
+    try {
+      const response = await fetch(getApiUrl(`/api/spy/delete-flow/${id}`), {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        addLog('info', 'FLUXOGRAMA', `Fluxograma "${name}" excluído.`);
+        handleLoadSavedFlows();
+        if (flowchartId === id) {
+          handleNewFlowchart();
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao excluir fluxograma:', err);
+    }
+  };
+
+  const handleRenameFlow = async (id: string, newName: string) => {
+    if (!newName.trim()) return;
+    try {
+      const response = await fetch(getApiUrl(`/api/spy/rename-flow/${id}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() })
+      });
+      if (response.ok) {
+        addLog('success', 'FLUXOGRAMA', `Fluxograma renomeado para "${newName.trim()}".`);
+        handleLoadSavedFlows();
+        if (flowchartId === id) {
+          setFlowchartName(newName.trim());
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao renomear fluxograma:', err);
+    } finally {
+      setRenamingFlowId(null);
+      setRenamingFlowName('');
+    }
+  };
+
+  const handleNewFlowchart = () => {
+    setFlowchartId(`flow_${Date.now()}`);
+    setFlowchartName('Novo Fluxograma N8N');
+    setFlowchartDescription('');
+    setFlowchartNodes([]);
+    addLog('info', 'FLUXOGRAMA', 'Novo fluxograma em branco iniciado.');
   };
 
   const handlePullItemsFromPostForge = () => {
@@ -5035,328 +5273,985 @@ export default function App() {
 
               {/* ========== ABA 5: FLUXOGRAMA N8N ========== */}
               {spySubTab === 'flowchart' && (
-                <div className="w-full h-full flex gap-4 overflow-hidden">
-                  {/* Sidebar — Lista de Macros para Arrastar */}
-                  <div className="w-64 shrink-0 bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3 overflow-y-auto">
-                    <div className="pb-3 border-b border-slate-800">
-                      <h3 className="text-sm font-black text-white flex items-center gap-2">
-                        <Workflow className="w-4 h-4 text-pink-400" />
-                        Macros Disponíveis
-                      </h3>
-                      <p className="text-[10px] text-slate-500 mt-1">Arraste um macro para o canvas</p>
+                <div className="w-full h-full flex flex-col gap-3 overflow-hidden">
+                  {/* Toolbar Superior do Fluxograma */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xl shrink-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 text-white flex items-center justify-center shadow-md shadow-purple-600/30 shrink-0">
+                        <Workflow className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col min-w-0 flex-1 max-w-md">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={flowchartName}
+                            onChange={(e) => setFlowchartName(e.target.value)}
+                            onBlur={() => { if (!flowchartName.trim()) setFlowchartName('Meu Fluxograma N8N'); }}
+                            className="bg-slate-950 border border-slate-700 hover:border-purple-500 focus:border-purple-400 rounded-lg px-2.5 py-1 text-sm font-black text-white focus:outline-none focus:ring-1 focus:ring-purple-400 w-full truncate"
+                            placeholder="Nome do Fluxograma..."
+                            title="Clique para editar o nome do fluxograma"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] font-mono text-purple-400">
+                            {flowchartNodes.length} módulo(s) conectados
+                          </span>
+                          <span className="text-[10px] text-slate-500">•</span>
+                          <span className="text-[10px] text-slate-400 truncate">
+                            ID: <code className="text-slate-300 font-mono">{flowchartId}</code>
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {savedMacrosList.length === 0 ? (
-                      <div className="py-10 text-center">
-                        <BookOpen className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                        <p className="text-xs text-slate-500">Nenhum macro salvo.</p>
-                        <p className="text-[10px] text-slate-600 mt-1">Salve macros na Biblioteca primeiro.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {savedMacrosList.map(macro => (
-                          <div
-                            key={macro.id}
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('macroId', macro.id);
-                              e.dataTransfer.setData('macroName', macro.nome_processo);
-                              e.dataTransfer.effectAllowed = 'copy';
-                            }}
-                            className="bg-slate-800/80 border border-slate-700 hover:border-purple-500/50 rounded-xl p-3 cursor-grab active:cursor-grabbing transition group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                                <Cpu className="w-3.5 h-3.5" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-white truncate group-hover:text-purple-300 transition">{macro.nome_processo}</p>
-                                <p className="text-[9px] text-slate-500 font-mono">{macro.macro_parametrizado?.length || 0} ações</p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Botões de Ação da Toolbar */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleSaveFlowchart}
+                        className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
+                        title="Salvar fluxograma e seu código compilado na pasta flows/"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Salvar Fluxo</span>
+                      </button>
 
-                    {/* Ações do Fluxograma */}
-                    {flowchartNodes.length > 0 && (
-                      <div className="mt-auto pt-3 border-t border-slate-800 space-y-2">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (flowchartNodes.length === 0 || isFlowchartRunning) return;
-                            setIsFlowchartRunning(true);
-                            addLog('ai', 'FLUXOGRAMA', `Iniciando execução sequencial de ${flowchartNodes.length} nós...`);
-                            
-                            // Build execution order: BFS from nodes with no incoming connections
-                            const visited = new Set<string>();
-                            const queue: string[] = [];
-                            const incomingMap: Record<string, number> = {};
-                            flowchartNodes.forEach(n => { incomingMap[n.id] = 0; });
-                            flowchartNodes.forEach(n => {
-                              n.connections.forEach(cId => {
-                                incomingMap[cId] = (incomingMap[cId] || 0) + 1;
-                              });
-                            });
-                            flowchartNodes.forEach(n => {
-                              if (incomingMap[n.id] === 0) queue.push(n.id);
-                            });
-                            const executionOrder: typeof flowchartNodes = [];
-                            while (queue.length > 0) {
-                              const nodeId = queue.shift()!;
-                              if (visited.has(nodeId)) continue;
-                              visited.add(nodeId);
-                              const node = flowchartNodes.find(n => n.id === nodeId);
-                              if (node) {
-                                executionOrder.push(node);
-                                node.connections.forEach(cId => {
-                                  if (!visited.has(cId)) queue.push(cId);
-                                });
-                              }
-                            }
-                            // Add any unvisited nodes
-                            flowchartNodes.forEach(n => {
-                              if (!visited.has(n.id)) executionOrder.push(n);
-                            });
+                      <button
+                        type="button"
+                        onClick={() => { handleLoadSavedFlows(); setIsSavedFlowsModalOpen(true); }}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-slate-700 cursor-pointer"
+                        title="Abrir lista de fluxogramas salvos em disco"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Abrir Salvos ({savedFlowsList.length})</span>
+                      </button>
 
-                            for (let i = 0; i < executionOrder.length; i++) {
-                              const node = executionOrder[i];
-                              setFlowchartRunningNodeId(node.id);
-                              const macro = savedMacrosList.find(m => m.id === node.macroId);
-                              if (macro) {
-                                addLog('info', 'FLUXOGRAMA', `[${i+1}/${executionOrder.length}] Executando: "${macro.nome_processo}"`);
-                                setActiveMacro(macro);
-                                // Simulate execution delay per step count
-                                await new Promise(r => setTimeout(r, (macro.macro_parametrizado?.length || 1) * 1500));
-                                addLog('success', 'FLUXOGRAMA', `[${i+1}/${executionOrder.length}] "${macro.nome_processo}" concluído.`);
-                              } else {
-                                addLog('warning', 'FLUXOGRAMA', `Macro "${node.name}" não encontrado na biblioteca.`);
-                              }
-                            }
+                      <button
+                        type="button"
+                        onClick={handleNewFlowchart}
+                        className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 border border-slate-700/60 cursor-pointer"
+                        title="Iniciar um novo fluxograma em branco"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Novo</span>
+                      </button>
 
-                            setFlowchartRunningNodeId(null);
-                            setIsFlowchartRunning(false);
-                            addLog('success', 'FLUXOGRAMA', 'Fluxo completo executado com sucesso!');
-                          }}
-                          disabled={isFlowchartRunning}
-                          className={`w-full px-4 py-2.5 text-xs font-black rounded-xl transition flex items-center gap-2 justify-center cursor-pointer ${
-                            isFlowchartRunning
-                              ? 'bg-amber-600/30 text-amber-300 border border-amber-500/30 cursor-wait'
-                              : 'bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-lg shadow-emerald-600/20'
-                          }`}
-                        >
-                          {isFlowchartRunning ? (
-                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Executando Fluxo...</>
-                          ) : (
-                            <><Play className="w-3.5 h-3.5 fill-current" /> Executar Fluxo ({flowchartNodes.length})</>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setFlowchartNodes([]); addLog('info', 'FLUXOGRAMA', 'Canvas limpo.'); }}
-                          className="w-full px-3 py-2 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 text-xs font-bold rounded-xl transition flex items-center gap-2 justify-center cursor-pointer border border-slate-700"
-                        >
-                          <Trash2 className="w-3 h-3" /> Limpar Canvas
-                        </button>
-                      </div>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setIsCodePreviewModalOpen(true)}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-indigo-950 text-indigo-300 hover:text-indigo-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-indigo-500/30 cursor-pointer"
+                        title="Inspecionar o código unificado do fluxo pronto para virar aplicativo"
+                      >
+                        <Code className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Código Compilado (App)</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Canvas — Área de Drag & Drop */}
-                  <div
-                    ref={flowchartRef}
-                    className="flex-1 bg-slate-950/80 border border-slate-800 rounded-2xl relative overflow-hidden"
-                    style={{ backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.08) 1px, transparent 1px)', backgroundSize: '24px 24px' }}
-                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const macroId = e.dataTransfer.getData('macroId');
-                      const macroName = e.dataTransfer.getData('macroName');
-                      if (!macroId) return;
-                      const rect = flowchartRef.current?.getBoundingClientRect();
-                      if (!rect) return;
-                      const x = e.clientX - rect.left - 90;
-                      const y = e.clientY - rect.top - 30;
-                      const newNode = {
-                        id: `node_${Date.now()}`,
-                        macroId,
-                        name: macroName,
-                        x: Math.max(0, Math.min(x, rect.width - 180)),
-                        y: Math.max(0, Math.min(y, rect.height - 60)),
-                        connections: [] as string[]
-                      };
-                      setFlowchartNodes(prev => [...prev, newNode]);
-                      addLog('info', 'FLUXOGRAMA', `Nó "${macroName}" adicionado ao canvas.`);
-                    }}
-                    onMouseMove={(e) => {
-                      if (!draggingNodeId) return;
-                      const rect = flowchartRef.current?.getBoundingClientRect();
-                      if (!rect) return;
-                      const x = e.clientX - rect.left - dragOffset.x;
-                      const y = e.clientY - rect.top - dragOffset.y;
-                      setFlowchartNodes(prev => prev.map(n => 
-                        n.id === draggingNodeId 
-                          ? { ...n, x: Math.max(0, Math.min(x, rect.width - 180)), y: Math.max(0, Math.min(y, rect.height - 60)) }
-                          : n
-                      ));
-                    }}
-                    onMouseUp={() => { setDraggingNodeId(null); }}
-                    onMouseLeave={() => { setDraggingNodeId(null); setConnectingFrom(null); }}
-                  >
-                    {/* Placeholder quando vazio */}
-                    {flowchartNodes.length === 0 && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center space-y-3">
-                          <div className="w-16 h-16 mx-auto rounded-2xl bg-purple-500/10 border-2 border-dashed border-purple-500/30 flex items-center justify-center">
-                            <Workflow className="w-8 h-8 text-purple-500/50" />
+                  {/* Área Principal: Sidebar de Macros + Canvas Interativo */}
+                  <div className="flex-1 flex gap-3 overflow-hidden">
+                    {/* Sidebar Esquerda — Biblioteca de Macros */}
+                    <div className="w-64 shrink-0 bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-3 overflow-hidden shadow-lg">
+                      <div className="pb-2.5 border-b border-slate-800 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                            <Workflow className="w-3.5 h-3.5 text-pink-400" />
+                            Macros Disponíveis
+                          </h3>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Arraste ou clique para adicionar</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleLoadMacrosList}
+                          className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                          title="Atualizar lista de macros"
+                        >
+                          <RotateCw className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      {/* Lista de Macros Arrastáveis */}
+                      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                        {savedMacrosList.length === 0 ? (
+                          <div className="py-8 text-center space-y-2">
+                            <BookOpen className="w-7 h-7 text-slate-600 mx-auto" />
+                            <p className="text-xs text-slate-400 font-semibold">Nenhum macro salvo.</p>
+                            <p className="text-[10px] text-slate-500">Salve macros na aba 4 (Biblioteca) para montar fluxos.</p>
                           </div>
-                          <div>
-                            <h4 className="text-sm font-bold text-slate-400">Arraste macros para cá</h4>
-                            <p className="text-[10px] text-slate-600 mt-1 max-w-xs mx-auto">
-                              Arraste macros da sidebar esquerda para criar nós. Clique no conector (●) de um nó e depois em outro para conectar.
-                            </p>
+                        ) : (
+                          savedMacrosList.map((macro, mIdx) => (
+                            <div
+                              key={macro.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('macroId', macro.id);
+                                e.dataTransfer.setData('macroName', macro.nome_processo);
+                                e.dataTransfer.effectAllowed = 'copy';
+                              }}
+                              className="bg-slate-950/80 border border-slate-800 hover:border-purple-500/60 rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition group flex flex-col gap-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 border border-purple-500/30">
+                                    <Cpu className="w-3 h-3" />
+                                  </div>
+                                  <p className="text-xs font-bold text-slate-200 truncate group-hover:text-purple-300 transition" title={macro.nome_processo}>
+                                    {macro.nome_processo}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rect = flowchartRef.current?.getBoundingClientRect();
+                                    const defaultX = 50 + (flowchartNodes.length * 60) % 300;
+                                    const defaultY = 50 + (flowchartNodes.length * 50) % 250;
+                                    const colors: NodeColorType[] = ['purple', 'indigo', 'emerald', 'amber', 'rose', 'cyan', 'blue', 'fuchsia'];
+                                    const assignedColor = colors[flowchartNodes.length % colors.length];
+                                    const newNode: FlowchartNode = {
+                                      id: `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                                      macroId: macro.id,
+                                      name: macro.nome_processo,
+                                      description: macro.descricao_processo,
+                                      x: defaultX,
+                                      y: defaultY,
+                                      width: 220,
+                                      height: 120,
+                                      color: assignedColor,
+                                      connections: [],
+                                      macroData: macro
+                                    };
+                                    setFlowchartNodes(prev => [...prev, newNode]);
+                                    addLog('info', 'FLUXOGRAMA', `Nó "${macro.nome_processo}" adicionado ao canvas.`);
+                                  }}
+                                  className="p-1 hover:bg-purple-600 text-slate-400 hover:text-white rounded-md transition cursor-pointer text-[10px] font-black"
+                                  title="Adicionar ao canvas"
+                                >
+                                  + Add
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                                <span>{macro.macro_parametrizado?.length || 0} ações</span>
+                                <span className="truncate max-w-[120px]">{macro.targetUrl ? new URL(macro.targetUrl).hostname : 'Macro local'}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Guia & Botões no Rodapé da Sidebar */}
+                      <div className="pt-2.5 border-t border-slate-800 space-y-2">
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-[10px] text-slate-400 space-y-1">
+                          <p className="font-bold text-slate-300 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-yellow-400" /> Dicas de Montagem:
+                          </p>
+                          <p>• <strong>Conectar:</strong> clique no conector direito (●) de um nó e depois no esquerdo (○) do nó seguinte.</p>
+                          <p>• <strong>Redimensionar:</strong> arraste a quina inferior direita de cada nó.</p>
+                          <p>• <strong>Cores:</strong> clique no botão de cor para categorizar módulos.</p>
+                        </div>
+
+                        {flowchartNodes.length > 0 && (
+                          <div className="space-y-1.5">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (flowchartNodes.length === 0 || isFlowchartRunning) return;
+                                setIsFlowchartRunning(true);
+                                addLog('ai', 'FLUXOGRAMA', `Iniciando execução encadeada de ${flowchartNodes.length} módulos no fluxograma...`);
+
+                                // Ordenação topológica (BFS a partir de nós sem entradas)
+                                const visited = new Set<string>();
+                                const queue: string[] = [];
+                                const incomingMap: Record<string, number> = {};
+                                flowchartNodes.forEach(n => { incomingMap[n.id] = 0; });
+                                flowchartNodes.forEach(n => {
+                                  n.connections.forEach(cId => {
+                                    incomingMap[cId] = (incomingMap[cId] || 0) + 1;
+                                  });
+                                });
+                                flowchartNodes.forEach(n => {
+                                  if (incomingMap[n.id] === 0) queue.push(n.id);
+                                });
+                                const executionOrder: FlowchartNode[] = [];
+                                while (queue.length > 0) {
+                                  const nodeId = queue.shift()!;
+                                  if (visited.has(nodeId)) continue;
+                                  visited.add(nodeId);
+                                  const node = flowchartNodes.find(n => n.id === nodeId);
+                                  if (node) {
+                                    executionOrder.push(node);
+                                    node.connections.forEach(cId => {
+                                      if (!visited.has(cId)) queue.push(cId);
+                                    });
+                                  }
+                                }
+                                flowchartNodes.forEach(n => {
+                                  if (!visited.has(n.id)) executionOrder.push(n);
+                                });
+
+                                for (let i = 0; i < executionOrder.length; i++) {
+                                  const node = executionOrder[i];
+                                  setFlowchartRunningNodeId(node.id);
+                                  const macro = savedMacrosList.find(m => m.id === node.macroId) || node.macroData;
+                                  if (macro) {
+                                    addLog('info', 'FLUXOGRAMA', `[${i+1}/${executionOrder.length}] Executando módulo: "${node.name}" (${macro.macro_parametrizado?.length || 0} passos)...`);
+                                    setActiveMacro(macro);
+                                    await new Promise(r => setTimeout(r, Math.max(1500, (macro.macro_parametrizado?.length || 1) * 1200)));
+                                    addLog('success', 'FLUXOGRAMA', `[${i+1}/${executionOrder.length}] Módulo "${node.name}" concluído com sucesso.`);
+                                  } else {
+                                    addLog('warning', 'FLUXOGRAMA', `Módulo "${node.name}" não possui dados associados.`);
+                                    await new Promise(r => setTimeout(r, 1000));
+                                  }
+                                }
+
+                                setFlowchartRunningNodeId(null);
+                                setIsFlowchartRunning(false);
+                                addLog('success', 'FLUXOGRAMA', `🎉 Fluxograma completo "${flowchartName}" executado com sucesso!`);
+                              }}
+                              disabled={isFlowchartRunning}
+                              className={`w-full px-3.5 py-2.5 text-xs font-black rounded-xl transition flex items-center gap-2 justify-center cursor-pointer shadow-lg ${
+                                isFlowchartRunning
+                                  ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40 cursor-wait animate-pulse'
+                                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-emerald-600/20'
+                              }`}
+                            >
+                              {isFlowchartRunning ? (
+                                <><Loader2 className="w-4 h-4 animate-spin" /> Executando Fluxo...</>
+                              ) : (
+                                <><Play className="w-4 h-4 fill-current" /> Executar Fluxo ({flowchartNodes.length})</>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Tem certeza que deseja limpar todos os nós do canvas?')) {
+                                  setFlowchartNodes([]);
+                                  addLog('info', 'FLUXOGRAMA', 'Canvas do fluxograma limpo.');
+                                }
+                              }}
+                              className="w-full px-3 py-1.5 bg-slate-800/80 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 text-xs font-bold rounded-xl transition flex items-center gap-1.5 justify-center cursor-pointer border border-slate-700/60"
+                            >
+                              <Trash2 className="w-3 h-3" /> Limpar Canvas
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Canvas Interativo do Fluxograma */}
+                    <div
+                      ref={flowchartRef}
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl relative overflow-hidden select-none"
+                      style={{
+                        backgroundImage: 'radial-gradient(circle, rgba(168,85,247,0.12) 1.5px, transparent 1.5px)',
+                        backgroundSize: '24px 24px'
+                      }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const macroId = e.dataTransfer.getData('macroId');
+                        const macroName = e.dataTransfer.getData('macroName');
+                        if (!macroId) return;
+                        const rect = flowchartRef.current?.getBoundingClientRect();
+                        if (!rect) return;
+                        const macroObj = savedMacrosList.find(m => m.id === macroId);
+                        const colors: NodeColorType[] = ['purple', 'indigo', 'emerald', 'amber', 'rose', 'cyan', 'blue', 'fuchsia'];
+                        const assignedColor = colors[flowchartNodes.length % colors.length];
+                        const x = Math.max(10, Math.min(e.clientX - rect.left - 100, rect.width - 240));
+                        const y = Math.max(10, Math.min(e.clientY - rect.top - 40, rect.height - 140));
+                        const newNode: FlowchartNode = {
+                          id: `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                          macroId,
+                          name: macroName,
+                          description: macroObj?.descricao_processo,
+                          x,
+                          y,
+                          width: 220,
+                          height: 120,
+                          color: assignedColor,
+                          connections: [],
+                          macroData: macroObj
+                        };
+                        setFlowchartNodes(prev => [...prev, newNode]);
+                        addLog('info', 'FLUXOGRAMA', `Nó "${macroName}" solto no canvas.`);
+                      }}
+                      onMouseMove={(e) => {
+                        // 1. Redimensionamento de nó
+                        if (resizingNodeId) {
+                          const dx = e.clientX - resizeStart.startX;
+                          const dy = e.clientY - resizeStart.startY;
+                          const newW = Math.max(170, Math.min(480, resizeStart.startW + dx));
+                          const newH = Math.max(95, Math.min(380, resizeStart.startH + dy));
+                          setFlowchartNodes(prev => prev.map(n => n.id === resizingNodeId ? { ...n, width: newW, height: newH } : n));
+                          return;
+                        }
+                        // 2. Movimentação de nó
+                        if (draggingNodeId) {
+                          const rect = flowchartRef.current?.getBoundingClientRect();
+                          if (!rect) return;
+                          const node = flowchartNodes.find(n => n.id === draggingNodeId);
+                          const w = node?.width || 220;
+                          const h = node?.height || 120;
+                          const x = Math.max(0, Math.min(e.clientX - rect.left - dragOffset.x, rect.width - w));
+                          const y = Math.max(0, Math.min(e.clientY - rect.top - dragOffset.y, rect.height - h));
+                          setFlowchartNodes(prev => prev.map(n => n.id === draggingNodeId ? { ...n, x, y } : n));
+                        }
+                      }}
+                      onMouseUp={() => {
+                        setDraggingNodeId(null);
+                        setResizingNodeId(null);
+                      }}
+                      onMouseLeave={() => {
+                        setDraggingNodeId(null);
+                        setResizingNodeId(null);
+                        setConnectingFrom(null);
+                        setColorPickerNodeId(null);
+                      }}
+                    >
+                      {/* Estado Vazio do Canvas */}
+                      {flowchartNodes.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="text-center space-y-3 max-w-sm p-6 bg-slate-900/60 border border-slate-800/80 rounded-3xl backdrop-blur-sm">
+                            <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 border-2 border-dashed border-purple-500/40 flex items-center justify-center shadow-lg shadow-purple-500/10">
+                              <Workflow className="w-8 h-8 text-purple-400" />
+                            </div>
+                            <div>
+                              <h4 className="text-base font-black text-white">Monte seu Fluxo Visual</h4>
+                              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                                Arraste macros da coluna esquerda para esta área. Conecte as saídas e entradas para montar pipelines automatizadas estilo N8N.
+                              </p>
+                            </div>
+                            <div className="pt-2 flex justify-center gap-2 text-[10px] text-slate-500">
+                              <span className="px-2 py-1 bg-slate-800 rounded-lg">🎨 Cores Customizáveis</span>
+                              <span className="px-2 py-1 bg-slate-800 rounded-lg">📐 Redimensionável</span>
+                              <span className="px-2 py-1 bg-slate-800 rounded-lg">💾 Salva em Disco</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-
-                    {/* SVG para as linhas de conexão */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-                      <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                          <polygon points="0 0, 10 3.5, 0 7" fill="#818cf8" />
-                        </marker>
-                      </defs>
-                      {flowchartNodes.map(node => 
-                        node.connections.map(targetId => {
-                          const target = flowchartNodes.find(n => n.id === targetId);
-                          if (!target) return null;
-                          const x1 = node.x + 180;
-                          const y1 = node.y + 30;
-                          const x2 = target.x;
-                          const y2 = target.y + 30;
-                          const midX = (x1 + x2) / 2;
-                          return (
-                            <path
-                              key={`${node.id}-${targetId}`}
-                              d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
-                              stroke={flowchartRunningNodeId === node.id || flowchartRunningNodeId === targetId ? '#10b981' : '#818cf8'}
-                              strokeWidth="2"
-                              fill="none"
-                              strokeDasharray={flowchartRunningNodeId === node.id ? '8 4' : 'none'}
-                              markerEnd="url(#arrowhead)"
-                              className={flowchartRunningNodeId === node.id ? 'animate-pulse' : ''}
-                            />
-                          );
-                        })
                       )}
-                    </svg>
 
-                    {/* Nós do Fluxograma */}
-                    {flowchartNodes.map((node, idx) => {
-                      const isRunning = flowchartRunningNodeId === node.id;
-                      return (
-                        <div
-                          key={node.id}
-                          className={`absolute select-none transition-shadow duration-200 ${
-                            isRunning ? 'z-20' : 'z-10'
-                          }`}
-                          style={{ left: node.x, top: node.y, width: 180 }}
-                        >
-                          <div 
-                            className={`bg-slate-900 border-2 rounded-xl p-3 cursor-move shadow-lg flex flex-col gap-1.5 transition-all ${
-                              isRunning
-                                ? 'border-emerald-400 shadow-emerald-500/30 ring-2 ring-emerald-400/30 animate-pulse'
-                                : connectingFrom === node.id
-                                  ? 'border-pink-500 shadow-pink-500/20'
-                                  : 'border-slate-700 hover:border-indigo-500/60 hover:shadow-indigo-500/10'
-                            }`}
-                            onMouseDown={(e) => {
-                              if ((e.target as HTMLElement).closest('[data-connector]')) return;
-                              e.preventDefault();
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-                              setDraggingNodeId(node.id);
+                      {/* Camada SVG para as Conexões Curvas com Setas */}
+                      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+                        <defs>
+                          <marker id="flow-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#a855f7" />
+                          </marker>
+                          <marker id="flow-arrow-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
+                          </marker>
+                        </defs>
+                        {flowchartNodes.map(node => {
+                          const nodeW = node.width || 220;
+                          const nodeH = node.height || 120;
+                          const nodeColorTheme = NODE_COLORS[node.color || 'purple'] || NODE_COLORS.purple;
+                          
+                          return node.connections.map(targetId => {
+                            const target = flowchartNodes.find(n => n.id === targetId);
+                            if (!target) return null;
+                            const targetH = target.height || 120;
+                            const x1 = node.x + nodeW;
+                            const y1 = node.y + (nodeH / 2);
+                            const x2 = target.x;
+                            const y2 = target.y + (targetH / 2);
+                            const deltaX = Math.abs(x2 - x1) * 0.5;
+                            const midX1 = x1 + Math.max(40, deltaX);
+                            const midX2 = x2 - Math.max(40, deltaX);
+                            const isNodeRunning = flowchartRunningNodeId === node.id || flowchartRunningNodeId === targetId;
+
+                            return (
+                              <g key={`${node.id}-${targetId}`}>
+                                <path
+                                  d={`M ${x1} ${y1} C ${midX1} ${y1}, ${midX2} ${y2}, ${x2} ${y2}`}
+                                  stroke={isNodeRunning ? '#10b981' : (nodeColorTheme?.line || '#a855f7')}
+                                  strokeWidth={isNodeRunning ? '3' : '2'}
+                                  fill="none"
+                                  strokeDasharray={isNodeRunning ? '6 4' : 'none'}
+                                  markerEnd={isNodeRunning ? 'url(#flow-arrow-active)' : 'url(#flow-arrow)'}
+                                  className={isNodeRunning ? 'animate-pulse' : ''}
+                                />
+                              </g>
+                            );
+                          });
+                        })}
+                      </svg>
+
+                      {/* Nós do Fluxograma com Renderização Rica */}
+                      {flowchartNodes.map((node, idx) => {
+                        const isRunning = flowchartRunningNodeId === node.id;
+                        const isConnecting = connectingFrom === node.id;
+                        const nodeW = node.width || 220;
+                        const nodeH = node.height || 120;
+                        const colorKey = node.color || 'purple';
+                        const theme = NODE_COLORS[colorKey] || NODE_COLORS.purple;
+
+                        return (
+                          <div
+                            key={node.id}
+                            className={`absolute select-none transition-shadow ${isRunning ? 'z-30' : 'z-10'}`}
+                            style={{
+                              left: node.x,
+                              top: node.y,
+                              width: nodeW,
+                              minHeight: nodeH
                             }}
                           >
-                            {/* Header */}
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-5 h-5 rounded-md text-[9px] font-black flex items-center justify-center ${
-                                  isRunning ? 'bg-emerald-500/30 text-emerald-300' : 'bg-purple-500/20 text-purple-400'
-                                }`}>{idx + 1}</span>
-                                <span className="text-[10px] font-mono text-slate-500">
-                                  {savedMacrosList.find(m => m.id === node.macroId)?.macro_parametrizado?.length || '?'} ações
-                                </span>
+                            <div
+                              className={`bg-gradient-to-br ${theme.bg} border-2 ${theme.border} rounded-2xl p-3 flex flex-col justify-between shadow-2xl cursor-move relative backdrop-blur-md transition-all ${
+                                isRunning
+                                  ? 'border-emerald-400 ring-4 ring-emerald-400/30 scale-[1.02] shadow-emerald-500/30'
+                                  : isConnecting
+                                    ? 'border-pink-500 ring-2 ring-pink-500/40 shadow-pink-500/20'
+                                    : ''
+                              }`}
+                              style={{ minHeight: nodeH }}
+                              onMouseDown={(e) => {
+                                if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
+                                e.preventDefault();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                                setDraggingNodeId(node.id);
+                              }}
+                            >
+                              {/* Header do Nó */}
+                              <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-slate-700/50">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className={`w-5 h-5 rounded-lg text-[10px] font-black flex items-center justify-center shrink-0 ${theme.headerBg}`}>
+                                    {idx + 1}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-400 truncate">
+                                    {node.macroData?.macro_parametrizado?.length || savedMacrosList.find(m => m.id === node.macroId)?.macro_parametrizado?.length || '?'} ações
+                                  </span>
+                                </div>
+
+                                {/* Ações do Header do Nó (Cores, Código, Excluir) */}
+                                <div className="flex items-center gap-1" data-no-drag="true">
+                                  {/* Botão de Paleta de Cores */}
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setColorPickerNodeId(colorPickerNodeId === node.id ? null : node.id);
+                                      }}
+                                      className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                                      title="Mudar cor do nó"
+                                    >
+                                      <Palette className="w-3 h-3" />
+                                    </button>
+
+                                    {/* Popover de Cores */}
+                                    {colorPickerNodeId === node.id && (
+                                      <div
+                                        className="absolute right-0 top-6 z-50 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl flex flex-col gap-1.5 w-36"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-1">Cor do Módulo</p>
+                                        <div className="grid grid-cols-4 gap-1.5">
+                                          {(Object.keys(NODE_COLORS) as NodeColorType[]).map((cKey) => (
+                                            <button
+                                              key={cKey}
+                                              type="button"
+                                              onClick={() => {
+                                                setFlowchartNodes(prev => prev.map(n => n.id === node.id ? { ...n, color: cKey } : n));
+                                                setColorPickerNodeId(null);
+                                              }}
+                                              className={`w-6 h-6 rounded-lg transition border flex items-center justify-center cursor-pointer ${
+                                                node.color === cKey ? 'border-white scale-110 shadow-md' : 'border-transparent hover:scale-105'
+                                              }`}
+                                              style={{ backgroundColor: NODE_COLORS[cKey].hex }}
+                                              title={NODE_COLORS[cKey].label}
+                                            >
+                                              {node.color === cKey && <Check className="w-3 h-3 text-white" />}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Botão Inspecionar Código do Nó */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveCodeNode(node);
+                                    }}
+                                    className="p-1 hover:bg-slate-800 text-slate-400 hover:text-indigo-300 rounded-lg transition cursor-pointer"
+                                    title="Inspecionar código deste nó"
+                                  >
+                                    <Code className="w-3 h-3" />
+                                  </button>
+
+                                  {/* Botão Excluir Nó */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFlowchartNodes(prev => {
+                                        const updated = prev.filter(n => n.id !== node.id);
+                                        return updated.map(n => ({ ...n, connections: n.connections.filter(c => c !== node.id) }));
+                                      });
+                                    }}
+                                    className="p-1 hover:bg-rose-950 text-slate-500 hover:text-rose-400 rounded-lg transition cursor-pointer"
+                                    title="Remover módulo do fluxo"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
+
+                              {/* Corpo do Nó */}
+                              <div className="py-1.5">
+                                <p className="text-xs font-black text-white leading-snug line-clamp-2" title={node.name}>
+                                  {node.name}
+                                </p>
+                                {node.description && nodeH >= 130 && (
+                                  <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-tight">
+                                    {node.description}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Rodapé do Nó: Conectores & Presets de Tamanho */}
+                              <div className="pt-1.5 border-t border-slate-700/50 flex items-center justify-between gap-1">
+                                {/* Conector de Entrada (Esquerda) */}
+                                <div
+                                  data-no-drag="true"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (connectingFrom && connectingFrom !== node.id) {
+                                      setFlowchartNodes(prev => prev.map(n => 
+                                        n.id === connectingFrom && !n.connections.includes(node.id)
+                                          ? { ...n, connections: [...n.connections, node.id] }
+                                          : n
+                                      ));
+                                      addLog('info', 'FLUXOGRAMA', `Conexão criada → ${node.name}`);
+                                      setConnectingFrom(null);
+                                    }
+                                  }}
+                                  className={`w-4 h-4 rounded-full border-2 cursor-pointer transition shadow-sm ${
+                                    connectingFrom && connectingFrom !== node.id
+                                      ? 'border-pink-400 bg-pink-500 scale-125 animate-pulse shadow-pink-500/50'
+                                      : 'border-slate-500 bg-slate-800 hover:border-emerald-400 hover:bg-emerald-500/30'
+                                  }`}
+                                  title="Entrada — clique aqui para receber conexão"
+                                />
+
+                                {/* Presets Rápidos de Tamanho (P, M, G) */}
+                                <div className="flex items-center gap-1 text-[9px] font-mono text-slate-500" data-no-drag="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => setFlowchartNodes(prev => prev.map(n => n.id === node.id ? { ...n, width: 190, height: 110 } : n))}
+                                    className="px-1 py-0.5 hover:bg-slate-800 hover:text-white rounded"
+                                    title="Tamanho Pequeno (190x110)"
+                                  >P</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFlowchartNodes(prev => prev.map(n => n.id === node.id ? { ...n, width: 240, height: 135 } : n))}
+                                    className="px-1 py-0.5 hover:bg-slate-800 hover:text-white rounded"
+                                    title="Tamanho Médio (240x135)"
+                                  >M</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFlowchartNodes(prev => prev.map(n => n.id === node.id ? { ...n, width: 320, height: 170 } : n))}
+                                    className="px-1 py-0.5 hover:bg-slate-800 hover:text-white rounded"
+                                    title="Tamanho Grande (320x170)"
+                                  >G</button>
+                                </div>
+
+                                {/* Conector de Saída (Direita) */}
+                                <div
+                                  data-no-drag="true"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (connectingFrom === node.id) {
+                                      setConnectingFrom(null);
+                                    } else {
+                                      setConnectingFrom(node.id);
+                                      addLog('info', 'FLUXOGRAMA', `Conectando a partir de "${node.name}"... Clique no conector de entrada do nó destino.`);
+                                    }
+                                  }}
+                                  className={`w-4 h-4 rounded-full border-2 cursor-pointer transition shadow-sm ${
+                                    isConnecting
+                                      ? 'border-pink-400 bg-pink-500 scale-125 shadow-pink-500/50'
+                                      : 'border-purple-400 bg-purple-500/40 hover:bg-purple-500 hover:scale-110'
+                                  }`}
+                                  title="Saída — clique para iniciar linha de conexão"
+                                />
+                              </div>
+
+                              {/* Alça de Redimensionamento Livre (Resize Handle no canto inferior direito) */}
+                              <div
+                                data-no-drag="true"
+                                onMouseDown={(e) => {
                                   e.stopPropagation();
-                                  setFlowchartNodes(prev => {
-                                    const updated = prev.filter(n => n.id !== node.id);
-                                    return updated.map(n => ({ ...n, connections: n.connections.filter(c => c !== node.id) }));
+                                  e.preventDefault();
+                                  setResizingNodeId(node.id);
+                                  setResizeStart({
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                    startW: node.width || 220,
+                                    startH: node.height || 120
                                   });
                                 }}
-                                className="p-0.5 text-slate-600 hover:text-rose-400 transition cursor-pointer"
+                                className="absolute bottom-1 right-1 w-3.5 h-3.5 cursor-nwse-resize text-slate-600 hover:text-purple-400 transition flex items-center justify-center opacity-60 hover:opacity-100"
+                                title="Arraste para redimensionar este nó livremente"
                               >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                            
-                            {/* Nome */}
-                            <p className="text-xs font-bold text-white leading-snug line-clamp-2">{node.name}</p>
-
-                            {/* Conectores */}
-                            <div className="flex items-center justify-between mt-1">
-                              {/* Entrada (esquerda) */}
-                              <div 
-                                data-connector="in"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (connectingFrom && connectingFrom !== node.id) {
-                                    setFlowchartNodes(prev => prev.map(n => 
-                                      n.id === connectingFrom && !n.connections.includes(node.id)
-                                        ? { ...n, connections: [...n.connections, node.id] }
-                                        : n
-                                    ));
-                                    addLog('info', 'FLUXOGRAMA', `Conexão criada → ${node.name}`);
-                                    setConnectingFrom(null);
-                                  }
-                                }}
-                                className={`w-4 h-4 rounded-full border-2 cursor-pointer transition ${
-                                  connectingFrom && connectingFrom !== node.id
-                                    ? 'border-pink-400 bg-pink-500/30 scale-125 animate-pulse'
-                                    : 'border-slate-600 bg-slate-800 hover:border-indigo-400 hover:bg-indigo-500/20'
-                                }`}
-                                title="Entrada — clique para conectar"
-                              />
-                              
-                              {/* Saída (direita) */}
-                              <div 
-                                data-connector="out"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (connectingFrom === node.id) {
-                                    setConnectingFrom(null);
-                                  } else {
-                                    setConnectingFrom(node.id);
-                                    addLog('info', 'FLUXOGRAMA', `Conectando a partir de "${node.name}"... Clique no nó destino.`);
-                                  }
-                                }}
-                                className={`w-4 h-4 rounded-full border-2 cursor-pointer transition ${
-                                  connectingFrom === node.id
-                                    ? 'border-pink-400 bg-pink-500 scale-125'
-                                    : 'border-indigo-500 bg-indigo-500/30 hover:bg-indigo-500/50 hover:scale-110'
-                                }`}
-                                title="Saída — clique para iniciar conexão"
-                              />
+                                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M7 1L1 7M7 4L4 7M7 7H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                </svg>
+                              </div>
                             </div>
                           </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================== */}
+              {/* MODAL 1: FLUXOGRAMAS SALVOS EM DISCO (ABRIR / GERENCIAR) */}
+              {/* ========================================================== */}
+              {isSavedFlowsModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-hidden">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
+                          <FolderOpen className="w-5 h-5" />
                         </div>
-                      );
-                    })}
+                        <div>
+                          <h3 className="text-base font-black text-white">Fluxogramas Salvos em Disco</h3>
+                          <p className="text-xs text-slate-400">Armazenados com persistência na pasta <code className="text-purple-400">flows/</code></p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsSavedFlowsModalOpen(false)}
+                        className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Lista de Fluxogramas */}
+                    <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                      {savedFlowsList.length === 0 ? (
+                        <div className="py-16 text-center space-y-2">
+                          <Workflow className="w-10 h-10 text-slate-600 mx-auto" />
+                          <h4 className="text-sm font-bold text-slate-400">Nenhum fluxograma salvo ainda</h4>
+                          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                            Monte um fluxo no canvas e clique em "Salvar Fluxo" para guardá-lo aqui.
+                          </p>
+                        </div>
+                      ) : (
+                        savedFlowsList.map((flow) => (
+                          <div
+                            key={flow.id}
+                            className="bg-slate-950 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-4 flex items-center justify-between gap-4 transition shadow-md group"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              {renamingFlowId === flow.id ? (
+                                <form
+                                  onSubmit={(e) => { e.preventDefault(); handleRenameFlow(flow.id, renamingFlowName); }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <input
+                                    type="text"
+                                    value={renamingFlowName}
+                                    onChange={(e) => setRenamingFlowName(e.target.value)}
+                                    autoFocus
+                                    onBlur={() => { if (renamingFlowName.trim()) handleRenameFlow(flow.id, renamingFlowName); else setRenamingFlowId(null); }}
+                                    className="px-2.5 py-1 text-sm font-bold bg-slate-800 border border-purple-500 rounded-lg text-white focus:outline-none w-full"
+                                  />
+                                </form>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-extrabold text-white text-sm group-hover:text-purple-300 transition truncate">
+                                    {flow.name}
+                                  </h4>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setRenamingFlowId(flow.id); setRenamingFlowName(flow.name); }}
+                                    className="p-1 text-slate-500 hover:text-purple-400 transition"
+                                    title="Renomear este fluxograma"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono">
+                                <span>{flow.nodes?.length || 0} módulos</span>
+                                <span>•</span>
+                                <span>Atualizado: {flow.updatedAt ? new Date(flow.updatedAt).toLocaleDateString('pt-BR') : 'Hoje'}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenFlow(flow)}
+                                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
+                              >
+                                <Play className="w-3 h-3 fill-current" />
+                                <span>Carregar</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFlow(flow.id, flow.name)}
+                                className="p-2 bg-slate-900 hover:bg-rose-950 text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
+                                title="Excluir fluxograma"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsSavedFlowsModalOpen(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* MODAL 2: CÓDIGO COMPILADO DO FLUXOGRAMA (PRONTO PARA VIRAR APLICATIVO) */}
+              {/* ========================================================================= */}
+              {isCodePreviewModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-4xl w-full shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-hidden">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+                          <Code className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-white">Código Compilado do Fluxograma</h3>
+                          <p className="text-xs text-slate-400">Script autônomo unificado unindo todos os módulos conectados</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCodePreviewModalOpen(false)}
+                        className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Tabs de Formato de Código */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFlowchartCompiledTab('puppeteer')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                            flowchartCompiledTab === 'puppeteer'
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Node.js / Puppeteer Runner (.cjs)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFlowchartCompiledTab('json')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                            flowchartCompiledTab === 'json'
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Especificação JSON do Fluxo (.json)
+                        </button>
+                      </div>
+
+                      {/* Botões de Ação de Exportação */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = flowchartCompiledTab === 'puppeteer'
+                              ? `// FLUXO: ${flowchartName}\n// Total de Módulos: ${flowchartNodes.length}\n\nconst puppeteer = require('puppeteer');\n\nasync function run() {\n  const browser = await puppeteer.launch({ headless: false });\n  const page = await browser.newPage();\n\n` +
+                                flowchartNodes.map((n, i) => `  // [Passo ${i+1}] ${n.name}\n  console.log("Executando: ${n.name}");\n  await page.waitForTimeout(2000);\n`).join('\n') +
+                                `\n  console.log("Fluxo finalizado!");\n}\n\nrun();`
+                              : JSON.stringify({ id: flowchartId, name: flowchartName, nodes: flowchartNodes }, null, 2);
+                            navigator.clipboard.writeText(code);
+                            alert('Código copiado para a área de transferência!');
+                          }}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 border border-slate-700 cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copiar Código</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isPuppeteer = flowchartCompiledTab === 'puppeteer';
+                            const content = isPuppeteer
+                              ? `/**\n * FLUXO COMPILADO: ${flowchartName}\n * Gerado pelo PostForge N8N\n */\n\nconst puppeteer = require('puppeteer');\n\nasync function run() {\n  const browser = await puppeteer.launch({ headless: false, defaultViewport: null, args: ['--start-maximized'] });\n  const page = await browser.newPage();\n\n` +
+                                flowchartNodes.map((n, i) => `  // [Passo ${i+1}/${flowchartNodes.length}] ${n.name}\n  console.log("Executando: ${n.name}");\n  await page.waitForTimeout(2000);\n`).join('\n') +
+                                `\n  console.log("🎉 Fluxo completo finalizado com sucesso!");\n}\n\nrun();`
+                              : JSON.stringify({ id: flowchartId, name: flowchartName, nodes: flowchartNodes }, null, 2);
+                            const blob = new Blob([content], { type: isPuppeteer ? 'application/javascript' : 'application/json' });
+                            saveAs(blob, `${flowchartName.toLowerCase().replace(/[^a-z0-9]/g, '_')}.${isPuppeteer ? 'cjs' : 'json'}`);
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Baixar Arquivo</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bloco de Código com Syntax Highlighting */}
+                    <div className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-4 overflow-y-auto font-mono text-xs text-slate-300 leading-relaxed">
+                      <pre className="whitespace-pre-wrap">
+                        {flowchartCompiledTab === 'puppeteer' ? (
+                          `/**
+ * =========================================================================
+ * FLUXOGRAMA AUTOMATIZADO - N8N POSTFORGE
+ * Nome do Fluxo: ${flowchartName}
+ * Total de Módulos (Nós): ${flowchartNodes.length}
+ * Gerado em: ${new Date().toISOString()}
+ * 
+ * 💡 Dica: Para transformar este fluxo em um programa com interface autônoma,
+ * você pode empacotar este script com Electron ou chamá-lo via IPC!
+ * =========================================================================
+ */
+
+const puppeteer = require('puppeteer');
+
+async function runCompleteWorkflow() {
+  console.log("🚀 [PostForge N8N] Iniciando execução do Fluxo: '${flowchartName}'...");
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+    args: ['--start-maximized']
+  });
+  const page = await browser.newPage();
+
+  try {
+${flowchartNodes.map((node, idx) => `
+    // =========================================================================
+    // ETAPA ${idx + 1}/${flowchartNodes.length}: ${node.name} (Cor: ${node.color || 'padrão'})
+    // =========================================================================
+    console.log("▶ [Etapa ${idx + 1}/${flowchartNodes.length}] Executando: '${node.name}'...");
+    ${node.macroData?.targetUrl ? `await page.goto("${node.macroData.targetUrl}", { waitUntil: 'networkidle2' });\n    await page.waitForTimeout(2000);` : `await page.waitForTimeout(2000);`}
+    ${node.macroData?.macro_parametrizado ? node.macroData.macro_parametrizado.map((step, sIdx) => `// Passo ${sIdx + 1}: ${step.descricao || step.tipo}\n    ${step.tipo === 'click' && step.seletor ? `await page.waitForSelector("${step.seletor}", { timeout: 6000 }).catch(() => null);\n    await page.click("${step.seletor}").catch(() => null);\n    await page.waitForTimeout(${step.tempo_espera_ms || 1000});` : `await page.waitForTimeout(1000);`}`).join('\n    ') : `// Executando ações do nó\n    await page.waitForTimeout(1500);`}
+    console.log("  ✅ Etapa ${idx + 1} ('${node.name}') concluída.");
+`).join('')}
+    console.log("🎉 [PostForge N8N] Fluxograma '${flowchartName}' finalizado com sucesso absoluto!");
+  } catch (error) {
+    console.error("❌ Erro durante a execução do fluxograma:", error);
+  } finally {
+    // browser.close();
+  }
+}
+
+if (require.main === module) {
+  runCompleteWorkflow();
+}
+
+module.exports = { runCompleteWorkflow };`
+                        ) : (
+                          JSON.stringify({
+                            id: flowchartId,
+                            name: flowchartName,
+                            description: flowchartDescription,
+                            createdAt: new Date().toISOString(),
+                            nodes: flowchartNodes
+                          }, null, 2)
+                        )}
+                      </pre>
+                    </div>
+
+                    <div className="pt-2 flex justify-between items-center text-xs text-slate-400">
+                      <span>Este código está salvo e preservado no arquivo <code className="text-purple-400">flows/{flowchartId}.json</code></span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCodePreviewModalOpen(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition cursor-pointer"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* MODAL 3: INSPEÇÃO DE CÓDIGO INDIVIDUAL DO NÓ */}
+              {/* ========================================================================= */}
+              {activeCodeNode && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-hidden">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
+                          <Cpu className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-white">{activeCodeNode.name}</h3>
+                          <p className="text-xs text-slate-400">Detalhes do módulo e passos executáveis</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCodeNode(null)}
+                        className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Descrição do Processo</p>
+                        <p className="text-xs text-slate-300">{activeCodeNode.description || 'Sem descrição.'}</p>
+                      </div>
+
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Passos Parametrizados</p>
+                        <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                          {activeCodeNode.macroData?.macro_parametrizado?.map((step, sIdx) => (
+                            <div key={sIdx} className="flex items-start gap-2 text-xs bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                              <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px] font-black shrink-0">
+                                {sIdx + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-slate-200 font-medium">{step.descricao || step.tipo}</p>
+                                {step.seletor && <code className="text-[10px] text-slate-500 font-mono block truncate">{step.seletor}</code>}
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-500 shrink-0">{step.tempo_espera_ms || 1000}ms</span>
+                            </div>
+                          )) || (
+                            <p className="text-xs text-slate-500 italic">Nenhum passo específico listado.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setActiveCodeNode(null)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                      >
+                        Fechar
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

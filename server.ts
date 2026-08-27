@@ -549,6 +549,198 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
     }
   });
 
+  // ==========================================
+  // FLUXOGRAMAS N8N (WORKFLOWS PERSISTENTES)
+  // ==========================================
+  const FLOWS_DIR = path.join(process.cwd(), 'flows');
+  if (!fs.existsSync(FLOWS_DIR)) {
+    fs.mkdirSync(FLOWS_DIR, { recursive: true });
+  }
+
+  function generateFlowCompiledScript(flow: any) {
+    const nodes = flow.nodes || [];
+    const flowName = flow.name || 'Fluxo sem Nome';
+    
+    let puppeteerCode = `/**
+ * FLUXOGRAMA AUTOMATIZADO - N8N POSTFORGE
+ * Nome do Fluxo: ${flowName}
+ * Total de Módulos (Nós): ${nodes.length}
+ * Gerado em: ${new Date().toISOString()}
+ * 
+ * Este código unificado encadeia todos os macros na sequência do fluxograma.
+ * Pode ser executado diretamente com Node.js ou empacotado em um executável Electron com interface gráfica.
+ */
+
+const puppeteer = require('puppeteer');
+
+async function runCompleteWorkflow() {
+  console.log("🚀 [PostForge N8N] Iniciando execução do Fluxo: '${flowName}'...");
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+    args: ['--start-maximized']
+  });
+  const page = await browser.newPage();
+
+  try {
+`;
+
+    nodes.forEach((node: any, idx: number) => {
+      puppeteerCode += `
+    // =========================================================================
+    // ETAPA ${idx + 1}/${nodes.length}: ${node.name || `Nó ${idx + 1}`} (ID: ${node.id})
+    // Cor de Identificação: ${node.color || 'padrão'}
+    // =========================================================================
+    console.log("▶ [Etapa ${idx + 1}/${nodes.length}] Executando nó: '${node.name}'...");
+`;
+      if (node.macroData && Array.isArray(node.macroData.macro_parametrizado)) {
+        if (node.macroData.targetUrl) {
+          puppeteerCode += `    console.log("  Navegando para: ${node.macroData.targetUrl}");\n    await page.goto("${node.macroData.targetUrl}", { waitUntil: 'networkidle2' }).catch(() => null);\n    await page.waitForTimeout(2000);\n`;
+        }
+        node.macroData.macro_parametrizado.forEach((step: any, sIdx: number) => {
+          puppeteerCode += `    // Passo ${sIdx + 1}: ${step.descricao || step.tipo}\n`;
+          if (step.tipo === 'click' && step.seletor) {
+            puppeteerCode += `    await page.waitForSelector("${step.seletor}", { timeout: 6000 }).catch(() => null);\n    await page.click("${step.seletor}").catch(() => null);\n    await page.waitForTimeout(${step.tempo_espera_ms || 1000});\n`;
+          } else if (step.tipo === 'fill' && step.seletor) {
+            puppeteerCode += `    await page.waitForSelector("${step.seletor}", { timeout: 6000 }).catch(() => null);\n    await page.type("${step.seletor}", "${step.valor || ''}").catch(() => null);\n    await page.waitForTimeout(${step.tempo_espera_ms || 800});\n`;
+          } else if (step.tipo === 'wait') {
+            puppeteerCode += `    await page.waitForTimeout(${step.tempo_espera_ms || 1500});\n`;
+          }
+        });
+      } else if (node.customCode) {
+        puppeteerCode += `    // Código customizado do nó:\n${node.customCode}\n`;
+      } else {
+        puppeteerCode += `    await page.waitForTimeout(2000);\n`;
+      }
+      puppeteerCode += `    console.log("  ✅ Etapa ${idx + 1} ('${node.name}') concluída.");\n`;
+    });
+
+    puppeteerCode += `
+    console.log("🎉 [PostForge N8N] Fluxograma '${flowName}' concluído com sucesso absoluto!");
+  } catch (error) {
+    console.error("❌ Erro durante a execução do fluxograma:", error);
+  } finally {
+    // console.log("Fechando navegador...");
+    // await browser.close();
+  }
+}
+
+if (require.main === module) {
+  runCompleteWorkflow();
+}
+
+module.exports = { runCompleteWorkflow };
+`;
+
+    return {
+      puppeteer: puppeteerCode,
+      runnerCjs: puppeteerCode
+    };
+  }
+
+  // 1. Salvar Fluxograma na pasta flows/
+  app.post("/api/spy/save-flow", (req, res) => {
+    try {
+      const flow = req.body;
+      const flowId = flow.id || `flow_${Date.now()}`;
+      flow.id = flowId;
+      flow.updatedAt = new Date().toISOString();
+      if (!flow.createdAt) flow.createdAt = new Date().toISOString();
+
+      // Gerar script compilado automático
+      flow.compiledScript = generateFlowCompiledScript(flow);
+
+      const flowFilePath = path.join(FLOWS_DIR, `${flowId}.json`);
+      fs.writeFileSync(flowFilePath, JSON.stringify(flow, null, 2), 'utf-8');
+
+      res.json({ success: true, flowId, path: flowFilePath, flow });
+    } catch (error: any) {
+      console.error("Save Flow Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 2. Listar Fluxogramas Salvos
+  app.get("/api/spy/list-flows", (req, res) => {
+    try {
+      if (!fs.existsSync(FLOWS_DIR)) {
+        return res.json({ flows: [] });
+      }
+      const files = fs.readdirSync(FLOWS_DIR).filter(f => f.endsWith('.json'));
+      const flows = files.map(file => {
+        try {
+          const content = fs.readFileSync(path.join(FLOWS_DIR, file), 'utf-8');
+          return JSON.parse(content);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+
+      flows.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+      res.json({ flows });
+    } catch (error: any) {
+      console.error("List Flows Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 3. Obter Fluxograma por ID
+  app.get("/api/spy/get-flow/:id", (req, res) => {
+    try {
+      const flowId = req.params.id;
+      const flowFilePath = path.join(FLOWS_DIR, `${flowId}.json`);
+      if (fs.existsSync(flowFilePath)) {
+        const flow = JSON.parse(fs.readFileSync(flowFilePath, 'utf-8'));
+        res.json({ flow });
+      } else {
+        res.status(404).json({ error: "Fluxograma não encontrado." });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 4. Excluir Fluxograma
+  app.delete("/api/spy/delete-flow/:id", (req, res) => {
+    try {
+      const flowId = req.params.id;
+      const flowFilePath = path.join(FLOWS_DIR, `${flowId}.json`);
+      if (fs.existsSync(flowFilePath)) {
+        fs.unlinkSync(flowFilePath);
+        res.json({ success: true, message: "Fluxograma excluído com sucesso." });
+      } else {
+        res.status(404).json({ error: "Fluxograma não encontrado." });
+      }
+    } catch (error: any) {
+      console.error("Delete Flow Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // 5. Renomear Fluxograma
+  app.patch("/api/spy/rename-flow/:id", (req, res) => {
+    try {
+      const flowId = req.params.id;
+      const { name } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: "Nome do fluxograma é obrigatório." });
+      }
+      const flowFilePath = path.join(FLOWS_DIR, `${flowId}.json`);
+      if (!fs.existsSync(flowFilePath)) {
+        return res.status(404).json({ error: "Fluxograma não encontrado." });
+      }
+      const flow = JSON.parse(fs.readFileSync(flowFilePath, 'utf-8'));
+      flow.name = name.trim();
+      flow.updatedAt = new Date().toISOString();
+      flow.compiledScript = generateFlowCompiledScript(flow);
+      fs.writeFileSync(flowFilePath, JSON.stringify(flow, null, 2), 'utf-8');
+      res.json({ success: true, flow });
+    } catch (error: any) {
+      console.error("Rename Flow Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Salvar análise simples
   app.post("/api/save-analysis", (req, res) => {
     try {
