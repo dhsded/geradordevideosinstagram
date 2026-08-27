@@ -6562,40 +6562,38 @@ export default function App() {
 
               {/* Seletor de Carrosséis em Lote (se houver mais de 1 carrossel gerado) */}
               {batchCarouselResults && batchCarouselResults.length > 1 && (
-                <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/50 border border-indigo-500/30 rounded-2xl p-5 shadow-2xl flex flex-col gap-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-700/60">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center border border-indigo-500/40 shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
                         <Layers className="w-5 h-5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-sm md:text-base font-black text-white">Lote de Carrosséis Gerados ({batchCarouselResults.length})</h3>
-                          <span className="px-2.5 py-0.5 bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 text-[11px] font-black rounded-full shadow-xs">
-                            Ativo: {activeCarouselIndex + 1} de {batchCarouselResults.length}
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h3 className="text-base font-black text-white tracking-tight">Lote de Carrosséis Gerados</h3>
+                          <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-black rounded-lg">
+                            {batchCarouselResults.length} carrosséis
                           </span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Clique em um carrossel abaixo para inspecionar ou exportar todo o lote de uma vez.
+                        <p className="text-xs text-slate-400 mt-1">
+                          Selecione um carrossel para visualizar, editar ou exportar.
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSendAllCarouselsToAudit}
-                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-lg transition flex items-center gap-2 cursor-pointer border border-indigo-400/40"
-                        title="Enviar todos os roteiros para a esteira de Auditoria e Separação de Imagens"
-                      >
-                        <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
-                        <span>⚡ Enviar Todos para Auditoria ({batchCarouselResults.length})</span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendAllCarouselsToAudit}
+                      className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-lg shadow-indigo-600/20 transition flex items-center gap-2 cursor-pointer border border-indigo-400/30"
+                      title="Enviar todos os roteiros para a esteira de Auditoria e Separação de Imagens"
+                    >
+                      <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
+                      <span>⚡ Enviar Todos para Auditoria ({batchCarouselResults.length})</span>
+                    </button>
                   </div>
 
-                  {/* Grade de Abas dos Carrosséis com Distribuição Clara */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {/* Grade de Carrosséis */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {batchCarouselResults.map((car, cIdx) => {
                       const isSelected = activeCarouselIndex === cIdx;
                       const title = car.title || car.theme || `Carrossel ${cIdx + 1}`;
@@ -6604,27 +6602,34 @@ export default function App() {
                           key={cIdx}
                           type="button"
                           onClick={() => handleSelectCarouselIndex(cIdx)}
-                          className={`p-3 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer border ${
+                          className={`p-4 rounded-xl text-left transition-all duration-200 flex flex-col gap-2.5 cursor-pointer border ${
                             isSelected
-                              ? 'bg-gradient-to-r from-indigo-600 to-purple-700 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/40 font-bold'
-                              : 'bg-slate-800/90 text-slate-300 hover:text-white border-slate-700 hover:border-slate-600 hover:bg-slate-750 font-medium'
+                              ? 'bg-gradient-to-br from-indigo-600 to-purple-700 text-white border-indigo-400/60 shadow-lg shadow-indigo-600/25 ring-2 ring-indigo-400/30 scale-[1.02]'
+                              : 'bg-slate-800/80 text-slate-300 hover:text-white border-slate-700/60 hover:border-indigo-500/40 hover:bg-slate-800 hover:shadow-md'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
-                              isSelected ? 'bg-white/20 text-white' : 'bg-slate-700 text-slate-300'
-                            }`}>
-                              {cIdx + 1}
-                            </span>
-                            <span className="text-xs truncate font-semibold" title={title}>
-                              {title}
-                            </span>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className={`w-7 h-7 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                                isSelected ? 'bg-white/20 text-white' : 'bg-slate-700/80 text-slate-300'
+                              }`}>
+                                {cIdx + 1}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                isSelected ? 'bg-white/15 text-indigo-100' : 'bg-slate-900/80 text-slate-400 border border-slate-700/60'
+                              }`}>
+                                {car.slides?.length || 0} slides
+                              </span>
+                            </div>
+                            {isSelected && (
+                              <span className="text-[9px] font-black uppercase bg-white/20 px-2 py-0.5 rounded-md text-white/80">Ativo</span>
+                            )}
                           </div>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono shrink-0 ${
-                            isSelected ? 'bg-black/30 text-indigo-100' : 'bg-slate-900 text-slate-400 border border-slate-700'
-                          }`}>
-                            {car.slides?.length || 0} sl
-                          </span>
+                          <p className={`text-sm font-bold leading-snug line-clamp-2 ${
+                            isSelected ? 'text-white' : 'text-slate-200'
+                          }`} title={title}>
+                            {title}
+                          </p>
                         </button>
                       );
                     })}
@@ -6778,8 +6783,8 @@ export default function App() {
                         </button>
                       )}
 
-                      {/* Modo Trilíngue (PT, EN e ES) */}
-                      {(carouselResult.language === 'all' || (slide.textInBubblesPt && slide.textInBubblesEn && slide.textInBubblesEs)) && (
+                      {/* Modo Trilíngue (PT, EN e ES) — APENAS quando idioma é explicitamente 'all' */}
+                      {carouselResult.language === 'all' && (
                         <div className="space-y-2">
                           <button 
                             onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt}"`, `cb_pt_${index}`)}
