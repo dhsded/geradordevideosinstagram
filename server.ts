@@ -1172,6 +1172,256 @@ module.exports = { runCompleteWorkflow };
     }
   });
 
+  // ==========================================
+  // CLONADOR DE VÍDEOS DO INSTAGRAM (REELS & POSTS)
+  // ==========================================
+  
+  // 1. Buscar Metadados / Link Direto do Vídeo do Instagram
+  app.post("/api/cloner/fetch-instagram", async (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url || typeof url !== 'string' || !url.trim()) {
+        return res.status(400).json({ error: "URL do Instagram é obrigatória." });
+      }
+
+      const cleanUrl = url.trim().split('?')[0];
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
+      };
+
+      try {
+        const response = await fetch(cleanUrl, { headers, redirect: 'follow' });
+        const html = await response.text();
+
+        // Extrair meta tags OpenGraph
+        const videoMatch = html.match(/<meta\s+(?:property|name)=["']og:video(?::secure_url)?["']\s+content=["']([^"']+)["']/i) ||
+                           html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:video(?::secure_url)?["']/i);
+        const imageMatch = html.match(/<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i) ||
+                           html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["']og:image["']/i);
+        const titleMatch = html.match(/<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+                           html.match(/<title>([^<]+)<\/title>/i);
+
+        let videoUrl = videoMatch ? videoMatch[1].replace(/&amp;/g, '&') : null;
+        const thumbnailUrl = imageMatch ? imageMatch[1].replace(/&amp;/g, '&') : null;
+        const title = titleMatch ? titleMatch[1].replace(/&amp;/g, '&') : "Vídeo do Instagram";
+
+        // Tentar extrair do JSON embutido se não achou no meta
+        if (!videoUrl) {
+          const jsonVideoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/i) || html.match(/"browser_native_hd_url"\s*:\s*"([^"]+)"/i) || html.match(/"browser_native_sd_url"\s*:\s*"([^"]+)"/i);
+          if (jsonVideoMatch) {
+            videoUrl = JSON.parse(`"${jsonVideoMatch[1]}"`);
+          }
+        }
+
+        if (videoUrl) {
+          return res.json({
+            success: true,
+            videoUrl,
+            thumbnailUrl,
+            title,
+            sourceUrl: cleanUrl
+          });
+        }
+      } catch (scrapeErr: any) {
+        console.warn("[Cloner Fetch] Aviso ao tentar scrape público:", scrapeErr.message);
+      }
+
+      // Se não encontrou o vídeo diretamente pelo HTML (exige login do Instagram), retorna instrução para captura via Webview
+      return res.json({
+        success: true,
+        loginRequired: true,
+        title: "Reel / Post do Instagram",
+        sourceUrl: cleanUrl,
+        message: "O Instagram protegeu este vídeo para visualização interna. Utilize o Navegador Embutido ao lado para assistir e capturar com 1 clique!"
+      });
+    } catch (error: any) {
+      console.error("Fetch Instagram Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao consultar URL do Instagram." });
+    }
+  });
+
+  // 2. Transcrever Diálogos & Clonar Conteúdo com IA
+  app.post("/api/cloner/transcribe-and-clone", async (req, res) => {
+    try {
+      const {
+        videoData,
+        mimeType,
+        transcriptInput,
+        targetNiche = "Psicologia",
+        targetTone = "Acolhedor / Compassivo",
+        cloneObjective = "Clonagem com adaptação autoral e retenção viral",
+        provider: reqProvider,
+        model: reqModel
+      } = req.body;
+
+      let prompt = `Você é o maior especialista e estrategista do mundo em Engenharia Reversa de Conteúdo Viral e Roteirização para Instagram (Reels, Vídeos Curtos e Carrosséis).
+
+Sua missão é realizar a CLONAGEM INTELIGENTE deste vídeo.
+${videoData ? "1. Analise o áudio, expressões e todas as falas deste vídeo para transcrever fielmente todos os diálogos." : transcriptInput ? `1. Analise a seguinte transcrição/conteúdo original fornecido:\n\"\"\"\n${transcriptInput}\n\"\"\"` : "1. Analise o conteúdo fornecido."}
+
+2. DESCONSTRUA o padrão viral do vídeo:
+   - Gancho inicial (primeiros 3 segundos que retêm o espectador)
+   - Gatilho emocional / Ponto de virada
+   - Tese principal de aprendizado
+   - Call to action (CTA)
+
+3. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL):
+   - Nicho de Destino: "${targetNiche}"
+   - Tom de Voz Desejado: "${targetTone}"
+   - Objetivo: "${cloneObjective}"
+   - REGRA OBRIGATÓRIA: Nas falas dos diálogos, NUNCA coloque prefixos com nomes de personagens (ex: NÃO faça "Coração: ..."). O balão/fala deve conter APENAS o texto falado. A indicação de quem fala deve ir na descrição da cena!
+
+Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e sem texto fora do JSON) com esta estrutura exata:
+{
+  "transcricao_original": {
+    "dialogo_completo": "Transcrição integral e fiel de todas as falas do narrador ou personagens no vídeo...",
+    "gancho_identificado": "A frase ou gancho inicial que abriu o vídeo original...",
+    "analise_retencao": "Explicação estratégica de por que este vídeo engaja e como retém o público..."
+  },
+  "roteiro_clonado_video": {
+    "titulo_sugerido": "Título forte e magnético do novo roteiro",
+    "gancho_novo": "Gancho inicial de abertura para os primeiros 3 segundos",
+    "cenas": [
+      {
+        "numero_cena": 1,
+        "enquadramento": "Close-up / Médio / Amplo",
+        "acao_visual": "Descrição detalhada do cenário, personagens, postura e emoções...",
+        "fala": "Texto falado nesta cena com impacto e naturalidade...",
+        "prompt_imagem_en": "Detailed cinematic prompt in English for AI image generator matching the scene, photorealistic or consistent animation style, highly detailed, 8k..."
+      }
+    ],
+    "cta_final": "Chamada para ação final de alto engajamento"
+  },
+  "carrossel_adaptado": {
+    "titulo_carrossel": "Título do Carrossel adaptado",
+    "slides": [
+      {
+        "slide_numero": 1,
+        "tipo": "Capa",
+        "titulo_slide": "Frase de impacto da capa do carrossel",
+        "conteudo_texto": "Texto curto de apoio...",
+        "prompt_imagem_en": "Prompt em inglês para imagem da capa..."
+      },
+      {
+        "slide_numero": 2,
+        "tipo": "Desenvolvimento",
+        "titulo_slide": "Passo 1 / Insight Central",
+        "conteudo_texto": "Explicação profunda e direta ao ponto...",
+        "prompt_imagem_en": "Prompt em inglês para imagem do slide..."
+      },
+      {
+        "slide_numero": 3,
+        "tipo": "Desenvolvimento",
+        "titulo_slide": "Passo 2 / Quebra de Padrão",
+        "conteudo_texto": "Explicação adicional...",
+        "prompt_imagem_en": "Prompt em inglês..."
+      },
+      {
+        "slide_numero": 4,
+        "tipo": "CTA",
+        "titulo_slide": "Salve para não esquecer",
+        "conteudo_texto": "Comente abaixo o que você achou e compartilhe com alguém que precisa ouvir isso.",
+        "prompt_imagem_en": "Prompt em inglês para slide final..."
+      }
+    ]
+  },
+  "legenda_instagram": {
+    "gancho": "Primeira linha irresistível da legenda (para fazer clicar em 'mais')...",
+    "corpo": "Texto completo da legenda com quebras de linha elegantes, espaçamento limpo e emojis estratégicos...",
+    "cta": "Chamada clara para comentar ou salvar...",
+    "hashtags": ["#nicho", "#instagram", "#viral", "#conteudo"]
+  }
+}`;
+
+      const result = await aiService.analyze({
+        prompt,
+        videoData,
+        mimeType: mimeType || 'video/mp4',
+        provider: reqProvider,
+        model: reqModel
+      });
+
+      // Tratar e converter o texto retornado para JSON
+      let cleanedJson = result.text.trim();
+      if (cleanedJson.startsWith("```json")) {
+        cleanedJson = cleanedJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+      } else if (cleanedJson.startsWith("```")) {
+        cleanedJson = cleanedJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+      }
+
+      let parsedData: any = null;
+      try {
+        parsedData = JSON.parse(cleanedJson);
+      } catch (parseErr) {
+        // Tentar extrair primeiro bloco JSON
+        const firstBrace = cleanedJson.indexOf('{');
+        const lastBrace = cleanedJson.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            parsedData = JSON.parse(cleanedJson.substring(firstBrace, lastBrace + 1));
+          } catch {}
+        }
+      }
+
+      if (!parsedData) {
+        parsedData = {
+          raw_text: result.text,
+          transcricao_original: {
+            dialogo_completo: result.text.substring(0, 500) + "...",
+            gancho_identificado: "Gancho extraído da análise",
+            analise_retencao: "Vídeo analisado pela IA com foco em retenção."
+          },
+          roteiro_clonado_video: {
+            titulo_sugerido: "Roteiro Clonado",
+            gancho_novo: "Você já se sentiu assim?",
+            cenas: [
+              {
+                numero_cena: 1,
+                enquadramento: "Close-up",
+                acao_visual: "Personagem expressivo",
+                fala: "Este é o novo roteiro adaptado para o seu público.",
+                prompt_imagem_en: "Cinematic portrait, expressive character, high resolution"
+              }
+            ],
+            cta_final: "Siga para mais reflexões."
+          },
+          carrossel_adaptado: {
+            titulo_carrossel: "Carrossel Clonado",
+            slides: []
+          },
+          legenda_instagram: {
+            gancho: "Você precisa ler isso hoje.",
+            corpo: result.text,
+            cta: "Salve este post.",
+            hashtags: ["#conteudo", "#psicologia"]
+          }
+        };
+      }
+
+      res.json({
+        success: true,
+        data: parsedData,
+        provider: result.provider,
+        model: result.model,
+        failoverUsed: result.failoverUsed,
+        elapsedMs: result.elapsedMs
+      });
+    } catch (error: any) {
+      console.error("Transcribe and Clone Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao transcrever e clonar vídeo." });
+    }
+  });
+
   // Funções Auxiliares de Extração Resiliente de Documentos
   async function extractPdfTextSafe(buffer: Buffer): Promise<string> {
     try {

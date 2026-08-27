@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -360,6 +360,46 @@ export const NODE_COLORS: Record<NodeColorType, { label: string; bg: string; bor
   }
 };
 
+export interface ClonedVideoScene {
+  numero_cena: number;
+  enquadramento: string;
+  acao_visual: string;
+  fala: string;
+  prompt_imagem_en: string;
+}
+
+export interface ClonedCarouselSlide {
+  slide_numero: number;
+  tipo: string;
+  titulo_slide: string;
+  conteudo_texto: string;
+  prompt_imagem_en: string;
+}
+
+export interface ClonerResultData {
+  transcricao_original: {
+    dialogo_completo: string;
+    gancho_identificado: string;
+    analise_retencao: string;
+  };
+  roteiro_clonado_video: {
+    titulo_sugerido: string;
+    gancho_novo: string;
+    cenas: ClonedVideoScene[];
+    cta_final: string;
+  };
+  carrossel_adaptado: {
+    titulo_carrossel: string;
+    slides: ClonedCarouselSlide[];
+  };
+  legenda_instagram: {
+    gancho: string;
+    corpo: string;
+    cta: string;
+    hashtags: string[];
+  };
+}
+
 export interface ExecutorBatchItem {
   id: string;
   label?: string;
@@ -547,7 +587,23 @@ export default function App() {
   const [batchCarouselResults, setBatchCarouselResults] = useState<GeneratedCarousel[]>([]);
   const [activeCarouselIndex, setActiveCarouselIndex] = useState<number>(0);
 
-  // Video Analysis states
+  // Video Analysis & Instagram Cloner states
+  const [analysisSubTab, setAnalysisSubTab] = useState<'cloner' | 'local'>('cloner');
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [isFetchingInstagram, setIsFetchingInstagram] = useState(false);
+  const [instagramVideoPreview, setInstagramVideoPreview] = useState<{ url?: string; thumbnail?: string; title?: string; sourceUrl?: string; isLocalFile?: boolean; base64Data?: string; mimeType?: string } | null>(null);
+  const [clonerNiche, setClonerNiche] = useState(NICHES[0]);
+  const [clonerTone, setClonerTone] = useState(NICHE_SCRIPT_TONES['Psicologia']?.[0] || 'Acolhedor / Compassivo');
+  const [clonerObjective, setClonerObjective] = useState('Clonagem com adaptação autoral e retenção viral');
+  const [clonerTranscriptInput, setClonerTranscriptInput] = useState('');
+  const [isCloning, setIsCloning] = useState(false);
+  const [clonerResult, setClonerResult] = useState<ClonerResultData | null>(null);
+  const [clonerActiveViewTab, setClonerActiveViewTab] = useState<'video' | 'carousel' | 'caption' | 'transcript'>('video');
+  const [showInstagramBrowser, setShowInstagramBrowser] = useState(false);
+  const [instagramBrowserUrl, setInstagramBrowserUrl] = useState('https://www.instagram.com/reels/');
+  const instagramWebviewRef = useRef<any>(null);
+  const [isCapturingWebviewVideo, setIsCapturingWebviewVideo] = useState(false);
+
   const [videoFile, setVideoFile] = useState<{data: string, mimeType: string} | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
@@ -1941,6 +1997,244 @@ export default function App() {
     setFlowchartDescription('');
     setFlowchartNodes([]);
     addLog('info', 'FLUXOGRAMA', 'Novo fluxograma em branco iniciado.');
+  };
+
+  // ==========================================
+  // HANDLERS DO CLONADOR DE VÍDEOS DO INSTAGRAM
+  // ==========================================
+  const handleFetchInstagramUrl = async () => {
+    if (!instagramUrl.trim()) {
+      alert('Por favor, insira o link de um Reel ou vídeo do Instagram.');
+      return;
+    }
+
+    setIsFetchingInstagram(true);
+    setError(null);
+    try {
+      addLog('ai', 'CLONADOR', `Buscando dados do vídeo Instagram: ${instagramUrl.trim()}...`);
+      const response = await fetch(getApiUrl('/api/cloner/fetch-instagram'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: instagramUrl.trim() })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha ao buscar vídeo do Instagram.');
+      }
+
+      const data = await response.json();
+      if (data.videoUrl) {
+        setInstagramVideoPreview({
+          url: data.videoUrl,
+          thumbnail: data.thumbnailUrl,
+          title: data.title,
+          sourceUrl: data.sourceUrl
+        });
+        addLog('success', 'CLONADOR', 'Vídeo do Instagram localizado e pronto para clonagem!');
+      } else if (data.loginRequired) {
+        setShowInstagramBrowser(true);
+        setInstagramBrowserUrl(data.sourceUrl || instagramUrl.trim());
+        addLog('info', 'CLONADOR', 'O vídeo requer visualização na plataforma. Abrindo no Navegador Embutido do Instagram...');
+      }
+    } catch (err: any) {
+      console.error(err);
+      addLog('warning', 'CLONADOR', `Aviso ao buscar URL direta: ${err.message}. Abrindo navegador embutido.`);
+      setShowInstagramBrowser(true);
+      setInstagramBrowserUrl(instagramUrl.trim());
+    } finally {
+      setIsFetchingInstagram(false);
+    }
+  };
+
+  const handleCaptureFromWebview = async () => {
+    if (!instagramWebviewRef.current) return;
+    setIsCapturingWebviewVideo(true);
+    try {
+      addLog('ai', 'CLONADOR', 'Inspecionando vídeo ativo no navegador do Instagram...');
+      const script = `
+        (() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          const playing = videos.find(v => !v.paused && v.currentTime > 0) || videos[0];
+          if (playing) {
+            return {
+              src: playing.src || playing.currentSrc,
+              poster: playing.poster,
+              duration: playing.duration,
+              title: document.title || 'Reel do Instagram'
+            };
+          }
+          return null;
+        })()
+      `;
+      const videoInfo = await instagramWebviewRef.current.executeJavaScript(script);
+      if (videoInfo && videoInfo.src) {
+        setInstagramVideoPreview({
+          url: videoInfo.src,
+          thumbnail: videoInfo.poster,
+          title: videoInfo.title,
+          sourceUrl: instagramBrowserUrl
+        });
+        setShowInstagramBrowser(false);
+        addLog('success', 'CLONADOR', 'Vídeo do Instagram capturado do navegador com sucesso!');
+      } else {
+        alert('Nenhum vídeo em reprodução detectado. Certifique-se de que o Reel está visível e dando play.');
+        addLog('warning', 'CLONADOR', 'Nenhum vídeo em reprodução detectado no navegador.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      addLog('error', 'CLONADOR', `Erro ao capturar vídeo do navegador: ${err.message}`);
+    } finally {
+      setIsCapturingWebviewVideo(false);
+    }
+  };
+
+  const handleStartCloningProcess = async () => {
+    if (!instagramVideoPreview && !videoFile && !clonerTranscriptInput.trim()) {
+      alert('Por favor, capture um vídeo do Instagram, faça upload de um arquivo ou forneça a transcrição para clonagem.');
+      return;
+    }
+
+    setIsCloning(true);
+    setError(null);
+    try {
+      addLog('ai', 'CLONADOR', `Iniciando transcrição de áudio e engenharia reversa com IA (${clonerNiche} • ${clonerTone})...`);
+      
+      const payload = {
+        videoData: videoFile?.data || instagramVideoPreview?.base64Data,
+        mimeType: videoFile?.mimeType || instagramVideoPreview?.mimeType || 'video/mp4',
+        videoUrl: instagramVideoPreview?.url,
+        transcriptInput: clonerTranscriptInput.trim() || undefined,
+        targetNiche: clonerNiche,
+        targetTone: clonerTone,
+        cloneObjective: clonerObjective,
+        provider: activeProvider,
+        model: activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel)
+      };
+
+      const response = await fetch(getApiUrl('/api/cloner/transcribe-and-clone'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha ao processar clonagem de vídeo.');
+      }
+
+      const resJson = await response.json();
+      if (resJson.data) {
+        setClonerResult(resJson.data);
+        addLog('success', 'CLONADOR', 'Vídeo clonado com sucesso! Roteiro de Vídeo, Carrossel e Legenda gerados.');
+      } else {
+        throw new Error('Formato de resposta inválido.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Erro ao clonar vídeo.');
+      addLog('error', 'CLONADOR', `Falha na clonagem: ${err.message}`);
+    } finally {
+      setIsCloning(false);
+    }
+  };
+
+  const handleTransferClonedToVideo = () => {
+    if (!clonerResult || !clonerResult.roteiro_clonado_video) return;
+    const cloned = clonerResult.roteiro_clonado_video;
+    setTopic(cloned.titulo_sugerido || 'Roteiro Clonado');
+    setNiche(clonerNiche);
+    
+    const scenes = cloned.cenas.map((c, i) => ({
+      sceneNumber: c.numero_cena || (i + 1),
+      duration: 7,
+      camera: c.enquadramento || 'Close-up',
+      expression: 'Expressivo',
+      contextPt: c.acao_visual,
+      dialoguePt: c.fala,
+      videoPromptEn: c.prompt_imagem_en
+    }));
+
+    setResult({
+      topic: cloned.titulo_sugerido,
+      scenes
+    });
+    setActiveTab('script');
+    addLog('success', 'CLONADOR', 'Roteiro clonado transferido para a aba de Vídeo!');
+  };
+
+  const handleTransferClonedToCarousel = () => {
+    if (!clonerResult || !clonerResult.carrossel_adaptado) return;
+    const carrossel = clonerResult.carrossel_adaptado;
+    setTopic(carrossel.titulo_carrossel || 'Carrossel Clonado');
+    setNiche(clonerNiche);
+
+    const slides = carrossel.slides.map((s, i) => ({
+      slideNumber: s.slide_numero || (i + 1),
+      titlePt: s.titulo_slide || `Slide ${i+1}`,
+      descriptionPt: s.conteudo_texto || '',
+      imagePromptEn: s.prompt_imagem_en || ''
+    }));
+
+    setCarouselResult({
+      topic: carrossel.titulo_carrossel,
+      slides
+    });
+    setActiveTab('carousel');
+    addLog('success', 'CLONADOR', 'Carrossel clonado transferido para a aba Carrossel!');
+  };
+
+  const handleExportClonedDocx = async () => {
+    if (!clonerResult) return;
+    try {
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: `ROTEIRO CLONADO: ${clonerResult.roteiro_clonado_video?.titulo_sugerido || 'Vídeo Instagram'}`,
+              heading: HeadingLevel.HEADING_1,
+              alignment: AlignmentType.CENTER
+            }),
+            new Paragraph({ text: `Nicho: ${clonerNiche} | Tom: ${clonerTone}` }),
+            new Paragraph({ text: "" }),
+            new Paragraph({
+              text: "1. TRANSCRIÇÃO ORIGINAL DO VÍDEO",
+              heading: HeadingLevel.HEADING_2
+            }),
+            new Paragraph({ text: clonerResult.transcricao_original?.dialogo_completo || "Sem transcrição." }),
+            new Paragraph({ text: `Análise de Retenção: ${clonerResult.transcricao_original?.analise_retencao || ""}` }),
+            new Paragraph({ text: "" }),
+            new Paragraph({
+              text: "2. ROTEIRO CLONADO DE VÍDEO (CENAS)",
+              heading: HeadingLevel.HEADING_2
+            }),
+            ...(clonerResult.roteiro_clonado_video?.cenas?.map(c => [
+              new Paragraph({ text: `CENA ${c.numero_cena} (${c.enquadramento})`, heading: HeadingLevel.HEADING_3 }),
+              new Paragraph({ text: `Ação: ${c.acao_visual}` }),
+              new Paragraph({ text: `Fala: "${c.fala}"` }),
+              new Paragraph({ text: `Prompt de Imagem (EN): ${c.prompt_imagem_en}` }),
+              new Paragraph({ text: "" })
+            ]).flat() || []),
+            new Paragraph({
+              text: "3. LEGENDA & HASHTAGS INSTAGRAM",
+              heading: HeadingLevel.HEADING_2
+            }),
+            new Paragraph({ text: clonerResult.legenda_instagram?.gancho || "" }),
+            new Paragraph({ text: clonerResult.legenda_instagram?.corpo || "" }),
+            new Paragraph({ text: `CTA: ${clonerResult.legenda_instagram?.cta || ""}` }),
+            new Paragraph({ text: clonerResult.legenda_instagram?.hashtags?.join(" ") || "" })
+          ]
+        }]
+      });
+
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `Roteiro_Clonado_${(clonerResult.roteiro_clonado_video?.titulo_sugerido || 'Instagram').replace(/[^a-z0-9]/gi, '_')}.docx`);
+      addLog('success', 'CLONADOR', 'Documento DOCX do Roteiro Clonado baixado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao gerar DOCX:', err);
+      alert('Erro ao exportar DOCX.');
+    }
   };
 
   const handlePullItemsFromPostForge = () => {
@@ -8162,17 +8456,524 @@ module.exports = { runCompleteWorkflow };`
         </section>
       </>
     ) : (
-      <div className="lg:col-span-12 max-w-2xl mx-auto w-full h-full flex flex-col overflow-hidden">
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 flex flex-col gap-6 h-full overflow-y-auto pb-6">
+      <div className="lg:col-span-12 w-full h-full flex flex-col gap-4 overflow-hidden">
+        {/* Header Superior do Analisador & Clonador */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-pink-500/20 shrink-0">
+              <Instagram className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-slate-900">Analisador & Clonador de Vídeo Instagram</h2>
+                <span className="px-2 py-0.5 bg-pink-50 text-pink-700 text-[10px] font-black rounded-full border border-pink-200/80 uppercase tracking-wider">
+                  IA Multi-Modal
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Baixe ou capture Reels do Instagram, transcreva as falas e clone a estrutura em novos Roteiros, Carrosséis e Legendas.
+              </p>
+            </div>
+          </div>
+
+          {/* Seletor de Modo (Clonador Instagram vs Upload Local) */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setAnalysisSubTab('cloner')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                analysisSubTab === 'cloner'
+                  ? 'bg-white text-indigo-600 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Instagram className="w-3.5 h-3.5 text-pink-500" />
+              <span>Clonador Instagram (Reels)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAnalysisSubTab('local')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                analysisSubTab === 'local'
+                  ? 'bg-white text-indigo-600 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Análise de Vídeo Local (MP4)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* MODO 1: CLONADOR DE VÍDEOS DO INSTAGRAM (REELS & POSTS) */}
+        {/* ========================================================================= */}
+        {analysisSubTab === 'cloner' ? (
+          <div className="w-full flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
+            {/* Coluna Esquerda: Entrada do Vídeo & Parâmetros de Clonagem (5 Colunas) */}
+            <aside className="lg:col-span-5 h-full flex flex-col overflow-hidden">
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col gap-4 h-full overflow-y-auto">
+                {/* 1. Entrada do Vídeo do Instagram */}
+                <div className="space-y-2.5">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Instagram className="w-4 h-4 text-pink-500" />
+                    <span>Link do Reel ou Vídeo do Instagram</span>
+                  </label>
+                  
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={instagramUrl}
+                      onChange={(e) => setInstagramUrl(e.target.value)}
+                      placeholder="https://www.instagram.com/reel/..."
+                      className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 focus:border-pink-500 focus:ring-1 focus:ring-pink-500 rounded-xl text-slate-800 transition"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleFetchInstagramUrl(); }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleFetchInstagramUrl}
+                      disabled={isFetchingInstagram || !instagramUrl.trim()}
+                      className="px-3.5 py-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {isFetchingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      <span>Buscar</span>
+                    </button>
+                  </div>
+
+                  {/* Botão de Navegador Embutido (com Login) */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowInstagramBrowser(true);
+                        setInstagramBrowserUrl(instagramUrl.trim() || 'https://www.instagram.com/reels/');
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 hover:bg-pink-50 text-slate-700 hover:text-pink-700 border border-slate-200 hover:border-pink-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-pink-500" />
+                      <span>Abrir Navegador Instagram (Logar & Capturar)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview do Vídeo Capturado / Carregado */}
+                {instagramVideoPreview ? (
+                  <div className="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/60 font-bold">
+                        ✓ Vídeo Pronto para Clonagem
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setInstagramVideoPreview(null)}
+                        className="text-slate-400 hover:text-rose-400 transition p-1"
+                        title="Remover vídeo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {instagramVideoPreview.url ? (
+                      <video
+                        src={instagramVideoPreview.url}
+                        controls
+                        className="w-full max-h-48 rounded-xl bg-black object-contain border border-slate-800"
+                        poster={instagramVideoPreview.thumbnail}
+                      />
+                    ) : (
+                      <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
+                        <Clapperboard className="w-8 h-8 text-pink-400 mx-auto mb-1" />
+                        <p className="text-xs font-bold text-white truncate">{instagramVideoPreview.title || 'Vídeo Selecionado'}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{instagramVideoPreview.sourceUrl}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center space-y-1">
+                    <p className="text-xs text-slate-500 font-medium">Nenhum vídeo carregado ainda.</p>
+                    <p className="text-[10px] text-slate-400">Cole a URL do Reel acima ou abra o navegador Instagram para capturar.</p>
+                  </div>
+                )}
+
+                {/* 2. Configurações de Clonagem & Nicho */}
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Configuração da Nova Versão (Clonada)</span>
+                  </h3>
+
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-700">Nicho de Destino</label>
+                    <select
+                      value={clonerNiche}
+                      onChange={(e) => {
+                        const newN = e.target.value;
+                        setClonerNiche(newN);
+                        if (NICHE_SCRIPT_TONES[newN]?.length > 0) {
+                          setClonerTone(NICHE_SCRIPT_TONES[newN][0]);
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-1 focus:ring-purple-500"
+                    >
+                      {NICHES.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-700">Tom de Voz Desejado</label>
+                    <select
+                      value={clonerTone}
+                      onChange={(e) => setClonerTone(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-1 focus:ring-purple-500"
+                    >
+                      {(NICHE_SCRIPT_TONES[clonerNiche] || ['Acolhedor / Compassivo', 'Motivacional', 'Profundo']).map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">Objetivo da Clonagem</label>
+                    <input
+                      type="text"
+                      value={clonerObjective}
+                      onChange={(e) => setClonerObjective(e.target.value)}
+                      placeholder="Ex: Adaptação autoral mantendo o gancho de retenção..."
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                    />
+                  </div>
+
+                  {/* Transcrição Opcional Manual */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                      <span>Transcrição / Falas do Vídeo (Opcional)</span>
+                      <span className="text-[9px] text-slate-400 font-normal">A IA transcreve direto do vídeo</span>
+                    </label>
+                    <textarea
+                      value={clonerTranscriptInput}
+                      onChange={(e) => setClonerTranscriptInput(e.target.value)}
+                      placeholder="Se preferir, cole aqui as falas ou o roteiro que você deseja clonar..."
+                      rows={2}
+                      className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:ring-1 focus:ring-purple-500 resize-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Botão de Ação Principal: Transcrever & Clonar */}
+                <div className="mt-auto pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleStartCloningProcess}
+                    disabled={isCloning || (!instagramVideoPreview && !videoFile && !clonerTranscriptInput.trim())}
+                    className="w-full py-3.5 bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:via-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-purple-500/20 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCloning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Transcrevendo & Clonando Vídeo com IA...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Transcrever Diálogos & Clonar com IA</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </aside>
+
+            {/* Coluna Direita: Resultados da Clonagem (7 Colunas) */}
+            <section className="lg:col-span-7 h-full flex flex-col overflow-hidden">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm flex flex-col gap-4 h-full overflow-hidden text-slate-200">
+                {!clonerResult ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="text-center space-y-3 max-w-md">
+                      <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-br from-pink-500/20 via-purple-500/20 to-indigo-500/20 border-2 border-dashed border-purple-500/40 flex items-center justify-center shadow-lg shadow-purple-500/10">
+                        <Flame className="w-8 h-8 text-pink-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-extrabold text-white">Engenharia Reversa de Reels</h4>
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                          Forneça um vídeo do Instagram ao lado e clique em <strong>"Transcrever Diálogos & Clonar"</strong>. A IA irá extrair as falas originais, desconstruir a retenção e gerar 3 formatos autorais prontos para publicar!
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-2 text-[10px] text-slate-400">
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">🎬 Roteiro de Vídeo</div>
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">📑 Carrossel 6-8 Slides</div>
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">📝 Copywriting & Tags</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col gap-3 overflow-hidden">
+                    {/* Header do Resultado Clonado */}
+                    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
+                          Clonagem Concluída com Sucesso
+                        </span>
+                        <h3 className="text-sm font-extrabold text-white mt-1 truncate">
+                          {clonerResult.roteiro_clonado_video?.titulo_sugerido || 'Roteiro Clonado'}
+                        </h3>
+                      </div>
+
+                      {/* Botões Rápidos de Transferência e Exportação */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleTransferClonedToVideo}
+                          className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
+                          title="Enviar para o Criador de Vídeo e gerar as imagens"
+                        >
+                          <Clapperboard className="w-3.5 h-3.5" />
+                          <span>Enviar p/ Vídeo</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleTransferClonedToCarousel}
+                          className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
+                          title="Enviar para o Criador de Carrossel"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Enviar p/ Carrossel</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleExportClonedDocx}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl transition flex items-center gap-1 border border-slate-700 cursor-pointer"
+                          title="Baixar em formato Word (.docx)"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                          <span>DOCX</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Abas de Conteúdo do Resultado */}
+                    <div className="flex items-center gap-2 border-b border-slate-800 pb-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setClonerActiveViewTab('video')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          clonerActiveViewTab === 'video'
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        <Clapperboard className="w-3.5 h-3.5" />
+                        <span>1. Roteiro de Vídeo ({clonerResult.roteiro_clonado_video?.cenas?.length || 0} cenas)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setClonerActiveViewTab('carousel')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          clonerActiveViewTab === 'carousel'
+                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>2. Carrossel Adaptado ({clonerResult.carrossel_adaptado?.slides?.length || 0} slides)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setClonerActiveViewTab('caption')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          clonerActiveViewTab === 'caption'
+                            ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>3. Legenda & Copywriting</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setClonerActiveViewTab('transcript')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          clonerActiveViewTab === 'transcript'
+                            ? 'bg-slate-800 text-white border border-slate-700'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>4. Transcrição Original</span>
+                      </button>
+                    </div>
+
+                    {/* Conteúdo da Aba Ativa */}
+                    <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                      {/* ABA 1: ROTEIRO DE VÍDEO CLONADO */}
+                      {clonerActiveViewTab === 'video' && (
+                        <div className="space-y-3">
+                          {clonerResult.roteiro_clonado_video?.gancho_novo && (
+                            <div className="p-3.5 bg-gradient-to-r from-indigo-950/60 to-purple-950/60 rounded-2xl border border-indigo-500/40">
+                              <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold">Gancho de Retenção (Primeiros 3 Segundos):</span>
+                              <p className="text-xs font-bold text-white mt-1">"{clonerResult.roteiro_clonado_video.gancho_novo}"</p>
+                            </div>
+                          )}
+
+                          <div className="space-y-2.5">
+                            {clonerResult.roteiro_clonado_video?.cenas?.map((cena, cIdx) => (
+                              <div key={cIdx} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-black flex items-center justify-center border border-indigo-500/30">
+                                      {cena.numero_cena || (cIdx + 1)}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-300">Cena {cena.numero_cena || (cIdx + 1)} • <code className="text-indigo-400">{cena.enquadramento}</code></span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(cena.prompt_imagem_en, `cloner_prompt_${cIdx}`)}
+                                    className="text-[10px] font-bold text-indigo-400 hover:text-white transition flex items-center gap-1"
+                                  >
+                                    {copiedStates[`cloner_prompt_${cIdx}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                    <span>Copiar Prompt</span>
+                                  </button>
+                                </div>
+
+                                <p className="text-xs text-slate-400 leading-relaxed"><strong className="text-slate-300">Ação Visual:</strong> {cena.acao_visual}</p>
+                                
+                                <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                                  <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase block">Fala da Cena:</span>
+                                  <p className="text-xs text-white font-medium italic mt-0.5">"{cena.fala}"</p>
+                                </div>
+
+                                <div className="p-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono text-[11px] text-green-400">
+                                  <span className="text-[9px] text-slate-500 uppercase block font-sans">Prompt para Gerador de Imagem:</span>
+                                  <p className="mt-0.5">{cena.prompt_imagem_en}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {clonerResult.roteiro_clonado_video?.cta_final && (
+                            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                              <span className="text-[10px] font-mono text-pink-400 font-bold uppercase">CTA Final Recomendada:</span>
+                              <p className="text-white font-bold mt-0.5">{clonerResult.roteiro_clonado_video.cta_final}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ABA 2: CARROSSEL ADAPTADO */}
+                      {clonerActiveViewTab === 'carousel' && (
+                        <div className="space-y-2.5">
+                          <div className="p-3 bg-purple-950/40 rounded-2xl border border-purple-800/60">
+                            <span className="text-[10px] font-bold text-purple-400 uppercase">Título do Carrossel Adaptado:</span>
+                            <h4 className="text-xs font-bold text-white mt-0.5">{clonerResult.carrossel_adaptado?.titulo_carrossel}</h4>
+                          </div>
+
+                          <div className="space-y-2">
+                            {clonerResult.carrossel_adaptado?.slides?.map((slide, sIdx) => (
+                              <div key={sIdx} className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-purple-300">Slide {slide.slide_numero || (sIdx + 1)} ({slide.tipo || 'Slide'})</span>
+                                  <span className="text-[10px] font-bold text-slate-500 font-mono">{slide.titulo_slide}</span>
+                                </div>
+                                <p className="text-xs text-slate-300 leading-relaxed">{slide.conteudo_texto}</p>
+                                {slide.prompt_imagem_en && (
+                                  <p className="text-[11px] text-green-400 font-mono bg-slate-900 p-2 rounded-lg border border-slate-800">{slide.prompt_imagem_en}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ABA 3: LEGENDA & COPYWRITING */}
+                      {clonerActiveViewTab === 'caption' && (
+                        <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-pink-400">Legenda Otimizada para o Instagram</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const caption = `${clonerResult.legenda_instagram?.gancho || ''}\n\n${clonerResult.legenda_instagram?.corpo || ''}\n\n${clonerResult.legenda_instagram?.cta || ''}\n\n${clonerResult.legenda_instagram?.hashtags?.join(' ') || ''}`;
+                                handleCopy(caption, 'cloner_caption');
+                              }}
+                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              {copiedStates['cloner_caption'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedStates['cloner_caption'] ? 'Copiado' : 'Copiar Legenda'}</span>
+                            </button>
+                          </div>
+
+                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs space-y-2 leading-relaxed">
+                            <p className="font-bold text-white">{clonerResult.legenda_instagram?.gancho}</p>
+                            <p className="text-slate-300 whitespace-pre-wrap">{clonerResult.legenda_instagram?.corpo}</p>
+                            <p className="text-pink-300 font-bold">{clonerResult.legenda_instagram?.cta}</p>
+                          </div>
+
+                          {clonerResult.legenda_instagram?.hashtags && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {clonerResult.legenda_instagram.hashtags.map((tag, tIdx) => (
+                                <span key={tIdx} className="text-[10px] font-mono px-2 py-0.5 bg-slate-900 text-purple-300 rounded-md border border-slate-800">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ABA 4: TRANSCRIÇÃO ORIGINAL & ANÁLISE DE RETENÇÃO */}
+                      {clonerActiveViewTab === 'transcript' && (
+                        <div className="space-y-3">
+                          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold text-slate-300">Transcrição Fiel do Diálogo Original</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(clonerResult.transcricao_original?.dialogo_completo || '', 'cloner_transcript')}
+                                className="text-[10px] font-bold text-indigo-400 hover:text-white transition flex items-center gap-1"
+                              >
+                                {copiedStates['cloner_transcript'] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                <span>Copiar Transcrição</span>
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed bg-slate-900 p-3 rounded-xl border border-slate-800 font-mono">
+                              {clonerResult.transcricao_original?.dialogo_completo || 'Sem transcrição disponível.'}
+                            </p>
+                          </div>
+
+                          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-1.5">
+                            <span className="text-xs font-bold text-yellow-400">Análise da Estrutura de Retenção</span>
+                            <p className="text-xs text-slate-300 leading-relaxed">
+                              {clonerResult.transcricao_original?.analise_retencao}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : (
+          /* ========================================================================= */
+          /* MODO 2: ANALISADOR DE VÍDEO LOCAL (UPLOAD MP4) */
+          /* ========================================================================= */
+          <div className="lg:col-span-12 max-w-2xl mx-auto w-full h-full flex flex-col overflow-hidden">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-xs p-8 flex flex-col gap-6 h-full overflow-y-auto pb-6">
               <div className="text-center">
-                <h2 className="text-2xl font-bold text-slate-900">Analisador de Vídeo</h2>
-                <p className="text-sm text-slate-500 mt-1">Envie seu vídeo e deixe a IA criar uma sinopse matadora para o Instagram.</p>
+                <h2 className="text-xl font-black text-slate-900">Analisador de Vídeo Local</h2>
+                <p className="text-xs text-slate-500 mt-1">Envie seu vídeo MP4 e deixe a IA criar uma sinopse matadora para o Instagram.</p>
               </div>
 
               <div className="space-y-4">
                 <label className="block">
-                  <div className={`w-full h-48 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-colors cursor-pointer ${videoFile ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300'}`}>
-                    <Upload className={`w-10 h-10 mb-3 ${videoFile ? 'text-green-500' : 'text-slate-400'}`} />
+                  <div className={`w-full h-48 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-colors cursor-pointer ${videoFile ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300'}`}>
+                    <Upload className={`w-10 h-10 mb-3 ${videoFile ? 'text-emerald-500' : 'text-slate-400'}`} />
                     <span className="text-sm font-semibold">{videoFile ? 'Vídeo Carregado' : 'Selecione um vídeo (Máx 100MB)'}</span>
                     <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
                   </div>
@@ -8196,12 +8997,12 @@ module.exports = { runCompleteWorkflow };`
                     {isAnalyzing ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        Analisando Vídeo...
+                        <span>Analisando Vídeo...</span>
                       </>
                     ) : (
                       <>
                         <Clapperboard className="w-5 h-5" />
-                        Analisar e Criar Sinopse
+                        <span>Analisar e Criar Sinopse</span>
                       </>
                     )}
                   </button>
@@ -8213,7 +9014,7 @@ module.exports = { runCompleteWorkflow };`
                       className="w-full py-2 text-slate-500 hover:text-red-500 font-bold transition flex items-center justify-center gap-2"
                     >
                       <X className="w-4 h-4" />
-                      Cancelar Análise
+                      <span>Cancelar Análise</span>
                     </button>
                   )}
                 </div>
@@ -8243,6 +9044,95 @@ module.exports = { runCompleteWorkflow };`
             </div>
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* MODAL DO NAVEGADOR INSTAGRAM (WEBVIEW COM LOGIN & CAPTURA) */}
+        {/* ========================================================================= */}
+        {showInstagramBrowser && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Barra Superior do Navegador */}
+              <div className="bg-slate-950 p-3.5 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { if (instagramWebviewRef.current?.canGoBack()) instagramWebviewRef.current.goBack(); }}
+                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition cursor-pointer"
+                    title="Voltar"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (instagramWebviewRef.current?.canGoForward()) instagramWebviewRef.current.goForward(); }}
+                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition cursor-pointer"
+                    title="Avançar"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { instagramWebviewRef.current?.reload(); }}
+                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition cursor-pointer"
+                    title="Recarregar"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 max-w-lg">
+                  <input
+                    type="text"
+                    value={instagramBrowserUrl}
+                    onChange={(e) => setInstagramBrowserUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && instagramWebviewRef.current) {
+                        instagramWebviewRef.current.loadURL(instagramBrowserUrl);
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                    placeholder="https://www.instagram.com/reels/..."
+                  />
+                </div>
+
+                {/* Botão de Captura Flutuante em Destaque */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCaptureFromWebview}
+                    disabled={isCapturingWebviewVideo}
+                    className="px-4 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white text-xs font-black rounded-xl shadow-lg shadow-pink-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCapturingWebviewVideo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Instagram className="w-4 h-4" />}
+                    <span>🎯 Capturar Vídeo Selecionado</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowInstagramBrowser(false)}
+                    className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Webview do Instagram */}
+              <div className="flex-1 bg-black relative">
+                {/* @ts-ignore */}
+                <webview
+                  ref={instagramWebviewRef}
+                  src={instagramBrowserUrl}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                  allowpopups="true"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )}
 
       </main>
 
