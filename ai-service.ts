@@ -310,7 +310,7 @@ export class AIService {
             const groqOptions: AIGenerateOptions = {
               ...execOptions,
               provider: 'groq',
-              model: providersManager.getGroqModel() || 'meta-llama/llama-4-scout-17b-16e-instruct'
+              model: providersManager.getGroqModel() || 'qwen/qwen3.8-27b'
             };
             addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
             const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -377,7 +377,7 @@ export class AIService {
           const groqOptions: AIGenerateOptions = {
             ...execOptions,
             provider: 'groq',
-            model: providersManager.getGroqModel() || 'meta-llama/llama-4-scout-17b-16e-instruct'
+            model: providersManager.getGroqModel() || 'qwen/qwen3.8-27b'
           };
           addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
           const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -497,7 +497,7 @@ export class AIService {
         const groqResult = await this.generateWithGroq({
           prompt: options.prompt,
           parts: [{ text: options.prompt }],
-          model: providersManager.getGroqModel() || "meta-llama/llama-4-scout-17b-16e-instruct"
+          model: providersManager.getGroqModel() || "qwen/qwen3.8-27b"
         });
         return {
           ...groqResult,
@@ -658,13 +658,13 @@ export class AIService {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getGroqBaseUrl();
     const configuredModel = providersManager.getGroqModel();
-    const primaryModel = options.model || configuredModel || "meta-llama/llama-4-scout-17b-16e-instruct";
+    const primaryModel = options.model || configuredModel || "qwen/qwen3.8-27b";
 
     const modelsToTry = [
       primaryModel,
-      "meta-llama/llama-4-scout-17b-16e-instruct",
-      "llama-3.3-70b-specdec",
-      "qwen-qwq-32b"
+      "qwen/qwen3.8-27b",
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b"
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     let schemaInstruction = "";

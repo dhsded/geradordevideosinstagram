@@ -64,7 +64,7 @@ export class ProvidersManager {
     groq: {
       apiKey: process.env.GROQ_API_KEY || '',
       baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-      model: process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
     },
     gemini: {
       preferredModel: 'gemini-2.5-flash',
@@ -90,7 +90,7 @@ export class ProvidersManager {
           groq: {
             apiKey: parsed.groq?.apiKey || process.env.GROQ_API_KEY || '',
             baseUrl: parsed.groq?.baseUrl || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-            model: parsed.groq?.model || process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+            model: parsed.groq?.model || process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
           },
           gemini: {
             preferredModel: parsed.gemini?.preferredModel || 'gemini-2.5-flash',
@@ -170,7 +170,7 @@ export class ProvidersManager {
   }
 
   public getGroqModel(): string {
-    return this.config.groq.model.trim() || (process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct').trim();
+    return this.config.groq.model.trim() || (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b').trim();
   }
 
   public updateConfig(partial: Partial<ProvidersConfig> & { openrouter?: Partial<OpenRouterConfig>; groq?: Partial<GroqConfig>; gemini?: Partial<GeminiConfig> }) {

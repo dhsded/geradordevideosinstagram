@@ -309,7 +309,7 @@ export class GroqKeysManager {
           'Authorization': `Bearer ${key}`
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          model: 'qwen/qwen3.8-27b',
           messages: [{ role: 'user', content: 'hi' }],
           max_tokens: 1
         }),
