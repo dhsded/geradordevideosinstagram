@@ -728,11 +728,12 @@ export class AIService {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${activeKey}`
             },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(60000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
+              max_tokens: 16384,
               response_format: { type: "json_object" }
             })
           });
@@ -811,7 +812,7 @@ export class AIService {
             break;
           }
           if (err.name === 'TimeoutError' || err.message?.includes('aborted')) {
-            if (logger) logger('warning', 'GROQ', `Modelo ${currentModel} demorou mais de 15s no Groq.`);
+            if (logger) logger('warning', 'GROQ', `Modelo ${currentModel} demorou mais de 60s no Groq.`);
           } else {
             if (logger) logger('warning', 'GROQ', `Falha no modelo ${currentModel} (${elapsed}s): ${err.message}`);
           }
