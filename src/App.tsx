@@ -547,34 +547,34 @@ export default function App() {
 
   const POPULAR_GROQ_MODELS = [
     {
-      id: 'llama-3.3-70b-versatile',
-      name: 'Llama 3.3 70B Versatile (Recomendado)',
-      tag: '128k Contexto • Mais Inteligente',
-      desc: 'Qualidade máxima de texto, alta coerência em português, ideal para carrosséis e roteiros detalhados'
+      id: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      name: 'Llama 4 Scout 17B (Recomendado)',
+      tag: '128k Contexto • Llama 4 Mais Recente',
+      desc: 'Modelo Llama 4 mais recente da Meta, altíssima qualidade em português para carrosséis e roteiros'
     },
     {
-      id: 'llama-3.1-8b-instant',
-      name: 'Llama 3.1 8B Instant (Ultra Rápido)',
-      tag: 'Velocidade Extrema • 128k Contexto',
-      desc: 'Inferência em milissegundos para geração imediata de prompts e legendas'
+      id: 'qwen-qwq-32b',
+      name: 'Qwen QwQ 32B (Raciocínio)',
+      tag: '128k Contexto • Raciocínio Profundo',
+      desc: 'Modelo com raciocínio passo a passo avançado para ganchos e roteiros complexos'
     },
     {
-      id: 'mixtral-8x7b-32768',
-      name: 'Mixtral 8x7B (MoE)',
-      tag: '32k Contexto • Raciocínio Balanceado',
-      desc: 'Arquitetura de Mixture of Experts para síntese de documentos e ganchos'
+      id: 'llama-3.3-70b-specdec',
+      name: 'Llama 3.3 70B SpecDec (Ultra Rápido)',
+      tag: 'Velocidade Extrema • 8k Contexto',
+      desc: 'Llama 70B acelerado com decodificação especulativa para inferência ultra-rápida'
     },
     {
-      id: 'gemma2-9b-it',
-      name: 'Google Gemma 2 9B Instruct',
-      tag: '8k Contexto • Google no Groq',
-      desc: 'Modelo ágil e compacto de alta fidelidade a instruções'
+      id: 'llama-3.2-3b-preview',
+      name: 'Llama 3.2 3B Preview (Compacto)',
+      tag: '8k Contexto • Leve e Ágil',
+      desc: 'Modelo compacto ideal para legendas rápidas e prompts curtos'
     },
     {
-      id: 'deepseek-r1-distill-llama-70b',
-      name: 'DeepSeek R1 Distill Llama 70B',
-      tag: 'Raciocínio Profundo • R1',
-      desc: 'Poder de raciocínio passo a passo do DeepSeek R1 acelerado na LPU da Groq'
+      id: 'mistral-saba-24b',
+      name: 'Mistral Saba 24B',
+      tag: '32k Contexto • Multilíngue',
+      desc: 'Modelo Mistral otimizado para tarefas multilíngues e síntese de conteúdo'
     }
   ];
 
@@ -614,11 +614,11 @@ export default function App() {
     hasKey: false,
     apiKeyMasked: '',
     baseUrl: 'https://api.groq.com/openai/v1',
-    model: 'llama-3.3-70b-versatile'
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct'
   });
   const [groqKeyInput, setGroqKeyInput] = useState('');
   const [groqBaseUrlInput, setGroqBaseUrlInput] = useState('https://api.groq.com/openai/v1');
-  const [groqModelInput, setGroqModelInput] = useState('llama-3.3-70b-versatile');
+  const [groqModelInput, setGroqModelInput] = useState('meta-llama/llama-4-scout-17b-16e-instruct');
   const [isCustomGroqModel, setIsCustomGroqModel] = useState(false);
 
   // Estados de Múltiplas Chaves Groq com Pool Rotativo
@@ -1350,7 +1350,7 @@ export default function App() {
         if (data.groq) {
           setGroqConfig(data.groq);
           setGroqBaseUrlInput(data.groq.baseUrl || 'https://api.groq.com/openai/v1');
-          setGroqModelInput(data.groq.model || 'llama-3.3-70b-versatile');
+          setGroqModelInput(data.groq.model || 'meta-llama/llama-4-scout-17b-16e-instruct');
           if (data.groq.hasKey) {
             fetchGroqQuota();
           }
@@ -2033,7 +2033,7 @@ export default function App() {
         activeProvider: makeActive ? 'groq' : activeProvider,
         groq: {
           baseUrl: groqBaseUrlInput.trim() || 'https://api.groq.com/openai/v1',
-          model: groqModelInput.trim() || 'llama-3.3-70b-versatile',
+          model: groqModelInput.trim() || 'meta-llama/llama-4-scout-17b-16e-instruct',
         }
       };
       if (key) {
@@ -2097,7 +2097,7 @@ export default function App() {
           groq: {
             apiKey: key,
             baseUrl: groqBaseUrlInput.trim() || 'https://api.groq.com/openai/v1',
-            model: groqModelInput.trim() || 'llama-3.3-70b-versatile'
+            model: groqModelInput.trim() || 'meta-llama/llama-4-scout-17b-16e-instruct'
           }
         }),
         signal: AbortSignal.timeout(30000)
@@ -4078,7 +4078,7 @@ export default function App() {
                 <Zap className="w-3.5 h-3.5 text-orange-500 group-hover:scale-110 transition-transform" />
                 <span className="hidden sm:inline font-bold">Groq Cloud</span>
                 <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-black rounded-md bg-orange-50 text-orange-700 border border-orange-200/80 max-w-[130px] truncate">
-                  {groqModelInput.replace('llama-3.3-70b-versatile', 'Llama 3.3 70B').replace('llama-3.1-8b-instant', 'Llama 3.1 8B')}
+                  {groqModelInput.replace('meta-llama/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout').replace('qwen-qwq-32b', 'Qwen QwQ 32B').replace('llama-3.3-70b-specdec', 'Llama 3.3 70B')}
                 </span>
                 {groqKeysStats.total > 0 && (
                   <span className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-black rounded-md ${groqKeysStats.free > 0 ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
@@ -8045,7 +8045,7 @@ export default function App() {
                           type="text"
                           value={groqModelInput}
                           onChange={(e) => handleSelectGroqModel(e.target.value)}
-                          placeholder="ex: llama-3.3-70b-versatile ou mixtral-8x7b-32768"
+                          placeholder="ex: meta-llama/llama-4-scout-17b-16e-instruct ou qwen-qwq-32b"
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20"
                         />
                         <p className="text-[10px] text-slate-400">Consulte os modelos disponíveis em console.groq.com/docs/models.</p>

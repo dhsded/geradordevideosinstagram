@@ -310,7 +310,7 @@ export class AIService {
             const groqOptions: AIGenerateOptions = {
               ...execOptions,
               provider: 'groq',
-              model: providersManager.getGroqModel() || 'llama-3.3-70b-versatile'
+              model: providersManager.getGroqModel() || 'meta-llama/llama-4-scout-17b-16e-instruct'
             };
             addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
             const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -377,7 +377,7 @@ export class AIService {
           const groqOptions: AIGenerateOptions = {
             ...execOptions,
             provider: 'groq',
-            model: providersManager.getGroqModel() || 'llama-3.3-70b-versatile'
+            model: providersManager.getGroqModel() || 'meta-llama/llama-4-scout-17b-16e-instruct'
           };
           addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
           const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -497,7 +497,7 @@ export class AIService {
         const groqResult = await this.generateWithGroq({
           prompt: options.prompt,
           parts: [{ text: options.prompt }],
-          model: providersManager.getGroqModel() || "llama-3.3-70b-versatile"
+          model: providersManager.getGroqModel() || "meta-llama/llama-4-scout-17b-16e-instruct"
         });
         return {
           ...groqResult,
@@ -658,13 +658,13 @@ export class AIService {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getGroqBaseUrl();
     const configuredModel = providersManager.getGroqModel();
-    const primaryModel = options.model || configuredModel || "llama-3.3-70b-versatile";
+    const primaryModel = options.model || configuredModel || "meta-llama/llama-4-scout-17b-16e-instruct";
 
     const modelsToTry = [
       primaryModel,
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "mixtral-8x7b-32768"
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "llama-3.3-70b-specdec",
+      "qwen-qwq-32b"
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     let schemaInstruction = "";
