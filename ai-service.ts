@@ -856,23 +856,23 @@ export class AIService {
     const hasImages = (options.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/'));
 
     const visionModels = [
-      "google/gemini-2.0-flash-exp:free",
-      "google/gemini-2.5-flash",
-      "meta-llama/llama-3.2-11b-vision-instruct:free",
-      "qwen/qwen-2-vl-72b-instruct:free"
+      "google/gemma-4-26b-a4b-it:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "deepseek/deepseek-r1:free",
+      "minimax/minimax-m3:free"
     ];
 
     const textModels = [
       primaryModel,
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
       "minimax/minimax-m3:free",
       "google/gemma-4-26b-a4b-it:free",
-      "nvidia/nemotron-3-super-120b-a12b:free",
-      "liquid/lfm-2.5-2.6b:free"
+      "deepseek/deepseek-r1:free"
     ];
 
     const modelsToTry = (hasImages
       ? [...new Set([primaryModel, ...visionModels])]
-      : [...new Set([primaryModel, ...textModels])]).slice(0, 3);
+      : [...new Set([primaryModel, ...textModels])]).slice(0, 5);
 
     let schemaInstruction = "";
     if (options.responseSchema) {
@@ -881,7 +881,7 @@ export class AIService {
 
     const systemMessage = {
       role: "system",
-      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON.${schemaInstruction}`
+      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
     };
 
     const userContentArray: any[] = [];
@@ -957,11 +957,12 @@ export class AIService {
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
             },
-            signal: AbortSignal.timeout(6000),
+            signal: AbortSignal.timeout(30000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
+              max_tokens: 16384,
             })
           });
 
@@ -983,10 +984,10 @@ export class AIService {
             }
 
             if (response.status === 402 || errMsg.toLowerCase().includes("insufficient") || errMsg.toLowerCase().includes("credit")) {
-              keyIsExhaustedOrInvalid = true;
-              exhaustionReason = `Crédito insuficiente (${response.status}): ${errMsg}`;
-              if (logger) logger('warning', 'OPENROUTER', `Chave ${maskedKey} sem créditos suficientes (${response.status}).`);
-              break;
+              // 402 em modelo pago = pular para o próximo modelo gratuito, NÃO matar a chave
+              if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} requer créditos (${response.status}). Tentando próximo modelo gratuito...`);
+              lastError = new Error(`OpenRouter ${currentModel}: crédito insuficiente (402)`);
+              continue;
             }
 
             if (response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("quota")) {
@@ -1039,7 +1040,7 @@ export class AIService {
             break;
           }
           if (err.name === 'TimeoutError' || err.message?.includes('aborted')) {
-            if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} demorou mais de 6s (tempo limite esgotado).`);
+            if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} demorou mais de 30s (tempo limite esgotado).`);
           } else {
             if (logger) logger('warning', 'OPENROUTER', `Falha no modelo ${currentModel} (${elapsed}s): ${err.message}`);
           }
