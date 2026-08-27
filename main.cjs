@@ -47,9 +47,12 @@ async function startBackend() {
     console.log('🚀 Starting backend server in development mode...');
     const tsxCli = path.join(__dirname, 'node_modules', 'tsx', 'dist', 'cli.mjs');
     const serverFile = path.join(__dirname, 'server.ts');
+
     if (fs.existsSync(tsxCli)) {
-      // Use a single command string with quoted paths to handle spaces in directory names
-      const cmd = `"${process.execPath}" "${tsxCli}" "${serverFile}"`;
+      // process.execPath no Electron aponta para electron.exe, não node.exe
+      // Precisamos usar "node" do PATH do sistema
+      const cmd = `node "${tsxCli}" "${serverFile}"`;
+      console.log('[Backend] Executing:', cmd);
       backendProcess = spawn(cmd, [], {
         cwd: __dirname,
         env: { ...process.env, FORCE_COLOR: 'true' },
@@ -57,6 +60,7 @@ async function startBackend() {
         shell: true
       });
     } else {
+      console.log('[Backend] tsx CLI not found, falling back to npm run dev...');
       const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
       backendProcess = spawn(npmCmd, ['run', 'dev'], {
         cwd: __dirname,
@@ -67,12 +71,12 @@ async function startBackend() {
     }
 
     backendProcess.on('error', (err) => {
-      console.error('Falha ao iniciar processo backend:', err);
+      console.error('[Backend] Falha ao iniciar processo backend:', err);
     });
 
     backendProcess.on('exit', (code, signal) => {
       if (!isQuitting) {
-        console.log(`Backend process exited with code ${code} and signal ${signal}`);
+        console.log(`[Backend] Process exited with code ${code} and signal ${signal}`);
       }
     });
   } else {
