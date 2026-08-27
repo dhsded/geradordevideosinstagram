@@ -5,6 +5,8 @@ import os from "os";
 import { exec } from "child_process";
 import JSZip from "jszip";
 import { createServer as createViteServer } from "vite";
+
+const _currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { keysManager } from "./keys-manager";
@@ -1621,10 +1623,10 @@ Analise cada imagem abaixo e distribua entre os projetos identificados:`;
     }
   } else {
     // Determinar caminho correto de arquivos estáticos em produção
-    let distPath = path.join(__dirname, 'dist');
+    let distPath = path.join(_currentDir, 'dist');
     if (!fs.existsSync(path.join(distPath, 'index.html'))) {
-      if (fs.existsSync(path.join(__dirname, 'index.html'))) {
-        distPath = __dirname;
+      if (fs.existsSync(path.join(_currentDir, 'index.html'))) {
+        distPath = _currentDir;
       } else if (fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'))) {
         distPath = path.join(process.cwd(), 'dist');
       }

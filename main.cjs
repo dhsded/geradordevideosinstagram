@@ -44,26 +44,27 @@ async function startBackend() {
   }
 
   if (isDev) {
-    console.log('🚀 Starting backend server directly with tsx...');
-    // No Windows, executar npx.cmd diretamente evita overhead de múltiplos shells do npm
-    const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    backendProcess = spawn(cmd, ['tsx', 'server.ts'], {
-      cwd: __dirname,
-      env: { ...process.env, FORCE_COLOR: 'true' },
-      stdio: 'inherit',
-      shell: false
-    });
-
-    backendProcess.on('error', (err) => {
-      console.error('Falha ao iniciar processo backend com tsx, tentando fallback:', err);
-      // Fallback para npm run dev caso npx falhe
-      const fallbackCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      backendProcess = spawn(fallbackCmd, ['run', 'dev'], {
+    console.log('🚀 Starting backend server in development mode...');
+    const tsxCli = path.join(__dirname, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+    if (fs.existsSync(tsxCli)) {
+      backendProcess = spawn('node', [tsxCli, 'server.ts'], {
+        cwd: __dirname,
+        env: { ...process.env, FORCE_COLOR: 'true' },
+        stdio: 'inherit',
+        shell: process.platform === 'win32'
+      });
+    } else {
+      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      backendProcess = spawn(npmCmd, ['run', 'dev'], {
         cwd: __dirname,
         env: { ...process.env, FORCE_COLOR: 'true' },
         stdio: 'inherit',
         shell: true
       });
+    }
+
+    backendProcess.on('error', (err) => {
+      console.error('Falha ao iniciar processo backend:', err);
     });
 
     backendProcess.on('exit', (code, signal) => {

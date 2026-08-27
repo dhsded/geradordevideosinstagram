@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+const _currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+
 export interface GeminiKey {
   id: string;
   key: string;
@@ -30,8 +32,8 @@ function getKeysFilePath(): string {
   const candidateSeedPaths = [
     path.join(process.cwd(), 'keys.json'),
     (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'keys.json') : null,
-    path.join(__dirname, 'keys.json'),
-    path.join(__dirname, '..', 'keys.json'),
+    path.join(_currentDir, 'keys.json'),
+    path.join(_currentDir, '..', 'keys.json'),
   ].filter(Boolean) as string[];
 
   for (const seed of candidateSeedPaths) {

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+const _currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+
 export interface OpenRouterKey {
   id: string;
   key: string;
@@ -32,8 +34,8 @@ function getOpenRouterKeysFilePath(): string {
   const candidateSeedPaths = [
     path.join(process.cwd(), 'openrouter-keys.json'),
     (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'openrouter-keys.json') : null,
-    path.join(__dirname, 'openrouter-keys.json'),
-    path.join(__dirname, '..', 'openrouter-keys.json'),
+    path.join(_currentDir, 'openrouter-keys.json'),
+    path.join(_currentDir, '..', 'openrouter-keys.json'),
   ].filter(Boolean) as string[];
 
   for (const seed of candidateSeedPaths) {

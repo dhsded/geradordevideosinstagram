@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+const _currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+
 export interface GroqKey {
   id: string;
   key: string;
@@ -37,8 +39,8 @@ function getGroqKeysFilePath(): string {
   const candidateSeedPaths = [
     path.join(process.cwd(), 'groq-keys.json'),
     (process as any).resourcesPath ? path.join((process as any).resourcesPath, 'groq-keys.json') : null,
-    path.join(__dirname, 'groq-keys.json'),
-    path.join(__dirname, '..', 'groq-keys.json'),
+    path.join(_currentDir, 'groq-keys.json'),
+    path.join(_currentDir, '..', 'groq-keys.json'),
   ].filter(Boolean) as string[];
 
   for (const seed of candidateSeedPaths) {
