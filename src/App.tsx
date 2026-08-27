@@ -3584,6 +3584,9 @@ export default function App() {
     const modelName = activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel);
     addLog('ai', 'GERADOR', `Iniciando geração de ${activeTab === 'script' ? 'Roteiro de Vídeo' : 'Carrossel'} (Nicho: ${niche}, Idioma: ${dialogueLanguage.toUpperCase()}) via ${activeProvider.toUpperCase()} (${modelName})...`);
 
+    const genStartTime = Date.now();
+    let timerInterval: any = null;
+
     try {
       const hasManualTopic = topic.trim().length > 0;
       const temaFinal = hasManualTopic 
