@@ -514,10 +514,10 @@ export default function App() {
   // Constantes de Modelos de I.A
   const POPULAR_OPENROUTER_MODELS = [
     {
-      id: 'minimax/minimax-m3:free',
-      name: 'MiniMax M3 (Free)',
-      tag: 'Criatividade & Roteiros • Gratuito',
-      desc: 'Excelente capacidade para escrita criativa e ganchos em português'
+      id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+      name: 'NVIDIA Nemotron 3 Ultra (Free)',
+      tag: '550B Parâmetros • Gratuito',
+      desc: 'Ultra alta capacidade para narrativas complexas e adaptações profundas'
     },
     {
       id: 'google/gemma-4-26b-a4b-it:free',
@@ -526,34 +526,16 @@ export default function App() {
       desc: 'Modelo avançado do Google com raciocínio e síntese rápidos'
     },
     {
-      id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-      name: 'NVIDIA Nemotron 3 Ultra 550B (Free)',
-      tag: '550B Parâmetros • Gratuito',
-      desc: 'Ultra alta capacidade para narrativas complexas e adaptações profundas'
-    },
-    {
-      id: 'nvidia/nemotron-3.5-lightning:free',
-      name: 'NVIDIA Nemotron 3.5 Lightning (Free)',
-      tag: 'Ultrarrápido • Gratuito',
-      desc: 'Velocidade instantânea para geração de roteiros dinâmicos'
-    },
-    {
-      id: 'nvidia/nemotron-3-super:free',
-      name: 'NVIDIA Nemotron 3 Super (Free)',
-      tag: 'Alta Performance • Gratuito',
-      desc: 'Equilíbrio ideal entre inteligência de escrita e tempo de resposta'
-    },
-    {
       id: 'deepseek/deepseek-r1:free',
       name: 'DeepSeek R1 (Free)',
       tag: 'Raciocínio Lógico • Gratuito',
       desc: 'Excelente para análises e estruturação de carrosséis educativos'
     },
     {
-      id: 'meta-llama/llama-3.3-70b-instruct:free',
-      name: 'Meta Llama 3.3 70B Instruct (Free)',
-      tag: 'Robusto & Criativo • Gratuito',
-      desc: 'Muito criativo para ganchos virais e copywriting de engajamento'
+      id: 'minimax/minimax-m3:free',
+      name: 'MiniMax M3 (Free)',
+      tag: 'Criatividade & Roteiros • Gratuito',
+      desc: 'Excelente capacidade para escrita criativa e ganchos em português'
     },
     {
       id: 'google/gemini-2.0-flash-exp:free',
@@ -564,13 +546,10 @@ export default function App() {
   ];
 
   const GEMINI_AVAILABLE_MODELS = [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Padrão Recomendado)' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Padrão Recomendado - Ultra Rápido)' },
     { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Mais Recente)' },
-    { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash' },
-    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Ultraleve)' },
-    { id: 'gemini-flash-latest', name: 'Gemini Flash Latest' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Alta Capacidade)' },
+    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Ultraleve)' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Alta Capacidade / Raciocínio)' },
   ];
 
   // Estados da Central de I.As e Provedores
@@ -2583,16 +2562,20 @@ export default function App() {
       link.click();
       URL.revokeObjectURL(url);
     } else if (activeTab === 'carousel' && (batchCarouselResults.length > 0 || carouselResult)) {
-      if (batchCarouselResults.length > 1) {
+      const listToExport = batchCarouselResults && batchCarouselResults.length > 1 
+        ? batchCarouselResults 
+        : (carouselResult ? [carouselResult] : []);
+
+      if (listToExport.length > 1) {
         let content = `====================================================\n`;
-        content += `   POSTFORGE - LOTE DE ${batchCarouselResults.length} CARROSSÉIS ESTRUTURADOS\n`;
+        content += `   POSTFORGE - LOTE DE ${listToExport.length} CARROSSÉIS ESTRUTURADOS\n`;
         content += `====================================================\n\n`;
 
-        batchCarouselResults.forEach((car, cIdx) => {
+        listToExport.forEach((car, cIdx) => {
           const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
-          const isEn = car.language === 'en' || (car.slides[0]?.textInBubblesEn && !car.slides[0]?.textInBubblesPt && !car.slides[0]?.textInBubblesEs);
-          const isEs = car.language === 'es' || (car.slides[0]?.textInBubblesEs && !car.slides[0]?.textInBubblesPt && !car.slides[0]?.textInBubblesEn);
-          const isAll = car.language === 'all' || (car.slides[0]?.textInBubblesPt && car.slides[0]?.textInBubblesEn && car.slides[0]?.textInBubblesEs);
+          const isEn = car.language === 'en' || (car.slides?.[0]?.textInBubblesEn && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEs);
+          const isEs = car.language === 'es' || (car.slides?.[0]?.textInBubblesEs && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEn);
+          const isAll = car.language === 'all' || (car.slides?.[0]?.textInBubblesPt && car.slides?.[0]?.textInBubblesEn && car.slides?.[0]?.textInBubblesEs);
 
           content += `####################################################\n`;
           content += `PROJETO ${cIdx + 1}: ${cTitle.toUpperCase()}\n`;
@@ -2602,242 +2585,301 @@ export default function App() {
             content += `--- SLIDE ${slide.slideNumber} ---\n`;
             content += `Descrição da Cena: ${slide.descriptionPt}\n`;
             if (isEn) {
-              content += `Texto no Balão (EN): "${slide.textInBubblesEn || slide.textInBubbles}"\n`;
+              content += `Texto no Balão (EN): "${slide.textInBubblesEn || slide.textInBubbles || ''}"\n`;
             } else if (isEs) {
-              content += `Texto no Balão (ES): "${slide.textInBubblesEs || slide.textInBubbles}"\n`;
+              content += `Texto no Balão (ES): "${slide.textInBubblesEs || slide.textInBubbles || ''}"\n`;
             } else if (isAll) {
-              content += `Texto no Balão (PT): "${slide.textInBubblesPt}"\n`;
-              content += `Texto no Balão (EN): "${slide.textInBubblesEn}"\n`;
-              content += `Texto no Balão (ES): "${slide.textInBubblesEs}"\n`;
+              content += `Texto no Balão (PT): "${slide.textInBubblesPt || ''}"\n`;
+              content += `Texto no Balão (EN): "${slide.textInBubblesEn || ''}"\n`;
+              content += `Texto no Balão (ES): "${slide.textInBubblesEs || ''}"\n`;
             } else {
-              content += `Texto no Balão (PT): "${slide.textInBubblesPt || slide.textInBubbles}"\n`;
+              content += `Texto no Balão (PT): "${slide.textInBubblesPt || slide.textInBubbles || ''}"\n`;
             }
-            content += `[PROMPT MIDJOURNEY / DALL-E]:\n${slide.imagePromptEn}\n\n`;
+            content += `[PROMPT MIDJOURNEY / DALL-E]:\n${slide.imagePromptEn || ''}\n\n`;
           });
 
           content += `--- LEGENDA DO INSTAGRAM ---\n`;
-          content += `${car.instagramPost}\n\n\n`;
+          content += `${car.instagramPost || ''}\n\n\n`;
         });
 
+        const filename = `lote_${listToExport.length}_carrosseis_postforge.txt`;
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `lote_${batchCarouselResults.length}_carrosseis_postforge.txt`;
+        link.download = filename;
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        addLog('success', 'DOWNLOAD', `Arquivo TXT (${listToExport.length} carrosséis) exportado com sucesso: ${filename}`);
       } else if (carouselResult) {
-        const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
-        const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
-        const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+        const isEn = carouselResult.language === 'en' || (carouselResult.slides?.[0]?.textInBubblesEn && !carouselResult.slides?.[0]?.textInBubblesPt && !carouselResult.slides?.[0]?.textInBubblesEs);
+        const isEs = carouselResult.language === 'es' || (carouselResult.slides?.[0]?.textInBubblesEs && !carouselResult.slides?.[0]?.textInBubblesPt && !carouselResult.slides?.[0]?.textInBubblesEn);
+        const isAll = carouselResult.language === 'all' || (carouselResult.slides?.[0]?.textInBubblesPt && carouselResult.slides?.[0]?.textInBubblesEn && carouselResult.slides?.[0]?.textInBubblesEs);
 
         let content = `--- CARROSSEL INSTAGRAM: ${carouselResult.title || 'POSTFORGE'} ---\n\n`;
         
         carouselResult.slides?.forEach((slide) => {
           content += `SLIDE ${slide.slideNumber}\n`;
-          content += `Descrição: ${slide.descriptionPt}\n`;
+          content += `Descrição: ${slide.descriptionPt || ''}\n`;
           if (isEn) {
-            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles}\n\n`;
+            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles || ''}\n\n`;
           } else if (isEs) {
-            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles}\n\n`;
+            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles || ''}\n\n`;
           } else if (isAll) {
-            content += `Texto nos Balões (PT): ${slide.textInBubblesPt}\n`;
-            content += `Texto nos Balões (EN): ${slide.textInBubblesEn}\n`;
-            content += `Texto nos Balões (ES): ${slide.textInBubblesEs}\n\n`;
+            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || ''}\n`;
+            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || ''}\n`;
+            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || ''}\n\n`;
           } else {
-            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles}\n\n`;
+            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles || ''}\n\n`;
           }
           content += `[PROMPT DE IMAGEM - INGLÊS]\n`;
-          content += `${slide.imagePromptEn}\n\n`;
+          content += `${slide.imagePromptEn || ''}\n\n`;
           content += `=========================================\n\n`;
         });
 
         content += `--- LEGENDA INSTAGRAM ---\n\n`;
-        content += carouselResult.instagramPost;
+        content += carouselResult.instagramPost || '';
 
+        const filename = `carrossel_${(carouselResult.title || 'postforge').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()}.txt`;
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `carrossel_postforge.txt`;
+        link.download = filename;
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        addLog('success', 'DOWNLOAD', `Arquivo TXT exportado com sucesso: ${filename}`);
       }
     }
   };
 
   const exportAsPDF = () => {
-    const doc = new jsPDF();
-    let yPos = 20;
-    const margin = 20;
-    const pageWidth = doc.internal.pageSize.width;
-    const pageHeight = doc.internal.pageSize.height;
-    const maxLineWidth = pageWidth - margin * 2;
+    try {
+      const doc = new jsPDF();
+      let yPos = 20;
+      const margin = 15;
+      const pageWidth = doc.internal.pageSize.width;
+      const pageHeight = doc.internal.pageSize.height;
+      const maxLineWidth = pageWidth - margin * 2;
 
-    const addText = (text: string, fontSize: number, isBold: boolean = false, textColor: [number, number, number] = [0,0,0]) => {
-      if (!text) return;
-      doc.setFontSize(fontSize);
-      doc.setFont("helvetica", isBold ? "bold" : "normal");
-      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-      
-      const lines = doc.splitTextToSize(text, maxLineWidth);
-      const lineHeight = fontSize * 0.4 + 1.5;
+      const addText = (text: string, fontSize: number, isBold: boolean = false, textColor: [number, number, number] = [0,0,0]) => {
+        if (!text) return;
+        doc.setFontSize(fontSize);
+        doc.setFont("helvetica", isBold ? "bold" : "normal");
+        doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+        
+        const lines = doc.splitTextToSize(String(text), maxLineWidth);
+        const lineHeight = fontSize * 0.45 + 1.5;
 
-      for (const line of lines) {
-        if (yPos + lineHeight > pageHeight - margin) {
-          doc.addPage();
-          yPos = margin;
+        for (const line of lines) {
+          if (yPos + lineHeight > pageHeight - margin) {
+            doc.addPage();
+            yPos = margin;
+          }
+          doc.text(line, margin, yPos);
+          yPos += lineHeight;
         }
-        doc.text(line, margin, yPos);
-        yPos += lineHeight;
+        yPos += 2;
+      };
+
+      if (activeTab === 'script' && result) {
+        const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
+        const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
+        const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
+
+        addText("ROTEIRO GERADO - POSTFORGE", 18, true, [30, 41, 59]);
+        addText(`Nicho: ${niche.toUpperCase()}`, 11, true, [99, 102, 241]);
+        yPos += 3;
+        
+        addText("PROMPT DA IMAGEM DE CAPA", 12, true, [79, 70, 229]);
+        addText(result.nanoBananaImagePrompt, 10);
+        yPos += 4;
+
+        result.scenes?.forEach((scene) => {
+          addText(`CENA ${scene.sceneNumber} (${scene.duration}s)`, 13, true, [15, 23, 42]);
+          addText("Contexto:", 10, true, [100, 116, 139]);
+          addText(scene.contextPt, 10);
+          addText("Prompt de Vídeo (EN):", 10, true, [16, 185, 129]);
+          addText(scene.videoPromptEn, 10);
+          addText("Falas / Diálogo:", 10, true, [234, 88, 12]);
+          if (isEn) {
+            addText(`EN: ${scene.dialogueEn || scene.dialogue || ''}`, 10);
+          } else if (isEs) {
+            addText(`ES: ${scene.dialogueEs || scene.dialogue || ''}`, 10);
+          } else if (isAll) {
+            addText(`PT: ${scene.dialoguePt || ''}`, 10);
+            addText(`EN: ${scene.dialogueEn || ''}`, 10);
+            addText(`ES: ${scene.dialogueEs || ''}`, 10);
+          } else {
+            addText(`PT: ${scene.dialoguePt || scene.dialogue || ''}`, 10);
+          }
+          yPos += 3;
+        });
+
+        addText("LEGENDA DO INSTAGRAM", 13, true, [217, 70, 239]);
+        addText(result.instagramPost, 10);
+        doc.save("roteiro_postforge.pdf");
+        addLog('success', 'DOWNLOAD', 'Arquivo PDF do roteiro exportado com sucesso: roteiro_postforge.pdf');
+
+      } else if (activeTab === 'carousel' && (batchCarouselResults.length > 0 || carouselResult)) {
+        const listToExport = batchCarouselResults && batchCarouselResults.length > 1 
+          ? batchCarouselResults 
+          : (carouselResult ? [carouselResult] : []);
+
+        const isBatch = listToExport.length > 1;
+
+        listToExport.forEach((car, cIdx) => {
+          if (cIdx > 0) {
+            doc.addPage();
+            yPos = margin;
+          }
+
+          const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+          const isEn = car.language === 'en' || (car.slides?.[0]?.textInBubblesEn && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEs);
+          const isEs = car.language === 'es' || (car.slides?.[0]?.textInBubblesEs && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEn);
+          const isAll = car.language === 'all' || (car.slides?.[0]?.textInBubblesPt && car.slides?.[0]?.textInBubblesEn && car.slides?.[0]?.textInBubblesEs);
+
+          addText(isBatch ? `CARROSSEL ${cIdx + 1}: ${cTitle.toUpperCase()}` : `CARROSSEL: ${cTitle.toUpperCase()}`, 16, true, [30, 41, 59]);
+          addText(`Estilo: ${artStyle.toUpperCase()} | Nicho: ${niche.toUpperCase()}`, 10, true, [99, 102, 241]);
+          yPos += 3;
+
+          car.slides?.forEach((slide) => {
+            addText(`SLIDE ${slide.slideNumber}`, 12, true, [15, 23, 42]);
+            addText("Descrição Visual:", 9, true, [100, 116, 139]);
+            addText(slide.descriptionPt || '', 9);
+            
+            addText("Texto nos Balões:", 9, true, [37, 99, 235]);
+            if (isEn) {
+              addText(`EN: "${slide.textInBubblesEn || slide.textInBubbles || ''}"`, 9);
+            } else if (isEs) {
+              addText(`ES: "${slide.textInBubblesEs || slide.textInBubbles || ''}"`, 9);
+            } else if (isAll) {
+              addText(`PT: "${slide.textInBubblesPt || ''}"`, 9);
+              addText(`EN: "${slide.textInBubblesEn || ''}"`, 9);
+              addText(`ES: "${slide.textInBubblesEs || ''}"`, 9);
+            } else {
+              addText(`PT: "${slide.textInBubblesPt || slide.textInBubbles || ''}"`, 9);
+            }
+
+            addText("Prompt de Imagem (Midjourney / Dall-E):", 9, true, [5, 150, 105]);
+            addText(slide.imagePromptEn || '', 9);
+            yPos += 2;
+          });
+
+          addText("LEGENDA DO INSTAGRAM", 12, true, [217, 70, 239]);
+          addText(car.instagramPost || '', 9);
+        });
+
+        const filename = isBatch ? `lote_${listToExport.length}_carrosseis_postforge.pdf` : `carrossel_postforge.pdf`;
+        doc.save(filename);
+        addLog('success', 'DOWNLOAD', `Arquivo PDF (${listToExport.length} carrosséis) exportado com sucesso: ${filename}`);
       }
-      yPos += 3;
-    };
-
-    if (activeTab === 'script' && result) {
-      const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
-      const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
-      const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
-
-      addText("ROTEIRO GERADO - POSTFORGE", 18, true);
-      yPos += 3;
-      
-      addText("PROMPT DA IMAGEM DE CAPA", 12, true, [100, 100, 200]);
-      addText(result.nanoBananaImagePrompt, 10);
-      yPos += 5;
-
-      result.scenes?.forEach((scene) => {
-        addText(`CENA ${scene.sceneNumber} (${scene.duration}s)`, 14, true);
-        addText("Contexto:", 10, true, [100, 100, 100]);
-        addText(scene.contextPt, 10);
-        addText("Prompt de Vídeo (EN):", 10, true, [50, 150, 50]);
-        addText(scene.videoPromptEn, 10);
-        addText("Falas / Diálogo:", 10, true, [200, 100, 50]);
-        if (isEn) {
-          addText(`EN: ${scene.dialogueEn || scene.dialogue}`, 10);
-        } else if (isEs) {
-          addText(`ES: ${scene.dialogueEs || scene.dialogue}`, 10);
-        } else if (isAll) {
-          addText(`PT: ${scene.dialoguePt}`, 10);
-          addText(`EN: ${scene.dialogueEn}`, 10);
-          addText(`ES: ${scene.dialogueEs}`, 10);
-        } else {
-          addText(`PT: ${scene.dialoguePt || scene.dialogue}`, 10);
-        }
-        yPos += 4;
-      });
-
-      addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
-      addText(result.instagramPost, 10);
-      doc.save("roteiro_postforge.pdf");
-
-    } else if (activeTab === 'carousel' && carouselResult) {
-      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
-      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
-      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
-
-      addText("CARROSSEL INSTAGRAM - POSTFORGE", 18, true);
-      addText(`ESTILO: ${artStyle}`, 12, true, [100, 100, 100]);
-      yPos += 3;
-
-      carouselResult.slides?.forEach((slide) => {
-        addText(`SLIDE ${slide.slideNumber}`, 14, true);
-        addText("Descrição:", 10, true, [100, 100, 100]);
-        addText(slide.descriptionPt, 10);
-        addText("Texto nos Balões:", 10, true, [50, 50, 200]);
-        if (isEn) {
-          addText(`EN: ${slide.textInBubblesEn || slide.textInBubbles}`, 10);
-        } else if (isEs) {
-          addText(`ES: ${slide.textInBubblesEs || slide.textInBubbles}`, 10);
-        } else if (isAll) {
-          addText(`PT: ${slide.textInBubblesPt}`, 10);
-          addText(`EN: ${slide.textInBubblesEn}`, 10);
-          addText(`ES: ${slide.textInBubblesEs}`, 10);
-        } else {
-          addText(`PT: ${slide.textInBubblesPt || slide.textInBubbles}`, 10);
-        }
-        addText("Prompt de Imagem (EN):", 10, true, [50, 150, 50]);
-        addText(slide.imagePromptEn, 10);
-        yPos += 4;
-      });
-
-      addText("INSTAGRAM POST", 14, true, [180, 50, 150]);
-      addText(carouselResult.instagramPost, 10);
-      doc.save("carrossel_postforge.pdf");
+    } catch (pdfErr: any) {
+      console.error("PDF Export Error:", pdfErr);
+      addLog('error', 'DOWNLOAD', `Erro ao gerar PDF: ${pdfErr.message}`);
     }
   };
 
   const exportAsDOCX = async () => {
-    const children: any[] = [];
+    try {
+      const children: any[] = [];
 
-    if (activeTab === 'script' && result) {
-      const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
-      const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
-      const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
+      if (activeTab === 'script' && result) {
+        const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
+        const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
+        const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
 
-      children.push(new Paragraph({ text: "ROTEIRO GERADO - POSTFORGE", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
-      children.push(new Paragraph({ text: `Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem de Capa: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
-      
-      result.scenes?.forEach((scene) => {
+        children.push(new Paragraph({ text: "ROTEIRO GERADO - POSTFORGE", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
+        children.push(new Paragraph({ text: `Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem de Capa: ", bold: true }), new TextRun({ text: result.nanoBananaImagePrompt || '' })] }));
+        
+        result.scenes?.forEach((scene) => {
+          children.push(new Paragraph({ text: "" }));
+          children.push(new Paragraph({ text: `CENA ${scene.sceneNumber} (${scene.duration}s)`, heading: HeadingLevel.HEADING_3 }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Contexto: ", bold: true }), new TextRun({ text: scene.contextPt || '' })] }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Vídeo: ", bold: true }), new TextRun({ text: scene.videoPromptEn || '' })] }));
+          if (isEn) {
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || scene.dialogue || '' })] }));
+          } else if (isEs) {
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || scene.dialogue || '' })] }));
+          } else if (isAll) {
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || '' })] }));
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || '' })] }));
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || '' })] }));
+          } else {
+            children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || scene.dialogue || '' })] }));
+          }
+        });
+
         children.push(new Paragraph({ text: "" }));
-        children.push(new Paragraph({ text: `CENA ${scene.sceneNumber} (${scene.duration}s)`, heading: HeadingLevel.HEADING_3 }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Contexto: ", bold: true }), new TextRun({ text: scene.contextPt || '' })] }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Vídeo: ", bold: true }), new TextRun({ text: scene.videoPromptEn || '' })] }));
-        if (isEn) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || scene.dialogue || '' })] }));
-        } else if (isEs) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || scene.dialogue || '' })] }));
-        } else if (isAll) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || '' })] }));
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEn || '' })] }));
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialogueEs || '' })] }));
-        } else {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Narração (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: scene.dialoguePt || scene.dialogue || '' })] }));
-        }
-      });
+        children.push(new Paragraph({ text: "Legenda Instagram", heading: HeadingLevel.HEADING_2 }));
+        children.push(new Paragraph({ text: result.instagramPost || '' }));
 
-      children.push(new Paragraph({ text: "" }));
-      children.push(new Paragraph({ text: "Legenda Instagram", heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ text: result.instagramPost || '' }));
+        const docx = new Document({ sections: [{ children }] });
+        const blob = await Packer.toBlob(docx);
+        saveAs(blob, "roteiro_gerado.docx");
+        addLog('success', 'DOWNLOAD', 'Arquivo Word (.DOCX) exportado com sucesso: roteiro_gerado.docx');
 
-    } else if (activeTab === 'carousel' && carouselResult) {
-      const isEn = carouselResult.language === 'en' || (carouselResult.slides[0]?.textInBubblesEn && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEs);
-      const isEs = carouselResult.language === 'es' || (carouselResult.slides[0]?.textInBubblesEs && !carouselResult.slides[0]?.textInBubblesPt && !carouselResult.slides[0]?.textInBubblesEn);
-      const isAll = carouselResult.language === 'all' || (carouselResult.slides[0]?.textInBubblesPt && carouselResult.slides[0]?.textInBubblesEn && carouselResult.slides[0]?.textInBubblesEs);
+      } else if (activeTab === 'carousel' && (batchCarouselResults.length > 0 || carouselResult)) {
+        const listToExport = batchCarouselResults && batchCarouselResults.length > 1 
+          ? batchCarouselResults 
+          : (carouselResult ? [carouselResult] : []);
 
-      children.push(new Paragraph({ text: "CARROSSEL GERADO", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }));
-      children.push(new Paragraph({ text: `Estilo: ${artStyle.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
+        const isBatch = listToExport.length > 1;
 
-      carouselResult.slides?.forEach((slide) => {
-        children.push(new Paragraph({ text: "" }));
-        children.push(new Paragraph({ text: `SLIDE ${slide.slideNumber}`, heading: HeadingLevel.HEADING_3 }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Descrição: ", bold: true }), new TextRun({ text: slide.descriptionPt || '' })] }));
-        if (isEn) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || slide.textInBubbles || '' })] }));
-        } else if (isEs) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || slide.textInBubbles || '' })] }));
-        } else if (isAll) {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
-        } else {
-          children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "3333FF" }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
-        }
-        children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem: ", bold: true }), new TextRun({ text: slide.imagePromptEn || '' })] }));
-      });
+        children.push(new Paragraph({ 
+          text: isBatch ? `LOTE DE ${listToExport.length} CARROSSÉIS ESTRUTURADOS - POSTFORGE` : "CARROSSEL GERADO - POSTFORGE", 
+          heading: HeadingLevel.HEADING_1, 
+          alignment: AlignmentType.CENTER 
+        }));
+        children.push(new Paragraph({ text: `Estilo: ${artStyle.toUpperCase()} | Nicho: ${niche.toUpperCase()}`, heading: HeadingLevel.HEADING_2 }));
 
-      children.push(new Paragraph({ text: "" }));
-      children.push(new Paragraph({ text: "Legenda Instagram", heading: HeadingLevel.HEADING_2 }));
-      children.push(new Paragraph({ text: carouselResult.instagramPost || '' }));
-    }
+        listToExport.forEach((car, cIdx) => {
+          const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+          const isEn = car.language === 'en' || (car.slides?.[0]?.textInBubblesEn && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEs);
+          const isEs = car.language === 'es' || (car.slides?.[0]?.textInBubblesEs && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEn);
+          const isAll = car.language === 'all' || (car.slides?.[0]?.textInBubblesPt && car.slides?.[0]?.textInBubblesEn && car.slides?.[0]?.textInBubblesEs);
 
-    if (children.length > 0) {
-      const docx = new Document({
-        sections: [{ children }]
-      });
-      const blob = await Packer.toBlob(docx);
-      saveAs(blob, activeTab === 'script' ? "roteiro_gerado.docx" : "carrossel_gerado.docx");
+          children.push(new Paragraph({ text: "" }));
+          children.push(new Paragraph({ text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, heading: HeadingLevel.HEADING_3 }));
+          children.push(new Paragraph({ text: isBatch ? `PROJETO ${cIdx + 1}: ${cTitle.toUpperCase()}` : cTitle.toUpperCase(), heading: HeadingLevel.HEADING_2 }));
+
+          car.slides?.forEach((slide) => {
+            children.push(new Paragraph({ text: "" }));
+            children.push(new Paragraph({ text: `SLIDE ${slide.slideNumber}`, heading: HeadingLevel.HEADING_3 }));
+            children.push(new Paragraph({ children: [new TextRun({ text: "Descrição Visual: ", bold: true }), new TextRun({ text: slide.descriptionPt || '' })] }));
+            if (isEn) {
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEn || slide.textInBubbles || '' })] }));
+            } else if (isEs) {
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEs || slide.textInBubbles || '' })] }));
+            } else if (isAll) {
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
+            } else {
+              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
+            }
+            children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem (Midjourney / Dall-E): ", bold: true, color: "059669" }), new TextRun({ text: slide.imagePromptEn || '' })] }));
+          });
+
+          children.push(new Paragraph({ text: "" }));
+          children.push(new Paragraph({ text: "Legenda Instagram:", heading: HeadingLevel.HEADING_3 }));
+          children.push(new Paragraph({ text: car.instagramPost || '' }));
+        });
+
+        const filename = isBatch ? `lote_${listToExport.length}_carrosseis_postforge.docx` : `carrossel_gerado.docx`;
+        const docx = new Document({ sections: [{ children }] });
+        const blob = await Packer.toBlob(docx);
+        saveAs(blob, filename);
+        addLog('success', 'DOWNLOAD', `Arquivo Word (.DOCX) exportado com sucesso: ${filename}`);
+      }
+    } catch (docxErr: any) {
+      console.error("DOCX Export Error:", docxErr);
+      addLog('error', 'DOWNLOAD', `Erro ao gerar DOCX: ${docxErr.message}`);
     }
   };
 
@@ -3379,8 +3421,16 @@ export default function App() {
       const data = await response.json();
       if (!data.text) throw new Error('Sem resposta da API.');
 
+      if (Array.isArray(data.logs) && data.logs.length > 0) {
+        data.logs.forEach((l: any) => {
+          addLog(l.level || 'info', l.category || 'IA', l.message);
+        });
+      }
+
+      const totalSeconds = ((Date.now() - genStartTime) / 1000).toFixed(1);
+
       if (data.failoverUsed) {
-        addLog('warning', 'FAILOVER', `Failover ativado: alternado automaticamente de ${data.originalProvider} para ${data.provider} (${data.failoverReason})`);
+        addLog('warning', 'FAILOVER', `⚡ Failover ativado: alternado de ${data.originalProvider} para ${data.provider} (${data.failoverReason})`);
         setLastGenerationMeta({
           provider: data.provider,
           model: data.model,
@@ -3418,7 +3468,7 @@ export default function App() {
           });
         }
         setResult(jsonResult);
-        addLog('success', 'GERADOR', `Roteiro de vídeo gerado com sucesso (${jsonResult.scenes?.length || 0} cenas) via ${data.provider.toUpperCase()} (${data.model})!`);
+        addLog('success', 'GERADOR', `✅ Roteiro de vídeo gerado em ${totalSeconds}s (${jsonResult.scenes?.length || 0} cenas) via ${data.provider.toUpperCase()} (${data.model})!`);
       } else {
         if (jsonResult && jsonResult.carousels && Array.isArray(jsonResult.carousels) && jsonResult.carousels.length > 0) {
           const list = jsonResult.carousels.map((car: any, idx: number) => {
@@ -3440,7 +3490,7 @@ export default function App() {
           setBatchCarouselResults(list);
           setCarouselResult(list[0]);
           setActiveCarouselIndex(0);
-          addLog('success', 'GERADOR', `Lote de ${list.length} carrosséis gerado com sucesso via ${data.provider.toUpperCase()} (${data.model})!`);
+          addLog('success', 'GERADOR', `✅ Lote de ${list.length} carrosséis gerado em ${totalSeconds}s via ${data.provider.toUpperCase()} (${data.model})!`);
         } else if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
           jsonResult.title = jsonResult.title || topic || 'Carrossel';
           jsonResult.language = dialogueLanguage;
@@ -3456,7 +3506,7 @@ export default function App() {
           setBatchCarouselResults([jsonResult]);
           setCarouselResult(jsonResult);
           setActiveCarouselIndex(0);
-          addLog('success', 'GERADOR', `Carrossel gerado com sucesso (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
+          addLog('success', 'GERADOR', `✅ Carrossel gerado em ${totalSeconds}s (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
         }
       }
     } catch (err: any) {
@@ -3468,6 +3518,7 @@ export default function App() {
       setError(err.message || 'Ocorreu um erro ao gerar.');
       addLog('error', 'GERADOR', `Falha na geração: ${err.message}`);
     } finally {
+      clearInterval(timerInterval);
       setIsLoading(false);
       abortControllerRef.current = null;
     }
@@ -6005,21 +6056,21 @@ export default function App() {
 
               {/* Seletor de Carrosséis em Lote (se houver mais de 1 carrossel gerado) */}
               {batchCarouselResults && batchCarouselResults.length > 1 && (
-                <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shrink-0">
-                        <Layers className="w-4 h-4" />
+                <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center border border-indigo-500/40 shrink-0">
+                        <Layers className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-sm font-bold text-white">Lote de Carrosséis Gerados ({batchCarouselResults.length})</h3>
-                          <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-black rounded-full">
-                            Carrossel {activeCarouselIndex + 1} de {batchCarouselResults.length}
+                          <h3 className="text-sm md:text-base font-black text-white">Lote de Carrosséis Gerados ({batchCarouselResults.length})</h3>
+                          <span className="px-2.5 py-0.5 bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 text-[11px] font-black rounded-full shadow-xs">
+                            Ativo: {activeCarouselIndex + 1} de {batchCarouselResults.length}
                           </span>
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
-                          Alterne entre os carrosséis gerados ou envie todos diretamente para a esteira de Auditoria Visual.
+                          Clique em um carrossel abaixo para inspecionar ou exportar todo o lote de uma vez.
                         </p>
                       </div>
                     </div>
@@ -6028,17 +6079,17 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleSendAllCarouselsToAudit}
-                        className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-lg transition flex items-center gap-2 cursor-pointer border border-indigo-400/40"
                         title="Enviar todos os roteiros para a esteira de Auditoria e Separação de Imagens"
                       >
-                        <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                        <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
                         <span>⚡ Enviar Todos para Auditoria ({batchCarouselResults.length})</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Abas dos Carrosséis */}
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 border-t border-slate-800">
+                  {/* Grade de Abas dos Carrosséis com Distribuição Clara */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                     {batchCarouselResults.map((car, cIdx) => {
                       const isSelected = activeCarouselIndex === cIdx;
                       const title = car.title || car.theme || `Carrossel ${cIdx + 1}`;
@@ -6047,15 +6098,26 @@ export default function App() {
                           key={cIdx}
                           type="button"
                           onClick={() => handleSelectCarouselIndex(cIdx)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 border ${
+                          className={`p-3 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer border ${
                             isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-500/30'
-                              : 'bg-slate-800 text-slate-400 hover:text-slate-200 border-slate-700 hover:bg-slate-700'
+                              ? 'bg-gradient-to-r from-indigo-600 to-purple-700 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/40 font-bold'
+                              : 'bg-slate-800/90 text-slate-300 hover:text-white border-slate-700 hover:border-slate-600 hover:bg-slate-750 font-medium'
                           }`}
                         >
-                          <span>📑 {cIdx + 1}. {title}</span>
-                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-900 text-slate-400'}`}>
-                            {car.slides?.length || 0} slides
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                              isSelected ? 'bg-white/20 text-white' : 'bg-slate-700 text-slate-300'
+                            }`}>
+                              {cIdx + 1}
+                            </span>
+                            <span className="text-xs truncate font-semibold" title={title}>
+                              {title}
+                            </span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono shrink-0 ${
+                            isSelected ? 'bg-black/30 text-indigo-100' : 'bg-slate-900 text-slate-400 border border-slate-700'
+                          }`}>
+                            {car.slides?.length || 0} sl
                           </span>
                         </button>
                       );
@@ -6064,35 +6126,57 @@ export default function App() {
                 </div>
               )}
 
-              {/* Export Actions for Carousel */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-white">
-                    {carouselResult.title ? `📑 ${carouselResult.title}` : '📑 Carrossel Estruturado'}
-                  </h4>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
-                    {carouselResult.slides?.length || 0} Slides
-                  </span>
+              {/* Barra de Ações e Exportação com Alto Contraste */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm md:text-base font-black text-white truncate max-w-md">
+                      {carouselResult.title ? `📑 ${carouselResult.title}` : '📑 Carrossel Estruturado'}
+                    </h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-black rounded-md border border-emerald-500/30">
+                        {carouselResult.slides?.length || 0} Slides
+                      </span>
+                      <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold rounded-md border border-indigo-500/30">
+                        Estilo: {artStyle}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2">
                   {(!batchCarouselResults || batchCarouselResults.length <= 1) && (
                     <button
                       type="button"
                       onClick={handleSendAllCarouselsToAudit}
-                      className="flex items-center gap-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 hover:text-white text-xs font-bold px-3 py-2 rounded-xl border border-indigo-500/40 transition cursor-pointer"
+                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-indigo-500/40 shadow-sm transition cursor-pointer"
                       title="Enviar este roteiro para a Auditoria Visual"
                     >
-                      <Sparkles className="w-3.5 h-3.5" /> Enviar para Auditoria
+                      <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> Enviar para Auditoria
                     </button>
                   )}
-                  <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition cursor-pointer" title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em TXT` : 'Exportar TXT'}>
-                    <FileText className="w-4 h-4" /> {batchCarouselResults.length > 1 ? `TXT (${batchCarouselResults.length} Carrosséis)` : 'TXT'}
+                  <button 
+                    onClick={exportAsTXT} 
+                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-700 hover:border-slate-600 transition cursor-pointer shadow-sm" 
+                    title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em arquivo TXT` : 'Exportar TXT'}
+                  >
+                    <FileText className="w-4 h-4 text-slate-400" /> {batchCarouselResults.length > 1 ? `TXT (${batchCarouselResults.length} Carrosséis)` : 'TXT'}
                   </button>
-                  <button onClick={exportAsDOCX} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-blue-700 transition cursor-pointer">
+                  <button 
+                    onClick={exportAsDOCX} 
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-blue-500 transition cursor-pointer shadow-sm"
+                    title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em Word (.DOCX)` : 'Exportar DOCX'}
+                  >
                     <FileText className="w-4 h-4" /> DOCX
                   </button>
-                  <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer">
+                  <button 
+                    onClick={exportAsPDF} 
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-red-500 transition shadow-sm cursor-pointer"
+                    title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em PDF` : 'Exportar PDF'}
+                  >
                     <Download className="w-4 h-4" /> PDF
                   </button>
                 </div>

@@ -705,7 +705,9 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
         model: result.model,
         failoverUsed: result.failoverUsed,
         originalProvider: result.originalProvider,
-        failoverReason: result.failoverReason
+        failoverReason: result.failoverReason,
+        elapsedMs: result.elapsedMs,
+        logs: result.logs
       });
     } catch (error: any) {
       console.error("Generate Error:", error);
@@ -729,7 +731,9 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
         model: result.model,
         failoverUsed: result.failoverUsed,
         originalProvider: result.originalProvider,
-        failoverReason: result.failoverReason
+        failoverReason: result.failoverReason,
+        elapsedMs: result.elapsedMs,
+        logs: result.logs
       });
     } catch (error: any) {
       console.error("Analyze Error:", error);

@@ -27,6 +27,14 @@ export interface AIAnalyzeOptions {
   model?: string;
 }
 
+export interface AILogEntry {
+  timestamp: string;
+  level: 'info' | 'success' | 'warning' | 'error' | 'ai';
+  category: string;
+  message: string;
+  elapsedSeconds?: number;
+}
+
 export interface AIGenerateResult {
   text: string;
   provider: 'gemini' | 'openrouter';
@@ -34,6 +42,8 @@ export interface AIGenerateResult {
   failoverUsed?: boolean;
   originalProvider?: 'gemini' | 'openrouter';
   failoverReason?: string;
+  elapsedMs?: number;
+  logs?: AILogEntry[];
 }
 
 function maskKeyForLog(key: string): string {
@@ -179,6 +189,19 @@ export class AIService {
    */
   public async generate(options: AIGenerateOptions): Promise<AIGenerateResult> {
     const activeProvider = options.provider || providersManager.getActiveProvider();
+    const collectedLogs: AILogEntry[] = [];
+    const tStart = Date.now();
+
+    const addLocalLog = (level: 'info' | 'success' | 'warning' | 'error' | 'ai', category: string, message: string) => {
+      const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      collectedLogs.push({
+        timestamp: now,
+        level,
+        category,
+        message,
+        elapsedSeconds: Number(((Date.now() - tStart) / 1000).toFixed(1))
+      });
+    };
 
     // 1. Processar PDFs e extrair texto completo de contexto
     const { processedParts, extractedPdfContext } = await this.processInputParts(options.parts || []);
@@ -198,36 +221,74 @@ export class AIService {
 
     if (activeProvider === 'openrouter') {
       try {
-        return await this.generateWithOpenRouter(execOptions);
+        addLocalLog('ai', 'OPENROUTER', `Iniciando geração via OpenRouter (${options.model || 'modelo padrão'})...`);
+        const result = await this.generateWithOpenRouter(execOptions, addLocalLog);
+        const totalElapsed = Date.now() - tStart;
+        addLocalLog('success', 'OPENROUTER', `Geração concluída com sucesso no OpenRouter em ${(totalElapsed / 1000).toFixed(1)}s!`);
+        return {
+          ...result,
+          elapsedMs: totalElapsed,
+          logs: [...collectedLogs, ...(result.logs || [])]
+        };
       } catch (openrouterErr: any) {
-        console.warn(`[Failover] Todas as chaves/modelos do OpenRouter falharam (${openrouterErr.message}). Verificando disponibilidade do Gemini para failover...`);
+        const orElapsed = ((Date.now() - tStart) / 1000).toFixed(1);
+        addLocalLog('warning', 'FAILOVER', `OpenRouter atingiu limite/demora (${orElapsed}s: ${openrouterErr.message}). Alternando imediatamente para Google Gemini...`);
+        console.warn(`[Failover] OpenRouter falhou (${openrouterErr.message}). Verificando Gemini...`);
+
         const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
         if (geminiKeyAvailable) {
-          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para Google Gemini após esgotamento de todas as chaves OpenRouter...`);
-          const geminiResult = await this.generateWithGemini(execOptions);
+          const tGeminiStart = Date.now();
+          const geminiOptions: AIGenerateOptions = {
+            ...execOptions,
+            provider: 'gemini',
+            model: providersManager.getConfig().gemini.preferredModel || 'gemini-2.5-flash'
+          };
+          addLocalLog('ai', 'GEMINI', `Solicitando geração via Google Gemini (${geminiOptions.model})...`);
+          const geminiResult = await this.generateWithGemini(geminiOptions, addLocalLog);
+          const geminiElapsed = ((Date.now() - tGeminiStart) / 1000).toFixed(1);
+          addLocalLog('success', 'GEMINI', `Google Gemini respondeu com sucesso em ${geminiElapsed}s!`);
+          
+          const totalElapsed = Date.now() - tStart;
           return {
             ...geminiResult,
             failoverUsed: true,
             originalProvider: 'openrouter',
-            failoverReason: `Todas as chaves do OpenRouter atingiram o limite de cotas (${openrouterErr.message})`
+            failoverReason: `OpenRouter congestionado/indisponível (${orElapsed}s). Geração concluída com sucesso via Google Gemini em ${geminiElapsed}s!`,
+            elapsedMs: totalElapsed,
+            logs: [...collectedLogs, ...(geminiResult.logs || [])]
           };
         }
         throw openrouterErr;
       }
     } else {
       try {
-        return await this.generateWithGemini(execOptions);
+        addLocalLog('ai', 'GEMINI', `Iniciando geração via Google Gemini (${options.model || 'gemini-2.5-flash'})...`);
+        const result = await this.generateWithGemini(execOptions, addLocalLog);
+        const totalElapsed = Date.now() - tStart;
+        addLocalLog('success', 'GEMINI', `Geração concluída com sucesso no Google Gemini em ${(totalElapsed / 1000).toFixed(1)}s!`);
+        return {
+          ...result,
+          elapsedMs: totalElapsed,
+          logs: [...collectedLogs, ...(result.logs || [])]
+        };
       } catch (geminiErr: any) {
-        console.warn(`[Failover] Todas as chaves do Gemini falharam (${geminiErr.message}). Verificando disponibilidade do OpenRouter para failover...`);
+        addLocalLog('warning', 'FAILOVER', `Google Gemini atingiu limite (${geminiErr.message}). Tentando failover com OpenRouter...`);
         const openrouterKeyAvailable = openrouterKeysManager.getActiveKey() || providersManager.getOpenRouterKey();
         if (openrouterKeyAvailable) {
-          console.log(`[Failover Bidirecional] 🔄 Alternando automaticamente para OpenRouter após esgotamento de todas as chaves do Gemini...`);
-          const openrouterResult = await this.generateWithOpenRouter(execOptions);
+          const openrouterOptions: AIGenerateOptions = {
+            ...execOptions,
+            provider: 'openrouter',
+            model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+          };
+          const openrouterResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
+          const totalElapsed = Date.now() - tStart;
           return {
             ...openrouterResult,
             failoverUsed: true,
             originalProvider: 'gemini',
-            failoverReason: `Todas as chaves do Gemini atingiram o limite de cotas (${geminiErr.message})`
+            failoverReason: `Todas as chaves do Gemini atingiram o limite de cotas (${geminiErr.message})`,
+            elapsedMs: totalElapsed,
+            logs: [...collectedLogs, ...(openrouterResult.logs || [])]
           };
         }
         throw geminiErr;
@@ -267,7 +328,7 @@ export class AIService {
         if (geminiKeyAvailable) {
           const geminiResult = await this.generateWithGemini({
             parts,
-            model: preferredModel
+            model: providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash"
           });
           return {
             ...geminiResult,
@@ -291,7 +352,7 @@ export class AIService {
           const openrouterResult = await this.generateWithOpenRouter({
             prompt: options.prompt,
             parts: [{ text: options.prompt }],
-            model: options.model
+            model: providersManager.getOpenRouterModel() || "minimax/minimax-m3:free"
           });
           return {
             ...openrouterResult,
@@ -308,19 +369,18 @@ export class AIService {
   /**
    * Execução através do Google Gemini SDK com rotação automática de chaves gratuitas
    */
-  private async generateWithGemini(options: AIGenerateOptions): Promise<AIGenerateResult> {
-    const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
+  private async generateWithGemini(options: AIGenerateOptions, logger?: (level: any, cat: string, msg: string) => void): Promise<AIGenerateResult> {
+    const configModel = providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
+    const requestedModel = (options.model && !options.model.includes('/')) ? options.model : configModel;
+    const preferredModel = requestedModel || "gemini-2.5-flash";
     const triedKeys = new Set<string>();
 
     const modelsToTry = [...new Set([
       preferredModel,
       "gemini-2.5-flash",
       "gemini-3.6-flash",
-      "gemini-3.7-flash",
-      "gemini-3.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-flash-latest",
-      "gemini-2.5-pro"
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-pro-preview"
     ])];
 
     while (true) {
@@ -351,78 +411,64 @@ export class AIService {
       let usedModel = preferredModel;
 
       for (const currentModel of modelsToTry) {
-        let modelUnavailable = false;
-
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            console.log(`[Gemini] Tentando modelo ${currentModel} com chave ${maskedKey}...`);
-            const ai = new GoogleGenAI({ apiKey: activeKey });
-            
-            const response = await ai.models.generateContent({
-              model: currentModel,
-              contents: { parts: options.parts },
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: options.responseSchema,
-              }
-            });
-
-            if (response && response.text) {
-              resultText = response.text;
-              usedModel = currentModel;
-              success = true;
-              break;
-            } else {
-              throw new Error("Resposta do Gemini sem texto.");
+        try {
+          const t0 = Date.now();
+          if (logger) logger('ai', 'GEMINI', `Consultando modelo ${currentModel} (chave ${maskedKey})...`);
+          const ai = new GoogleGenAI({ apiKey: activeKey });
+          
+          const response = await ai.models.generateContent({
+            model: currentModel,
+            contents: { parts: options.parts },
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: options.responseSchema,
             }
-          } catch (error: any) {
-            const errorMsg = error.message || error.toString();
-            const errorCode = error.status || error.code;
-            console.warn(`[Gemini] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, errorMsg);
+          });
 
-            if (errorMsg.includes("404") || errorMsg.includes("NOT_FOUND") || errorMsg.includes("is not found") || errorMsg.includes("no longer available")) {
-              modelUnavailable = true;
-              break;
-            }
+          if (response && response.text) {
+            resultText = response.text;
+            usedModel = currentModel;
+            success = true;
+            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            if (logger) logger('success', 'GEMINI', `Modelo ${currentModel} respondeu com sucesso em ${elapsed}s!`);
+            break;
+          } else {
+            throw new Error("Resposta do Gemini sem texto.");
+          }
+        } catch (error: any) {
+          const errorMsg = error.message || error.toString();
+          const errorCode = error.status || error.code;
+          console.warn(`[Gemini] Erro no modelo ${currentModel} usando chave ${maskedKey}:`, errorMsg);
 
-            if (
-              errorCode === 429 ||
-              errorMsg.includes("429") ||
-              errorMsg.includes("RESOURCE_EXHAUSTED") ||
-              errorMsg.includes("quota") ||
-              errorMsg.includes("rate limit")
-            ) {
-              keyIsExhaustedOrInvalid = true;
-              break;
-            }
+          if (errorMsg.includes("404") || errorMsg.includes("NOT_FOUND") || errorMsg.includes("is not found") || errorMsg.includes("no longer available")) {
+            continue; // Pular diretamente para o próximo modelo válido
+          }
 
-            if (
-              errorCode === 400 && (
-                errorMsg.includes("API_KEY_INVALID") ||
-                errorMsg.includes("API key not valid") ||
-                errorMsg.includes("key expired")
-              ) ||
-              errorCode === 401 ||
-              errorCode === 403
-            ) {
-              keyIsExhaustedOrInvalid = true;
-              break;
-            }
-
-            if (errorCode === 503 || errorMsg.includes("503") || errorMsg.includes("high demand") || errorMsg.includes("UNAVAILABLE")) {
-              if (attempt < 2) {
-                await new Promise(r => setTimeout(r, 1000));
-                continue;
-              }
-              break;
-            }
-
+          if (
+            errorCode === 429 ||
+            errorMsg.includes("429") ||
+            errorMsg.includes("RESOURCE_EXHAUSTED") ||
+            errorMsg.includes("quota") ||
+            errorMsg.includes("rate limit")
+          ) {
+            keyIsExhaustedOrInvalid = true;
+            if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} atingiu limite de cota (429). Rotacionando para próxima chave...`);
             break;
           }
-        }
 
-        if (success || keyIsExhaustedOrInvalid) {
-          break;
+          if (
+            (errorCode === 400 && (
+              errorMsg.includes("API_KEY_INVALID") ||
+              errorMsg.includes("API key not valid") ||
+              errorMsg.includes("key expired")
+            )) ||
+            errorCode === 401 ||
+            errorCode === 403
+          ) {
+            keyIsExhaustedOrInvalid = true;
+            if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} inválida ou expirada. Rotacionando para próxima chave...`);
+            break;
+          }
         }
       }
 
@@ -449,7 +495,7 @@ export class AIService {
   /**
    * Execução através do OpenRouter API compatível com OpenAI, com suporte a pool rotativo de múltiplas chaves
    */
-  private async generateWithOpenRouter(options: AIGenerateOptions): Promise<AIGenerateResult> {
+  private async generateWithOpenRouter(options: AIGenerateOptions, logger?: (level: any, cat: string, msg: string) => void): Promise<AIGenerateResult> {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getOpenRouterBaseUrl();
     const configuredModel = providersManager.getOpenRouterModel();
@@ -457,32 +503,25 @@ export class AIService {
 
     const hasImages = (options.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/'));
 
-    // Lista de modelos especializados para visão vs texto puro
+    // Modelos de alta taxa de sucesso no OpenRouter
     const visionModels = [
       "google/gemini-2.0-flash-exp:free",
       "google/gemini-2.5-flash",
       "meta-llama/llama-3.2-11b-vision-instruct:free",
-      "qwen/qwen-2-vl-72b-instruct:free",
-      "openai/gpt-4o-mini",
-      "anthropic/claude-3.5-sonnet"
+      "qwen/qwen-2-vl-72b-instruct:free"
     ];
 
     const textModels = [
       primaryModel,
       "minimax/minimax-m3:free",
       "google/gemma-4-26b-a4b-it:free",
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "nvidia/nemotron-3.5-lightning:free",
-      "nvidia/nemotron-3-super:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
-      "deepseek/deepseek-r1:free",
-      "google/gemini-2.0-flash-exp:free",
-      "qwen/qwen-2.5-coder-32b-instruct:free"
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "liquid/lfm-2.5-2.6b:free"
     ];
 
-    const modelsToTry = hasImages
+    const modelsToTry = (hasImages
       ? [...new Set([primaryModel, ...visionModels])]
-      : [...new Set([primaryModel, ...textModels])];
+      : [...new Set([primaryModel, ...textModels])]).slice(0, 3);
 
     let schemaInstruction = "";
     if (options.responseSchema) {
@@ -555,97 +594,106 @@ export class AIService {
       let lastError: any = null;
 
       for (const currentModel of modelsToTry) {
+        const t0 = Date.now();
+        if (logger) logger('ai', 'OPENROUTER', `Tentando modelo ${currentModel} (chave ${maskedKey})...`);
         console.log(`[OpenRouter] Solicitando modelo ${currentModel} com chave ${maskedKey}...`);
 
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const response = await fetch(`${baseUrl}/chat/completions`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${activeKey}`,
-                "HTTP-Referer": "https://postforge.app",
-                "X-Title": "PostForge"
-              },
-              signal: AbortSignal.timeout(35000),
-              body: JSON.stringify({
-                model: currentModel,
-                messages: [systemMessage, userMessage],
-                response_format: { type: "json_object" },
-                temperature: 0.7,
-              })
-            });
+        try {
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${activeKey}`,
+              "HTTP-Referer": "https://postforge.app",
+              "X-Title": "PostForge"
+            },
+            signal: AbortSignal.timeout(6000), // Timeout rápido de 6s para failover instantâneo
+            body: JSON.stringify({
+              model: currentModel,
+              messages: [systemMessage, userMessage],
+              temperature: 0.7,
+            })
+          });
 
-            if (!response.ok) {
-              const errText = await response.text();
-              let errJson: any = null;
-              try { errJson = JSON.parse(errText); } catch {}
-              const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
-              console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}) com chave ${maskedKey}:`, errMsg);
+          if (!response.ok) {
+            const errText = await response.text();
+            let errJson: any = null;
+            try { errJson = JSON.parse(errText); } catch {}
+            const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
 
-              if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key") || errMsg.toLowerCase().includes("user not found")) {
-                keyIsExhaustedOrInvalid = true;
-                exhaustionReason = `Chave inválida ou não encontrada (${response.status}): ${errMsg}`;
-                break;
-              }
+            console.warn(`[OpenRouter] Erro no modelo ${currentModel} (${response.status}, ${elapsed}s) com chave ${maskedKey}:`, errMsg);
 
-              if (response.status === 429 || response.status === 402 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("credit") || errMsg.toLowerCase().includes("insufficient")) {
-                keyIsExhaustedOrInvalid = true;
-                exhaustionReason = `Cota/Crédito esgotado (${response.status}): ${errMsg}`;
-                break;
-              }
-
-              lastError = new Error(`OpenRouter ${currentModel}: ${errMsg}`);
-              break; // modelo ocupado, tentar próximo modelo da lista
-            }
-
-            const data: any = await response.json();
-            const rawContent = data?.choices?.[0]?.message?.content;
-            if (!rawContent) {
-              throw new Error(`OpenRouter retornou resposta vazia no modelo ${currentModel}.`);
-            }
-
-            let cleanText = rawContent.trim();
-            if (cleanText.startsWith('```json')) {
-              cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            } else if (cleanText.startsWith('```')) {
-              cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-            }
-
-            try {
-              JSON.parse(cleanText);
-            } catch (parseErr) {
-              const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                cleanText = jsonMatch[0];
-                JSON.parse(cleanText);
-              } else {
-                throw new Error(`Modelo ${currentModel} não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
-              }
-            }
-
-            console.log(`[OpenRouter] Geração concluída com sucesso usando modelo ${currentModel} (chave ${maskedKey})!`);
-            resultText = cleanText;
-            usedModel = currentModel;
-            success = true;
-            break;
-          } catch (err: any) {
-            lastError = err;
-            if (err.message?.includes("Chave inválida") || err.message?.includes("Cota/Crédito esgotado")) {
+            if (response.status === 401 || response.status === 403 || errMsg.toLowerCase().includes("invalid api key") || errMsg.toLowerCase().includes("user not found")) {
               keyIsExhaustedOrInvalid = true;
-              exhaustionReason = err.message;
+              exhaustionReason = `Chave inválida (${response.status}): ${errMsg}`;
+              if (logger) logger('warning', 'OPENROUTER', `Chave ${maskedKey} inválida (${response.status}).`);
               break;
             }
-            console.warn(`[OpenRouter] Falha na tentativa ${attempt + 1} do modelo ${currentModel}:`, err.message);
-            if (attempt === 0) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+
+            if (response.status === 402 || errMsg.toLowerCase().includes("insufficient") || errMsg.toLowerCase().includes("credit")) {
+              keyIsExhaustedOrInvalid = true;
+              exhaustionReason = `Crédito insuficiente (${response.status}): ${errMsg}`;
+              if (logger) logger('warning', 'OPENROUTER', `Chave ${maskedKey} sem créditos suficientes (${response.status}).`);
+              break;
+            }
+
+            if (response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("quota")) {
+              if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} em rate limit (${response.status}, ${elapsed}s).`);
+              continue;
+            }
+
+            if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} retornou erro (${response.status}, ${elapsed}s).`);
+            lastError = new Error(`OpenRouter ${currentModel}: ${errMsg}`);
+            continue;
+          }
+
+          const data: any = await response.json();
+          const rawContent = data?.choices?.[0]?.message?.content;
+          if (!rawContent) {
+            throw new Error(`OpenRouter retornou resposta vazia no modelo ${currentModel}.`);
+          }
+
+          let cleanText = rawContent.trim();
+          if (cleanText.startsWith('```json')) {
+            cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (cleanText.startsWith('```')) {
+            cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+
+          try {
+            JSON.parse(cleanText);
+          } catch (parseErr) {
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              cleanText = jsonMatch[0];
+              JSON.parse(cleanText);
+            } else {
+              throw new Error(`Modelo ${currentModel} não retornou um JSON válido: ${cleanText.substring(0, 100)}...`);
             }
           }
-        }
 
-        if (success || keyIsExhaustedOrInvalid) {
+          console.log(`[OpenRouter] Geração concluída com sucesso usando modelo ${currentModel} (${elapsed}s, chave ${maskedKey})!`);
+          if (logger) logger('success', 'OPENROUTER', `Modelo ${currentModel} respondeu com sucesso em ${elapsed}s!`);
+          resultText = cleanText;
+          usedModel = currentModel;
+          success = true;
           break;
+        } catch (err: any) {
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          lastError = err;
+          if (err.message?.includes("Chave inválida") || err.message?.includes("Crédito insuficiente")) {
+            keyIsExhaustedOrInvalid = true;
+            exhaustionReason = err.message;
+            break;
+          }
+          if (err.name === 'TimeoutError' || err.message?.includes('aborted')) {
+            if (logger) logger('warning', 'OPENROUTER', `Modelo ${currentModel} demorou mais de 6s (tempo limite esgotado).`);
+          } else {
+            if (logger) logger('warning', 'OPENROUTER', `Falha no modelo ${currentModel} (${elapsed}s): ${err.message}`);
+          }
+          console.warn(`[OpenRouter] Falha no modelo ${currentModel}:`, err.message);
         }
       }
 
@@ -660,7 +708,10 @@ export class AIService {
         if (keyIsExhaustedOrInvalid) {
           openrouterKeysManager.markExhausted(activeKey, exhaustionReason);
         } else {
-          openrouterKeysManager.recordError(activeKey, lastError?.message);
+          openrouterKeysManager.recordError(activeKey);
+        }
+        if (isFallback) {
+          throw lastError || new Error("OpenRouter falhou.");
         }
         continue;
       }
