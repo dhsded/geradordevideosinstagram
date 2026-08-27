@@ -46,12 +46,15 @@ async function startBackend() {
   if (isDev) {
     console.log('🚀 Starting backend server in development mode...');
     const tsxCli = path.join(__dirname, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+    const serverFile = path.join(__dirname, 'server.ts');
     if (fs.existsSync(tsxCli)) {
-      backendProcess = spawn('node', [tsxCli, 'server.ts'], {
+      // Use a single command string with quoted paths to handle spaces in directory names
+      const cmd = `"${process.execPath}" "${tsxCli}" "${serverFile}"`;
+      backendProcess = spawn(cmd, [], {
         cwd: __dirname,
         env: { ...process.env, FORCE_COLOR: 'true' },
         stdio: 'inherit',
-        shell: process.platform === 'win32'
+        shell: true
       });
     } else {
       const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
