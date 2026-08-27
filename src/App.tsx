@@ -4018,7 +4018,7 @@ export default function App() {
           </div>
           <div className="flex items-baseline gap-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">PostForge</h1>
-            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-md border border-indigo-200/70 uppercase tracking-wider">v1.0.0</span>
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-md border border-indigo-200/70 uppercase tracking-wider">v1.1.0</span>
           </div>
         </div>
         

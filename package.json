@@ -1,7 +1,7 @@
 {
   "name": "postforge",
   "productName": "PostForge",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PostForge - Gerador de Roteiros e Carrosséis Instagram",
   "private": true,
   "type": "module",
