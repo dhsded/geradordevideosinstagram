@@ -525,6 +525,30 @@ Responda ESTRITAMENTE em formato JSON aderente ao esquema fornecido.`;
     }
   });
 
+  // 5. Renomear Macro
+  app.patch("/api/spy/rename-macro/:id", (req, res) => {
+    try {
+      const macroId = req.params.id;
+      const { nome_processo } = req.body;
+      if (!nome_processo || !nome_processo.trim()) {
+        return res.status(400).json({ error: "Nome do processo é obrigatório." });
+      }
+      const macroFilePath = path.join(MACROS_DIR, `${macroId}.json`);
+      if (!fs.existsSync(macroFilePath)) {
+        return res.status(404).json({ error: "Macro não encontrado." });
+      }
+      const content = fs.readFileSync(macroFilePath, 'utf-8');
+      const macro = JSON.parse(content);
+      macro.nome_processo = nome_processo.trim();
+      macro.updatedAt = new Date().toISOString();
+      fs.writeFileSync(macroFilePath, JSON.stringify(macro, null, 2), 'utf-8');
+      res.json({ success: true, macro });
+    } catch (error: any) {
+      console.error("Rename Macro Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Salvar análise simples
   app.post("/api/save-analysis", (req, res) => {
     try {

@@ -361,6 +361,8 @@ export default function App() {
   const [userProcessGoalInput, setUserProcessGoalInput] = useState('');
   const [activeMacro, setActiveMacro] = useState<SpyMacro | null>(null);
   const [savedMacrosList, setSavedMacrosList] = useState<SpyMacro[]>([]);
+  const [renamingMacroId, setRenamingMacroId] = useState<string | null>(null);
+  const [renamingMacroName, setRenamingMacroName] = useState('');
   const [isLoadingMacros, setIsLoadingMacros] = useState(false);
   
   // Estados do Executor em Larga Escala
@@ -1670,6 +1672,29 @@ export default function App() {
       }
     } catch (err: any) {
       console.warn('Erro ao excluir macro:', err);
+    }
+  };
+
+  const handleRenameMacro = async (macroId: string, newName: string) => {
+    if (!newName.trim()) return;
+    try {
+      const response = await fetch(getApiUrl(`/api/spy/rename-macro/${macroId}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome_processo: newName.trim() })
+      });
+      if (response.ok) {
+        addLog('success', 'ESPIÃO', `Macro renomeado para "${newName.trim()}".`);
+        handleLoadMacrosList();
+        if (activeMacro?.id === macroId) {
+          setActiveMacro({ ...activeMacro, nome_processo: newName.trim() });
+        }
+      }
+    } catch (err: any) {
+      console.warn('Erro ao renomear macro:', err);
+    } finally {
+      setRenamingMacroId(null);
+      setRenamingMacroName('');
     }
   };
 
@@ -4912,9 +4937,28 @@ export default function App() {
                               </span>
                             </div>
 
-                            <h3 className="font-extrabold text-white text-sm group-hover:text-indigo-300 transition">
-                              {macro.nome_processo}
-                            </h3>
+                            {renamingMacroId === macro.id ? (
+                              <form onSubmit={(e) => { e.preventDefault(); handleRenameMacro(macro.id, renamingMacroName); }} className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={renamingMacroName}
+                                  onChange={(e) => setRenamingMacroName(e.target.value)}
+                                  autoFocus
+                                  onBlur={() => { if (renamingMacroName.trim()) handleRenameMacro(macro.id, renamingMacroName); else { setRenamingMacroId(null); setRenamingMacroName(''); } }}
+                                  onKeyDown={(e) => { if (e.key === 'Escape') { setRenamingMacroId(null); setRenamingMacroName(''); } }}
+                                  className="w-full px-2 py-1 text-sm font-bold bg-slate-800 border border-indigo-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                  placeholder="Nome do macro..."
+                                />
+                              </form>
+                            ) : (
+                              <h3 
+                                className="font-extrabold text-white text-sm group-hover:text-indigo-300 transition cursor-pointer"
+                                onDoubleClick={() => { setRenamingMacroId(macro.id); setRenamingMacroName(macro.nome_processo); }}
+                                title="Clique duplo para renomear"
+                              >
+                                {macro.nome_processo}
+                              </h3>
+                            )}
                             <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
                               {macro.descricao_processo}
                             </p>
@@ -4942,11 +4986,19 @@ export default function App() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => { setRenamingMacroId(macro.id); setRenamingMacroName(macro.nome_processo); }}
+                              className="p-1.5 bg-slate-900 hover:bg-indigo-950 text-slate-500 hover:text-indigo-400 rounded-xl transition cursor-pointer"
+                              title="Renomear macro"
+                            >
+                              <Settings className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleDeleteMacro(macro.id)}
                               className="p-1.5 bg-slate-900 hover:bg-rose-950 text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
                               title="Excluir macro"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />  
                             </button>
                           </div>
                         </div>
