@@ -185,28 +185,114 @@ window.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // EXECUTOR DE PASSOS AUTOMATIZADOS (RPA)
   // ==========================================
+  
+  // Função auxiliar: buscar elemento por texto visível (fallback robusto)
+  function findElementByText(searchText, tagFilter) {
+    if (!searchText) return null;
+    const candidates = tagFilter 
+      ? document.querySelectorAll(tagFilter)
+      : document.querySelectorAll('button, a, div, span, li, [role="menuitem"], [role="option"], [role="button"]');
+    
+    // Primeira passagem: match exato
+    for (const el of candidates) {
+      const text = (el.textContent || '').trim();
+      const aria = el.getAttribute('aria-label') || '';
+      const title = el.getAttribute('title') || '';
+      if (text === searchText || aria === searchText || title === searchText) return el;
+    }
+    // Segunda passagem: match parcial
+    for (const el of candidates) {
+      const text = (el.textContent || '').trim();
+      const aria = el.getAttribute('aria-label') || '';
+      const title = el.getAttribute('title') || '';
+      if (text.includes(searchText) || aria.includes(searchText) || title.includes(searchText)) return el;
+    }
+    return null;
+  }
+
+  // Função auxiliar: buscar botão de menu (três pontos) por posição no card
+  function findMenuButtonByIndex(cardIndex) {
+    const allMenuBtns = Array.from(document.querySelectorAll('button')).filter(btn => {
+      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+      const title = (btn.getAttribute('title') || '').toLowerCase();
+      const hasIcon = btn.querySelector('svg');
+      return hasIcon && (ariaLabel.includes('mais') || ariaLabel.includes('more') || ariaLabel.includes('opç') || 
+                         title.includes('mais') || title.includes('more') || title.includes('opç') ||
+                         btn.hasAttribute('data-radix-collection-item') || (btn.id && btn.id.startsWith('radix-')));
+    });
+    if (allMenuBtns[cardIndex]) return allMenuBtns[cardIndex];
+    
+    // Fallback: todos os botões com id radix
+    const radixBtns = Array.from(document.querySelectorAll('button[id^="radix-"]'));
+    return radixBtns[cardIndex] || null;
+  }
+
   ipcRenderer.on('spy-exec-step', (event, { actionId, step }) => {
     try {
       let targetEl = null;
+      
+      // 1. Tentar CSS selector
       if (step.seletor) {
         try { targetEl = document.querySelector(step.seletor); } catch {}
       }
+      
+      // 2. Tentar XPath
       if (!targetEl && step.xpath) {
         try {
           const result = document.evaluate(step.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
           targetEl = result.singleNodeValue;
         } catch {}
       }
+      
+      // 3. Fallback inteligente por texto da descrição
+      if (!targetEl && step.descricao) {
+        const desc = step.descricao.toLowerCase();
+        
+        // Detectar clique em "Mais opções" de um card específico
+        if (desc.includes('mais opções') || desc.includes('more options') || desc.includes('três pontos')) {
+          const cardMatch = desc.match(/(?:card|imagem|image)\s*(\d+)/i) || desc.match(/(?:primeiro|segundo|terceiro|1|2|3)/i);
+          let cardIndex = 0;
+          if (cardMatch) {
+            const val = cardMatch[1] || cardMatch[0];
+            if (val === 'primeiro' || val === '1') cardIndex = 0;
+            else if (val === 'segundo' || val === '2') cardIndex = 1;
+            else if (val === 'terceiro' || val === '3') cardIndex = 2;
+            else cardIndex = parseInt(val) - 1 || 0;
+          }
+          targetEl = findMenuButtonByIndex(cardIndex);
+        }
+        // Detectar clique em "Baixar" / "Download"
+        else if (desc.includes('baixar') || desc.includes('download')) {
+          targetEl = findElementByText('Baixar') || findElementByText('Download') || findElementByText('Fazer download');
+        }
+        // Detectar seleção de resolução (1K, 2K, 4K)
+        else if (desc.includes('resolução') || desc.includes('tamanho original') || desc.includes('1k') || desc.includes('2k') || desc.includes('4k')) {
+          const quality = step.valor || '1K';
+          targetEl = findElementByText(quality) || findElementByText('Tamanho original') || findElementByText('Original size');
+        }
+        // Detectar "Voltar"
+        else if (desc.includes('voltar') || desc.includes('back')) {
+          targetEl = findElementByText('Voltar', 'button') || findElementByText('Back', 'button');
+          if (!targetEl) {
+            targetEl = document.querySelector('button[aria-label*="Voltar"], button[aria-label*="Back"], button[aria-label*="voltar"]');
+          }
+        }
+      }
 
+      // Ação de espera
       if (step.tipo === 'wait') {
         setTimeout(() => {
-          ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Aguardado ${step.tempo_espera_ms || 1000}ms` });
+          ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Aguardado ' + (step.tempo_espera_ms || 1000) + 'ms' });
         }, step.tempo_espera_ms || 1000);
         return;
       }
 
       if (!targetEl && step.tipo !== 'navigate') {
-        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: false, error: `Elemento não encontrado: "${step.seletor || step.xpath}"` });
+        ipcRenderer.sendToHost('spy-exec-result', { 
+          actionId, 
+          success: false, 
+          error: 'Elemento não encontrado: "' + (step.descricao || step.seletor || step.xpath) + '". Tente regravar o macro na página atual.'
+        });
         return;
       }
 
@@ -226,10 +312,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (step.tipo === 'click') {
         targetEl.focus();
+        // Dispatch hover first (important for dropdown menus like Google Flow)
+        targetEl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+        targetEl.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
         targetEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
         targetEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
         targetEl.click();
-        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Clique executado em: "${step.seletor}"` });
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Clique executado em: "' + (step.descricao || step.seletor) + '"' });
+      } else if (step.tipo === 'hover') {
+        targetEl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+        targetEl.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Hover executado em: "' + (step.descricao || step.seletor) + '"' });
       } else if (step.tipo === 'fill') {
         targetEl.focus();
         if ('value' in targetEl) {
@@ -239,13 +332,13 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         targetEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
         targetEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Texto preenchido com sucesso.` });
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Texto preenchido com sucesso.' });
       } else if (step.tipo === 'keypress') {
         targetEl.dispatchEvent(new KeyboardEvent('keydown', { key: step.valor || 'Enter', code: step.valor || 'Enter', bubbles: true }));
         targetEl.dispatchEvent(new KeyboardEvent('keyup', { key: step.valor || 'Enter', code: step.valor || 'Enter', bubbles: true }));
-        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Tecla pressionada: ${step.valor || 'Enter'}` });
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Tecla pressionada: ' + (step.valor || 'Enter') });
       } else {
-        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: `Ação ${step.tipo} executada.` });
+        ipcRenderer.sendToHost('spy-exec-result', { actionId, success: true, message: 'Ação ' + step.tipo + ' executada.' });
       }
     } catch (err) {
       console.error('[Spy Preload] Erro ao executar passo:', err);

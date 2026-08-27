@@ -1,0 +1,111 @@
+{
+  "nome_processo": "Download e Visualização de Imagens em Lote no Google Flow (Labs FX)",
+  "descricao_processo": "Automação para navegação em galeria de mídias geradas no Google Flow (FX), abrindo menus de contexto de imagens, exportando mídias em resolução 1K (tamanho original) e inspecionando detalhes no visualizador.",
+  "resumo_passo_a_passo": [
+    "Abrir o menu de contexto de opções no primeiro card de imagem",
+    "Selecionar a opção de download e escolher a qualidade 1K (Tamanho original)",
+    "Abrir o menu de contexto no segundo card de imagem e efetuar o download em 1K",
+    "Clicar na imagem para abrir a visualização em tela cheia e inspecionar os detalhes",
+    "Clicar no botão Voltar para retornar à galeria do projeto",
+    "Abrir o menu de contexto no terceiro card de imagem e realizar o download em 1K"
+  ],
+  "variaveis_identificadas": [
+    {
+      "nome_variavel": "{url_projeto}",
+      "valor_original": "https://labs.google/fx/pt/tools/flow/project/f55035b1-95be-426c-99c0-785d51f79385",
+      "descricao": "URL direta do projeto no Google Flow contendo a galeria de imagens geradas",
+      "passo_index": 1
+    },
+    {
+      "nome_variavel": "{qualidade_download}",
+      "valor_original": "1K",
+      "descricao": "Resolução desejada para exportação das imagens (1K, 2K ou 4K)",
+      "passo_index": 3
+    }
+  ],
+  "macro_parametrizado": [
+    {
+      "ordem": 1,
+      "tipo": "click",
+      "seletor": "button#radix-:r52:",
+      "descricao": "Clicar no botão 'Mais opções' (três pontos) do primeiro card de imagem",
+      "tempo_espera_ms": 1000,
+      "xpath": "/html/body/div[1]/div[1]/div[4]/div[2]/div/div/div/div[2]/div[1]/div/div/div[1]/div[1]/div[1]/div/div/span/div/div/div/div/span/div/div/div[1]/div/div/button[3]"
+    },
+    {
+      "ordem": 2,
+      "tipo": "click",
+      "seletor": "div#radix-:r5b: > div.sc-d5e0baee-5.jaHujc.sc-ba6b959b-2",
+      "descricao": "Hover / Clicar no item 'Baixar' do menu suspenso",
+      "tempo_espera_ms": 500,
+      "xpath": "/html/body/div[4]/div/div[3]/div"
+    },
+    {
+      "ordem": 3,
+      "tipo": "click",
+      "seletor": "div#radix-:r5a: > button.sc-16c4830a-1.dnFqQq.sc-e7a64add-0:nth-of-type(1) > div.sc-d5e0baee-6.fXOfzG:nth-of-type(1)",
+      "descricao": "Selecionar resolução 1K (Tamanho original) para iniciar download da imagem 1",
+      "tempo_espera_ms": 2000,
+      "valor": "{qualidade_download}",
+      "variavel_associada": "{qualidade_download}",
+      "xpath": "/html/body/div[5]/div/button[1]/div[1]"
+    },
+    {
+      "ordem": 4,
+      "tipo": "click",
+      "seletor": "button#radix-:r5s:",
+      "descricao": "Clicar no botão 'Mais opções' do segundo card de imagem",
+      "tempo_espera_ms": 1000,
+      "xpath": "/html/body/div[1]/div[1]/div[4]/div[2]/div/div/div/div[2]/div[1]/div/div/div[1]/div[1]/div[2]/div/div/span/div/div/div/div/span/div/div/div[1]/div/div/button[3]"
+    },
+    {
+      "ordem": 5,
+      "tipo": "click",
+      "seletor": "div#radix-:r65: > button.sc-16c4830a-1.dnFqQq.sc-e7a64add-0:nth-of-type(1) > div.sc-d5e0baee-6.fXOfzG:nth-of-type(1) > span:nth-of-type(1)",
+      "descricao": "Confirmar download da imagem 2 na resolução 1K",
+      "tempo_espera_ms": 2000,
+      "valor": "{qualidade_download}",
+      "variavel_associada": "{qualidade_download}",
+      "xpath": "/html/body/div[5]/div/button[1]/div[1]/span[1]"
+    },
+    {
+      "ordem": 6,
+      "tipo": "click",
+      "seletor": "div#__next img.sc-f803b119-0",
+      "descricao": "Clicar na miniatura da imagem para expandir no visualizador detalhado",
+      "tempo_espera_ms": 1500,
+      "xpath": "/html/body/div[1]/div[1]/div[4]/div[2]/div/div/div/div[2]/div[1]/div/div/div[1]/div[1]/div[3]/div/div/span/div/div/div/div/span/div/a/img"
+    },
+    {
+      "ordem": 7,
+      "tipo": "click",
+      "seletor": "button.sc-e8425ea6-0.hOBPaw.sc-d3791a4f-0:nth-of-type(1)",
+      "descricao": "Clicar no botão 'Voltar' para sair do modo tela cheia",
+      "tempo_espera_ms": 1000,
+      "xpath": "/html/body/div[1]/div[1]/div[1]/div[2]/div[1]/div/div[1]/button[1]"
+    },
+    {
+      "ordem": 8,
+      "tipo": "click",
+      "seletor": "button#radix-:r9u:",
+      "descricao": "Clicar no botão 'Mais opções' do terceiro card de imagem",
+      "tempo_espera_ms": 1000,
+      "xpath": "/html/body/div[1]/div[1]/div[4]/div[2]/div/div/div/div[2]/div[1]/div/div/div[1]/div[1]/div[3]/div/div/span/div/div/div/div/span/div/div/div[1]/div/div/button[3]"
+    },
+    {
+      "ordem": 9,
+      "tipo": "click",
+      "seletor": "div#radix-:ra6: > button.sc-16c4830a-1.dnFqQq.sc-e7a64add-0:nth-of-type(1) > div.sc-d5e0baee-6.fXOfzG:nth-of-type(1) > span:nth-of-type(1)",
+      "descricao": "Confirmar download da imagem 3 na resolução 1K",
+      "tempo_espera_ms": 2000,
+      "valor": "{qualidade_download}",
+      "variavel_associada": "{qualidade_download}",
+      "xpath": "/html/body/div[5]/div/button[1]/div[1]/span[1]"
+    }
+  ],
+  "codigo_puppeteer": "const puppeteer = require('puppeteer');\n\n(async () => {\n  const browser = await puppeteer.launch({ headless: false, defaultViewport: null, args: ['--start-maximized'] });\n  const page = await browser.newPage();\n  \n  const projectUrl = 'https://labs.google/fx/pt/tools/flow/project/f55035b1-95be-426c-99c0-785d51f79385';\n  console.log(`Navegando para ${projectUrl}...`);\n  await page.goto(projectUrl, { waitUntil: 'networkidle2' });\n  await page.waitForTimeout(3000);\n\n  // Passo 1: Abrir menu do card 1\n  console.log('Passo 1: Clicando em Mais opções no card 1...');\n  await page.waitForSelector('button[aria-label*=\"Mais\"], button[id^=\"radix-\"]', { visible: true });\n  const menuButtons = await page.$$('button[id^=\"radix-\"]');\n  if (menuButtons.length > 0) await menuButtons[0].click();\n  await page.waitForTimeout(1000);\n\n  // Passo 2 & 3: Baixar 1K no card 1\n  console.log('Passo 2 e 3: Selecionando Baixar > 1K...');\n  await page.evaluate(() => {\n    const items = Array.from(document.querySelectorAll('div, button'));\n    const baixarBtn = items.find(el => el.textContent && el.textContent.includes('Baixar'));\n    if (baixarBtn) baixarBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));\n  });\n  await page.waitForTimeout(800);\n  await page.evaluate(() => {\n    const options = Array.from(document.querySelectorAll('button, div'));\n    const opt1k = options.find(el => el.textContent && el.textContent.includes('1K'));\n    if (opt1k) opt1k.click();\n  });\n  await page.waitForTimeout(2000);\n\n  // Passo 4 & 5: Card 2\n  console.log('Passo 4 e 5: Baixando imagem do card 2...');\n  const menuButtons2 = await page.$$('button[id^=\"radix-\"]');\n  if (menuButtons2.length > 1) await menuButtons2[1].click();\n  await page.waitForTimeout(1000);\n  await page.evaluate(() => {\n    const options = Array.from(document.querySelectorAll('button, div'));\n    const opt1k = options.find(el => el.textContent && el.textContent.includes('1K'));\n    if (opt1k) opt1k.click();\n  });\n  await page.waitForTimeout(2000);\n\n  // Passo 6: Visualizar imagem 3\n  console.log('Passo 6: Expandindo visualizador de mídia...');\n  const images = await page.$$('img');\n  if (images.length > 2) await images[2].click();\n  await page.waitForTimeout(2000);\n\n  // Passo 7: Voltar\n  console.log('Passo 7: Voltando para a galeria...');\n  await page.evaluate(() => {\n    const backBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent && el.textContent.includes('Voltar'));\n    if (backBtn) backBtn.click();\n  });\n  await page.waitForTimeout(1500);\n\n  // Passo 8 & 9: Card 3\n  console.log('Passo 8 e 9: Baixando imagem do card 3...');\n  const menuButtons3 = await page.$$('button[id^=\"radix-\"]');\n  if (menuButtons3.length > 2) await menuButtons3[2].click();\n  await page.waitForTimeout(1000);\n  await page.evaluate(() => {\n    const options = Array.from(document.querySelectorAll('button, div'));\n    const opt1k = options.find(el => el.textContent && el.textContent.includes('1K'));\n    if (opt1k) opt1k.click();\n  });\n  await page.waitForTimeout(2000);\n\n  console.log('Macro concluído com sucesso!');\n  await browser.close();\n})();",
+  "codigo_playwright": "const { chromium } = require('playwright');\n\n(async () => {\n  const browser = await chromium.launch({ headless: false });\n  const context = await browser.newContext();\n  const page = await context.newPage();\n\n  const projectUrl = 'https://labs.google/fx/pt/tools/flow/project/f55035b1-95be-426c-99c0-785d51f79385';\n  console.log(`Navegando para ${projectUrl}...`);\n  await page.goto(projectUrl, { waitUntil: 'networkidle' });\n  await page.waitForTimeout(3000);\n\n  // Passo 1 a 3: Card 1\n  console.log('Passo 1 a 3: Baixando imagem 1 (1K)...');\n  const menuButtons = page.locator('button[id^=\"radix-\"]');\n  await menuButtons.nth(0).click();\n  await page.waitForTimeout(800);\n  await page.locator('text=\"Baixar\"').first().hover();\n  await page.waitForTimeout(500);\n  await page.locator('text=\"1K\"').first().click();\n  await page.waitForTimeout(2000);\n\n  // Passo 4 a 5: Card 2\n  console.log('Passo 4 a 5: Baixando imagem 2 (1K)...');\n  await menuButtons.nth(1).click();\n  await page.waitForTimeout(800);\n  await page.locator('text=\"1K\"').first().click();\n  await page.waitForTimeout(2000);\n\n  // Passo 6: Expandir imagem 3\n  console.log('Passo 6: Visualizando imagem em tela cheia...');\n  const cardImages = page.locator('img');\n  await cardImages.nth(2).click();\n  await page.waitForTimeout(1500);\n\n  // Passo 7: Botão Voltar\n  console.log('Passo 7: Retornando à galeria...');\n  await page.locator('button:has-text(\"Voltar\")').click();\n  await page.waitForTimeout(1000);\n\n  // Passo 8 a 9: Card 3\n  console.log('Passo 8 a 9: Baixando imagem 3 (1K)...');\n  await menuButtons.nth(2).click();\n  await page.waitForTimeout(800);\n  await page.locator('text=\"1K\"').first().click();\n  await page.waitForTimeout(2000);\n\n  console.log('Automação Playwright finalizada!');\n  await browser.close();\n})();",
+  "id": "macro_1787837842147",
+  "targetUrl": "https://labs.google/fx/pt/tools/flow/project/f55035b1-95be-426c-99c0-785d51f79385",
+  "updatedAt": "2026-08-27T13:37:30.725Z"
+}

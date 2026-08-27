@@ -3761,7 +3761,12 @@ export default function App() {
         3. Mantenha a CONSISTÊNCIA VISUAL ABSOLUTA: 
            - As cores originais dos personagens DEVEM ser mantidas (ex: o Coração deve manter seus tons vermelhos/vibrantes que o destacam, mesmo que o estilo geral seja "fosco" ou "desenho a mão").
            - As características físicas originais devem ser respeitadas em cada prompt.
-           - O estilo de desenho deve ser idêntico em cada slide.`;
+           - O estilo de desenho deve ser idêntico em cada slide.
+        REGRA SOBRE NOMES NOS DIÁLOGOS:
+        - Os textos dos balões de fala (textInBubblesPt/En/Es) NUNCA devem conter o nome do personagem como prefixo (ex: NÃO faça "Coração: Você precisa..." ou "Cérebro: Pense bem...").
+        - O balão deve conter APENAS a frase dita, sem identificação de quem fala (ex: "Você precisa se permitir sentir.").
+        - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt", que descreve a cena (ex: "O Coração, com expressão acolhedora, diz ao Cérebro...").
+        - Isso é OBRIGATÓRIO porque o nome do personagem ficará visualmente indicado na própria imagem, e repetir no balão polui a experiência.`;
 
         const selectedLangInfoCarousel = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
         const langNameCarousel = selectedLangInfoCarousel.name;
