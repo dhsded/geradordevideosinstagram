@@ -589,6 +589,8 @@ export default function App() {
 
   // Video Analysis & Instagram Cloner states
   const [analysisSubTab, setAnalysisSubTab] = useState<'cloner' | 'local'>('cloner');
+  const [clonerInputSource, setClonerInputSource] = useState<'file' | 'link' | 'browser'>('file');
+  const [isDragOverClonerVideo, setIsDragOverClonerVideo] = useState(false);
   const [instagramUrl, setInstagramUrl] = useState('');
   const [isFetchingInstagram, setIsFetchingInstagram] = useState(false);
   const [instagramVideoPreview, setInstagramVideoPreview] = useState<{ url?: string; thumbnail?: string; title?: string; sourceUrl?: string; isLocalFile?: boolean; base64Data?: string; mimeType?: string } | null>(null);
@@ -2002,6 +2004,36 @@ export default function App() {
   // ==========================================
   // HANDLERS DO CLONADOR DE VÍDEOS DO INSTAGRAM
   // ==========================================
+  const handleLocalVideoSelect = (file: File) => {
+    if (!file) return;
+    if (file.size > 250 * 1024 * 1024) {
+      alert('O arquivo selecionado excede o limite máximo recomendado de 250MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      const base64Data = base64String.split(',')[1] || base64String;
+      const blobUrl = URL.createObjectURL(file);
+      
+      setInstagramVideoPreview({
+        url: blobUrl,
+        title: file.name,
+        sourceUrl: `Vídeo Local (${(file.size / (1024 * 1024)).toFixed(1)} MB)`,
+        isLocalFile: true,
+        base64Data: base64Data,
+        mimeType: file.type || 'video/mp4'
+      });
+      setVideoFile({
+        data: base64Data,
+        mimeType: file.type || 'video/mp4'
+      });
+      addLog('success', 'CLONADOR', `Vídeo "${file.name}" carregado com sucesso (${(file.size / (1024 * 1024)).toFixed(1)} MB)!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFetchInstagramUrl = async () => {
     if (!instagramUrl.trim()) {
       alert('Por favor, insira o link de um Reel ou vídeo do Instagram.');
@@ -8556,60 +8588,172 @@ module.exports = { runCompleteWorkflow };`
             {/* Coluna Esquerda: Entrada do Vídeo & Parâmetros de Clonagem (5 Colunas) */}
             <aside className="lg:col-span-5 h-full flex flex-col overflow-hidden">
               <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col gap-4 h-full overflow-y-auto">
-                {/* 1. Entrada do Vídeo do Instagram */}
-                <div className="space-y-2.5">
-                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <Instagram className="w-4 h-4 text-pink-500" />
-                    <span>Link do Reel ou Vídeo do Instagram</span>
-                  </label>
-                  
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={instagramUrl}
-                      onChange={(e) => setInstagramUrl(e.target.value)}
-                      placeholder="https://www.instagram.com/reel/..."
-                      className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 focus:border-pink-500 focus:ring-1 focus:ring-pink-500 rounded-xl text-slate-800 transition"
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleFetchInstagramUrl(); }}
-                    />
+                {/* 1. Seleção de Entrada do Vídeo (Arquivo Local, Link ou Navegador) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Clapperboard className="w-4 h-4 text-pink-500" />
+                      <span>Vídeo para Análise & Clonagem</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Passo 1</span>
+                  </div>
+
+                  {/* Abas Rápidas de Fonte de Entrada */}
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200">
                     <button
                       type="button"
-                      onClick={handleFetchInstagramUrl}
-                      disabled={isFetchingInstagram || !instagramUrl.trim()}
-                      className="px-3.5 py-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                      onClick={() => setClonerInputSource('file')}
+                      className={`py-2 px-1 text-[11px] font-extrabold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                        clonerInputSource === 'file'
+                          ? 'bg-white text-indigo-600 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
                     >
-                      {isFetchingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                      <span>Buscar</span>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Vídeo Local</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setClonerInputSource('link')}
+                      className={`py-2 px-1 text-[11px] font-extrabold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                        clonerInputSource === 'link'
+                          ? 'bg-white text-pink-600 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Instagram className="w-3.5 h-3.5" />
+                      <span>Link Reel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setClonerInputSource('browser')}
+                      className={`py-2 px-1 text-[11px] font-extrabold rounded-xl transition flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                        clonerInputSource === 'browser'
+                          ? 'bg-white text-purple-600 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Navegador</span>
                     </button>
                   </div>
 
-                  {/* Botão de Navegador Embutido (com Login) */}
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowInstagramBrowser(true);
-                        setInstagramBrowserUrl(instagramUrl.trim() || 'https://www.instagram.com/reels/');
-                      }}
-                      className="w-full px-3 py-2 bg-slate-50 hover:bg-pink-50 text-slate-700 hover:text-pink-700 border border-slate-200 hover:border-pink-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
-                    >
-                      <Globe className="w-3.5 h-3.5 text-pink-500" />
-                      <span>Abrir Navegador Instagram (Logar & Capturar)</span>
-                    </button>
-                  </div>
+                  {/* PAINEL 1: UPLOAD / SELEÇÃO DE ARQUIVO LOCAL (MP4/MOV/WEBM) */}
+                  {clonerInputSource === 'file' && (
+                    <div className="space-y-2">
+                      <label
+                        onDragOver={(e) => { e.preventDefault(); setIsDragOverClonerVideo(true); }}
+                        onDragLeave={() => setIsDragOverClonerVideo(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOverClonerVideo(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                            handleLocalVideoSelect(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        className={`block cursor-pointer transition-all duration-200`}
+                      >
+                        <div
+                          className={`w-full py-6 px-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center transition ${
+                            isDragOverClonerVideo
+                              ? 'border-indigo-500 bg-indigo-50/80 scale-[1.01]'
+                              : instagramVideoPreview?.isLocalFile
+                              ? 'border-emerald-500 bg-emerald-50/60'
+                              : 'border-slate-300 bg-slate-50 hover:bg-slate-100/80 hover:border-indigo-400'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-2 shadow-xs ${
+                            instagramVideoPreview?.isLocalFile
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
+                          }`}>
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="text-xs font-black text-slate-800">
+                            {instagramVideoPreview?.isLocalFile
+                              ? 'Trocar Vídeo Selecionado'
+                              : 'Clique para selecionar ou arraste o vídeo'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 mt-0.5">
+                            Suporta .MP4, .MOV, .WEBM gravados ou baixados (até 250MB)
+                          </span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                handleLocalVideoSelect(e.target.files[0]);
+                              }
+                            }}
+                          />
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* PAINEL 2: LINK DIRETO DO INSTAGRAM */}
+                  {clonerInputSource === 'link' && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={instagramUrl}
+                          onChange={(e) => setInstagramUrl(e.target.value)}
+                          placeholder="https://www.instagram.com/reel/..."
+                          className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 focus:border-pink-500 focus:ring-1 focus:ring-pink-500 rounded-xl text-slate-800 transition"
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleFetchInstagramUrl(); }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleFetchInstagramUrl}
+                          disabled={isFetchingInstagram || !instagramUrl.trim()}
+                          className="px-3.5 py-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          {isFetchingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                          <span>Buscar</span>
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Cole o link público de qualquer Reel ou Post do Instagram.</p>
+                    </div>
+                  )}
+
+                  {/* PAINEL 3: NAVEGADOR COM LOGIN */}
+                  {clonerInputSource === 'browser' && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowInstagramBrowser(true);
+                          setInstagramBrowserUrl(instagramUrl.trim() || 'https://www.instagram.com/reels/');
+                        }}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-purple-900/10 via-pink-900/10 to-indigo-900/10 hover:bg-pink-50 text-slate-800 hover:text-pink-700 border border-slate-200 hover:border-pink-300 rounded-2xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                      >
+                        <Globe className="w-4 h-4 text-pink-500" />
+                        <span>Abrir Navegador Instagram (Logar & Capturar com 1 Clique)</span>
+                      </button>
+                      <p className="text-[10px] text-slate-400 text-center">Navegue pelos Reels e clique no botão de captura no topo da tela.</p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Preview do Vídeo Capturado / Carregado */}
+                {/* Preview do Vídeo Selecionado (Player HTML5 / Miniatura) */}
                 {instagramVideoPreview ? (
                   <div className="bg-slate-900 rounded-2xl p-3.5 border border-slate-800 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/60 font-bold">
-                        ✓ Vídeo Pronto para Clonagem
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/60 font-bold flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>Vídeo Pronto para Clonagem</span>
                       </span>
                       <button
                         type="button"
-                        onClick={() => setInstagramVideoPreview(null)}
-                        className="text-slate-400 hover:text-rose-400 transition p-1"
+                        onClick={() => {
+                          setInstagramVideoPreview(null);
+                          setVideoFile(null);
+                        }}
+                        className="text-slate-400 hover:text-rose-400 transition p-1 cursor-pointer"
                         title="Remover vídeo"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -8630,11 +8774,16 @@ module.exports = { runCompleteWorkflow };`
                         <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{instagramVideoPreview.sourceUrl}</p>
                       </div>
                     )}
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
+                      <span className="truncate max-w-[220px] text-slate-300 font-bold">{instagramVideoPreview.title || 'Vídeo'}</span>
+                      <span className="text-purple-300">{instagramVideoPreview.sourceUrl}</span>
+                    </div>
                   </div>
                 ) : (
                   <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center space-y-1">
                     <p className="text-xs text-slate-500 font-medium">Nenhum vídeo carregado ainda.</p>
-                    <p className="text-[10px] text-slate-400">Cole a URL do Reel acima ou abra o navegador Instagram para capturar.</p>
+                    <p className="text-[10px] text-slate-400">Selecione um arquivo de vídeo acima ou cole um link de Reel para começar.</p>
                   </div>
                 )}
 
