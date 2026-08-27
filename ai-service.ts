@@ -674,7 +674,7 @@ export class AIService {
 
     const systemMessage = {
       role: "system",
-      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON.${schemaInstruction}`
+      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
     };
 
     let combinedText = "";

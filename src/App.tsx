@@ -3788,12 +3788,13 @@ export default function App() {
         else requiredSlideFields.push("textInBubblesPt", "textInBubblesEn", "textInBubblesEs");
 
         if (carouselQuantity > 1) {
-          promptText += `\n=== GERAÇÃO EM LOTE DE CARROSSÉIS (${carouselQuantity} CARROSSÉIS SOLICITADOS) ===
-          O usuário solicitou a criação de EXATAMENTE ${carouselQuantity} CARROSSÉIS COMPLETOS, ESTRUTURADOS E INDEPENDENTES.
+          promptText += `\n=== GERAÇÃO EM LOTE: EXATAMENTE ${carouselQuantity} CARROSSÉIS OBRIGATÓRIOS ===
+          REGRA CRÍTICA E INVIOLÁVEL: Você DEVE gerar EXATAMENTE ${carouselQuantity} carrosséis completos no array "carousels". NÃO gere menos que ${carouselQuantity}. NÃO gere mais que ${carouselQuantity}. O número exato é ${carouselQuantity}.
           - Se foi digitado um tema geral ou anexado material de estudo: Crie ${carouselQuantity} carrosséis que abordem ângulos, subtemas, ganchos e metáforas 100% diferentes e complementares.
           - Se foi fornecida uma lista de tópicos (um por linha): Crie 1 carrossel completo para cada tópico da lista.
-          - Cada carrossel deve ter seu próprio "title" (título descritivo em Português), "theme" (tema central), "slides" (com exatamente ${sceneCount} slides estruturados com "slideNumber", "imagePromptEn", "textInBubbles...", "descriptionPt") e "instagramPost" (legenda dedicada).
-          - Retorne todos os carrosséis na lista "carousels".`;
+          - Cada um dos ${carouselQuantity} carrosséis DEVE ter: "title" (título descritivo em Português), "theme" (tema central), "slides" (com exatamente ${sceneCount} slides com "slideNumber", "imagePromptEn", "textInBubbles...", "descriptionPt") e "instagramPost" (legenda dedicada).
+          - O array "carousels" na resposta DEVE conter exatamente ${carouselQuantity} objetos. Retornar menos que ${carouselQuantity} é PROIBIDO.
+          LEMBRETE FINAL: carousels.length === ${carouselQuantity}. Gere TODOS os ${carouselQuantity} carrosséis completos.`;
 
           responseSchema = {
             type: Type.OBJECT,
@@ -3978,6 +3979,9 @@ export default function App() {
           setBatchCarouselResults(list);
           setCarouselResult(list[0]);
           setActiveCarouselIndex(0);
+          if (carouselQuantity > 1 && list.length < carouselQuantity) {
+            addLog('warning', 'GERADOR', `⚠️ Foram solicitados ${carouselQuantity} carrosséis, mas a IA retornou apenas ${list.length}. Isso pode ocorrer por limite de tokens do modelo. Tente gerar novamente ou reduza a quantidade de slides por carrossel.`);
+          }
           addLog('success', 'GERADOR', `✅ Lote de ${list.length} carrosséis gerado em ${totalSeconds}s via ${data.provider.toUpperCase()} (${data.model})!`);
         } else if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
           jsonResult.title = jsonResult.title || topic || 'Carrossel';
