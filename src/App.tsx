@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -428,6 +428,19 @@ export interface MultiProjectAuditResponse {
   imagens_descartadas_globais?: string[];
 }
 
+export interface LightboxGalleryItem {
+  url: string;
+  title: string;
+  filename?: string;
+  slideNumber?: number;
+  totalSlides?: number;
+  description?: string;
+  dialogue?: string;
+  prompt?: string;
+  consistencyScore?: string;
+  consistencyFeedback?: string;
+}
+
 export interface ExecutionLogItem {
   id: string;
   timestamp: string;
@@ -623,6 +636,7 @@ export default function App() {
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditImageModalUrl, setAuditImageModalUrl] = useState<{ url: string; title: string } | null>(null);
+  const [lightboxGallery, setLightboxGallery] = useState<{ items: LightboxGalleryItem[]; currentIndex: number } | null>(null);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [isDragOverAudit, setIsDragOverAudit] = useState(false);
 
@@ -883,18 +897,90 @@ export default function App() {
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (auditImageModalUrl) {
+        if (lightboxGallery) {
+          setLightboxGallery(null);
+        } else if (auditImageModalUrl) {
           setAuditImageModalUrl(null);
         } else if (isPreviewModalOpen) {
           setIsPreviewModalOpen(false);
         } else if (isKeyManagerOpen) {
           setIsKeyManagerOpen(false);
         }
+      } else if (lightboxGallery && lightboxGallery.items.length > 1) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setLightboxGallery(prev => {
+            if (!prev) return null;
+            const newIdx = (prev.currentIndex - 1 + prev.items.length) % prev.items.length;
+            return { ...prev, currentIndex: newIdx };
+          });
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setLightboxGallery(prev => {
+            if (!prev) return null;
+            const newIdx = (prev.currentIndex + 1) % prev.items.length;
+            return { ...prev, currentIndex: newIdx };
+          });
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [auditImageModalUrl, isPreviewModalOpen, isKeyManagerOpen]);
+  }, [lightboxGallery, auditImageModalUrl, isPreviewModalOpen, isKeyManagerOpen]);
+
+  // Restauração Automática do Estado do Gerador / Prompts Salvos no LocalStorage
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('postforge_saved_state_v1');
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.batchCarouselResults && Array.isArray(data.batchCarouselResults) && data.batchCarouselResults.length > 0) {
+          setBatchCarouselResults(data.batchCarouselResults);
+          const idx = data.activeCarouselIndex || 0;
+          setActiveCarouselIndex(idx < data.batchCarouselResults.length ? idx : 0);
+          setCarouselResult(data.batchCarouselResults[idx] || data.batchCarouselResults[0]);
+        } else if (data.carouselResult) {
+          setCarouselResult(data.carouselResult);
+          setBatchCarouselResults([data.carouselResult]);
+        }
+        if (data.result) setResult(data.result);
+        if (data.topic) setTopic(data.topic);
+        if (data.niche) setNiche(data.niche);
+        if (data.artStyle) setArtStyle(data.artStyle);
+        if (data.animationStyle) setAnimationStyle(data.animationStyle);
+        if (data.dialogueLanguage) setDialogueLanguage(data.dialogueLanguage);
+        if (data.carouselQuantity) setCarouselQuantity(data.carouselQuantity);
+        if (data.characterDescription) setCharacterDescription(data.characterDescription);
+      }
+    } catch (e) {
+      console.warn('Aviso: falha ao restaurar dados do localStorage:', e);
+    }
+  }, []);
+
+  // Auto-salvamento do Estado do Gerador no LocalStorage
+  React.useEffect(() => {
+    if (carouselResult || (batchCarouselResults && batchCarouselResults.length > 0) || result) {
+      try {
+        const toSave = {
+          result,
+          carouselResult,
+          batchCarouselResults,
+          activeCarouselIndex,
+          topic,
+          niche,
+          artStyle,
+          animationStyle,
+          dialogueLanguage,
+          carouselQuantity,
+          characterDescription,
+          savedAt: Date.now()
+        };
+        localStorage.setItem('postforge_saved_state_v1', JSON.stringify(toSave));
+      } catch (e) {
+        console.warn('Aviso: falha ao salvar dados no localStorage:', e);
+      }
+    }
+  }, [carouselResult, batchCarouselResults, result, activeCarouselIndex, topic, niche, artStyle, animationStyle, dialogueLanguage, carouselQuantity, characterDescription]);
 
   const fetchOpenRouterQuota = async (keyOverride?: string) => {
     const keyToUse = (keyOverride !== undefined ? keyOverride : openrouterKeyInput.trim()).trim();
@@ -2954,6 +3040,277 @@ export default function App() {
     addLog('info', 'AUDITORIA', 'Todas as imagens de auditoria foram limpas.');
   };
 
+  const handleResetEntireAudit = () => {
+    setUploadedAuditImages([]);
+    setAuditReferenceImages([]);
+    setAuditScriptInput('');
+    setAuditCharacterNotes('');
+    setAuditDocumentInfo(null);
+    setAuditResult(null);
+    setAuditError(null);
+    setOrderedSlidesList([]);
+    setSurplusImagesList([]);
+    setMultiProjectsResult(null);
+    setActiveMultiProjectIndex(0);
+    setDownloadSuccessInfo(null);
+    addLog('info', 'AUDITORIA', '✨ Auditoria reiniciada com sucesso! Todas as imagens, roteiros e resultados foram limpos.');
+  };
+
+  const scanFilesFromDataTransfer = async (items: DataTransferItemList): Promise<File[]> => {
+    const fileList: File[] = [];
+    const queue: any[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const entry = (items[i] as any).webkitGetAsEntry ? (items[i] as any).webkitGetAsEntry() : null;
+      if (entry) {
+        queue.push(entry);
+      } else {
+        const f = items[i].getAsFile();
+        if (f) fileList.push(f);
+      }
+    }
+
+    const readEntry = async (entry: any): Promise<void> => {
+      if (!entry) return;
+      if (entry.isFile) {
+        return new Promise<void>((resolve) => {
+          entry.file((file: File) => {
+            if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name)) {
+              fileList.push(file);
+            }
+            resolve();
+          }, () => resolve());
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const entries: any[] = await new Promise((resolve) => {
+          dirReader.readEntries((results: any[]) => resolve(results || []), () => resolve([]));
+        });
+        for (const child of entries) {
+          await readEntry(child);
+        }
+      }
+    };
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      await readEntry(current);
+    }
+
+    return fileList;
+  };
+
+  // Lightbox e Galeria de Slides com Metadados
+  const openAuditSlideInLightbox = (index: number) => {
+    const galleryItems: LightboxGalleryItem[] = orderedSlidesList.map((item, idx) => {
+      const matched = uploadedAuditImages.find(img => 
+        img.name.toLowerCase() === item.imagem_arquivo_correspondente.toLowerCase() ||
+        img.name.toLowerCase().includes(item.imagem_arquivo_correspondente.toLowerCase()) ||
+        item.imagem_arquivo_correspondente.toLowerCase().includes(img.name.toLowerCase())
+      );
+      return {
+        url: matched?.dataUrl || '',
+        title: `Slide ${idx + 1} - ${matched?.name || item.imagem_arquivo_correspondente}`,
+        filename: matched?.name || item.imagem_arquivo_correspondente,
+        slideNumber: idx + 1,
+        totalSlides: orderedSlidesList.length,
+        description: item.descricao_cenario || item.feedback_consistencia || '',
+        dialogue: item.texto_balao || item.dialogo || '',
+        prompt: item.prompt_visual_original || '',
+        consistencyScore: item.pontuacao_consistencia || '',
+        consistencyFeedback: item.feedback_consistencia || ''
+      };
+    }).filter(item => item.url);
+
+    if (galleryItems.length > 0) {
+      const foundIdx = Math.min(Math.max(0, index), galleryItems.length - 1);
+      setLightboxGallery({
+        items: galleryItems,
+        currentIndex: foundIdx
+      });
+    }
+  };
+
+  const openSurplusInLightbox = (index: number) => {
+    const galleryItems: LightboxGalleryItem[] = surplusImagesList.map((surplus, idx) => {
+      const matched = uploadedAuditImages.find(img => img.name.toLowerCase() === surplus.nome_arquivo.toLowerCase());
+      return {
+        url: matched?.dataUrl || '',
+        title: surplus.nome_arquivo,
+        filename: surplus.nome_arquivo,
+        slideNumber: idx + 1,
+        totalSlides: surplusImagesList.length,
+        description: `Motivo de Descarte: ${surplus.motivo_descarte}`
+      };
+    }).filter(item => item.url);
+
+    if (galleryItems.length > 0) {
+      setLightboxGallery({
+        items: galleryItems,
+        currentIndex: Math.min(Math.max(0, index), galleryItems.length - 1)
+      });
+    }
+  };
+
+  const openCarouselSlideInLightbox = (slideIdx: number) => {
+    if (!carouselResult || !carouselResult.slides) return;
+    const currentLang = carouselResult.language || dialogueLanguage;
+    const galleryItems: LightboxGalleryItem[] = carouselResult.slides.map((s, idx) => {
+      let dialogue = s.textInBubblesPt || s.textInBubbles || '';
+      if (currentLang === 'en') dialogue = s.textInBubblesEn || s.textInBubbles || '';
+      else if (currentLang === 'es') dialogue = s.textInBubblesEs || s.textInBubbles || '';
+      else if (currentLang === 'all') {
+        dialogue = [
+          s.textInBubblesPt ? `PT: ${s.textInBubblesPt}` : '',
+          s.textInBubblesEn ? `EN: ${s.textInBubblesEn}` : '',
+          s.textInBubblesEs ? `ES: ${s.textInBubblesEs}` : '',
+        ].filter(Boolean).join(' | ');
+      }
+
+      const refImg = characterImages[0]?.data ? `data:${characterImages[0]?.mimeType};base64,${characterImages[0]?.data}` : '';
+      return {
+        url: s.imageUrl || refImg || '',
+        title: `Slide ${s.slideNumber || idx + 1} - ${carouselResult.title || 'Carrossel'}`,
+        filename: `Slide_${s.slideNumber || idx + 1}`,
+        slideNumber: s.slideNumber || idx + 1,
+        totalSlides: carouselResult.slides.length,
+        description: s.descriptionPt || '',
+        dialogue: dialogue,
+        prompt: s.imagePromptEn || ''
+      };
+    });
+
+    setLightboxGallery({
+      items: galleryItems,
+      currentIndex: Math.min(Math.max(0, slideIdx), galleryItems.length - 1)
+    });
+  };
+
+  const openSingleImageInLightbox = (url: string, title: string, description?: string, dialogue?: string, prompt?: string) => {
+    setLightboxGallery({
+      items: [{
+        url,
+        title,
+        filename: title,
+        slideNumber: 1,
+        totalSlides: 1,
+        description,
+        dialogue,
+        prompt
+      }],
+      currentIndex: 0
+    });
+  };
+
+  // Funções de Salvar e Carregar Projeto / Prompts
+  const handleExportProjectJSON = () => {
+    try {
+      const projectData = {
+        version: '1.2.0',
+        appName: 'PostForge',
+        exportedAt: new Date().toISOString(),
+        activeTab,
+        niche,
+        artStyle,
+        animationStyle,
+        visualDynamism,
+        scriptTone,
+        carouselTone,
+        characterCount,
+        sceneCount,
+        duration,
+        topic,
+        characterDescription,
+        dialogueLanguage,
+        carouselQuantity,
+        activeCarouselIndex,
+        result,
+        carouselResult,
+        batchCarouselResults,
+        lastGenerationMeta
+      };
+
+      const cleanTitle = (topic || carouselResult?.title || result?.nanoBananaImagePrompt || 'postforge_projeto')
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .substring(0, 40)
+        .toLowerCase();
+
+      const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json;charset=utf-8' });
+      const filename = `postforge_${cleanTitle}_${Date.now()}.json`;
+      saveAs(blob, filename);
+      addLog('success', 'PROJETO', `💾 Projeto e prompts exportados com sucesso: ${filename}`);
+    } catch (err: any) {
+      console.error('Erro ao salvar projeto:', err);
+      addLog('error', 'PROJETO', `Falha ao exportar projeto: ${err.message}`);
+    }
+  };
+
+  const handleImportProjectFile = async (file: File) => {
+    if (!file) return;
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'json' || ext === 'postforge') {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (data.topic !== undefined) setTopic(data.topic);
+        if (data.niche) setNiche(data.niche);
+        if (data.artStyle) setArtStyle(data.artStyle);
+        if (data.animationStyle) setAnimationStyle(data.animationStyle);
+        if (data.dialogueLanguage) setDialogueLanguage(data.dialogueLanguage);
+        if (data.carouselTone) setCarouselTone(data.carouselTone);
+        if (data.scriptTone) setScriptTone(data.scriptTone);
+        if (data.characterDescription !== undefined) setCharacterDescription(data.characterDescription);
+        if (data.sceneCount) setSceneCount(data.sceneCount);
+        if (data.duration) setDuration(data.duration);
+        if (data.carouselQuantity) setCarouselQuantity(data.carouselQuantity);
+
+        if (data.batchCarouselResults && Array.isArray(data.batchCarouselResults) && data.batchCarouselResults.length > 0) {
+          setBatchCarouselResults(data.batchCarouselResults);
+          const idx = data.activeCarouselIndex !== undefined && data.activeCarouselIndex < data.batchCarouselResults.length ? data.activeCarouselIndex : 0;
+          setActiveCarouselIndex(idx);
+          setCarouselResult(data.batchCarouselResults[idx]);
+          setActiveTab('carousel');
+          addLog('success', 'PROJETO', `📂 Lote de ${data.batchCarouselResults.length} carrosséis carregado com sucesso de "${file.name}"!`);
+        } else if (data.carouselResult) {
+          setCarouselResult(data.carouselResult);
+          setBatchCarouselResults([data.carouselResult]);
+          setActiveCarouselIndex(0);
+          setActiveTab('carousel');
+          addLog('success', 'PROJETO', `📂 Carrossel carregado com sucesso de "${file.name}"!`);
+        } else if (data.result) {
+          setResult(data.result);
+          setActiveTab('script');
+          addLog('success', 'PROJETO', `📂 Roteiro de vídeo carregado com sucesso de "${file.name}"!`);
+        }
+      } else if (ext === 'pdf' || ext === 'docx' || ext === 'txt' || ext === 'md') {
+        addLog('doc', 'PROJETO', `Lendo documento "${file.name}" para importar roteiro/carrossel...`);
+        if (ext === 'txt' || ext === 'md') {
+          const text = await file.text();
+          setTopic(text);
+          addLog('success', 'PROJETO', `Texto de "${file.name}" importado para o tema.`);
+        } else {
+          const formData = new FormData();
+          formData.append('document', file);
+          const res = await fetch(getApiUrl('/api/extract-document-text'), {
+            method: 'POST',
+            body: formData
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.text) {
+              setTopic(json.text.substring(0, 3000));
+              addLog('success', 'PROJETO', `Conteúdo de "${file.name}" extraído e carregado no tema.`);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao importar projeto:', err);
+      addLog('error', 'PROJETO', `Erro ao carregar arquivo de projeto: ${err.message}`);
+      alert(`Não foi possível carregar o arquivo: ${err.message}`);
+    }
+  };
+
   // Funções de Imagens de Referência do Personagem / Estilo
   const handleAuditReferenceImagesSelect = async (files: FileList | File[]) => {
     setAuditError(null);
@@ -3783,68 +4140,208 @@ export default function App() {
   const exportAsPDF = () => {
     try {
       const doc = new jsPDF();
-      let yPos = 20;
-      const margin = 15;
+      let yPos = 16;
+      const margin = 14;
       const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
       const maxLineWidth = pageWidth - margin * 2;
 
-      const addText = (text: string, fontSize: number, isBold: boolean = false, textColor: [number, number, number] = [0,0,0]) => {
-        if (!text) return;
-        doc.setFontSize(fontSize);
-        doc.setFont("helvetica", isBold ? "bold" : "normal");
-        doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-        
-        const lines = doc.splitTextToSize(String(text), maxLineWidth);
-        const lineHeight = fontSize * 0.45 + 1.5;
-
-        for (const line of lines) {
-          if (yPos + lineHeight > pageHeight - margin) {
-            doc.addPage();
-            yPos = margin;
-          }
-          doc.text(line, margin, yPos);
-          yPos += lineHeight;
+      const ensurePageSpace = (neededHeight: number) => {
+        if (yPos + neededHeight > pageHeight - margin - 8) {
+          doc.addPage();
+          yPos = margin + 4;
+          return true;
         }
-        yPos += 2;
+        return false;
+      };
+
+      const addHeaderBanner = (mainTitle: string, subtitle: string, tags: string) => {
+        const bannerHeight = 26;
+        doc.setFillColor(30, 27, 75); // Dark Indigo #1e1b4b
+        doc.roundedRect(margin, yPos, maxLineWidth, bannerHeight, 3, 3, 'F');
+        
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(199, 210, 254); // Indigo 200
+        doc.text("POSTFORGE • GERADOR ESTRUTURADO DE CONTEÚDO", margin + 4, yPos + 6);
+
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(255, 255, 255);
+        const titleLines = doc.splitTextToSize(mainTitle, maxLineWidth - 8);
+        doc.text(titleLines[0] || mainTitle, margin + 4, yPos + 13);
+
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(224, 231, 255); // Indigo 100
+        doc.text(tags, margin + 4, yPos + 20);
+
+        yPos += bannerHeight + 6;
       };
 
       if (activeTab === 'script' && result) {
-        const isEn = result.language === 'en' || (result.scenes[0]?.dialogueEn && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEs);
-        const isEs = result.language === 'es' || (result.scenes[0]?.dialogueEs && !result.scenes[0]?.dialoguePt && !result.scenes[0]?.dialogueEn);
-        const isAll = result.language === 'all' || (result.scenes[0]?.dialoguePt && result.scenes[0]?.dialogueEn && result.scenes[0]?.dialogueEs);
-
-        addText("ROTEIRO GERADO - POSTFORGE", 18, true, [30, 41, 59]);
-        addText(`Nicho: ${niche.toUpperCase()}`, 11, true, [99, 102, 241]);
-        yPos += 3;
+        const selectedLang = result.language || dialogueLanguage || 'pt';
+        const langLabel = selectedLang === 'all' ? '3 IDIOMAS (PT, EN, ES)' : selectedLang === 'en' ? 'INGLÊS' : selectedLang === 'es' ? 'ESPANHOL' : 'PORTUGUÊS';
         
-        addText("PROMPT DA IMAGEM DE CAPA", 12, true, [79, 70, 229]);
-        addText(result.nanoBananaImagePrompt, 10);
-        yPos += 4;
+        addHeaderBanner(
+          "ROTEIRO DE VÍDEO VIRAL",
+          niche,
+          `Nicho: ${niche.toUpperCase()} • Estilo: ${animationStyle.toUpperCase()} • Idioma: ${langLabel} • ${result.scenes?.length || 0} Cenas`
+        );
+
+        if (result.nanoBananaImagePrompt) {
+          ensurePageSpace(24);
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.setDrawColor(203, 213, 225); // slate-300
+          doc.roundedRect(margin, yPos, maxLineWidth, 20, 2, 2, 'FD');
+          
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(79, 70, 229);
+          doc.text("PROMPT DA IMAGEM DE CAPA / BANNER", margin + 3, yPos + 5);
+
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(30, 41, 59);
+          const coverLines = doc.splitTextToSize(result.nanoBananaImagePrompt, maxLineWidth - 6);
+          doc.text(coverLines.slice(0, 3), margin + 3, yPos + 10);
+          yPos += 24;
+        }
 
         result.scenes?.forEach((scene) => {
-          addText(`CENA ${scene.sceneNumber} (${scene.duration}s)`, 13, true, [15, 23, 42]);
-          addText("Contexto:", 10, true, [100, 116, 139]);
-          addText(scene.contextPt, 10);
-          addText("Prompt de Vídeo (EN):", 10, true, [16, 185, 129]);
-          addText(scene.videoPromptEn, 10);
-          addText("Falas / Diálogo:", 10, true, [234, 88, 12]);
-          if (isEn) {
-            addText(`EN: ${scene.dialogueEn || scene.dialogue || ''}`, 10);
-          } else if (isEs) {
-            addText(`ES: ${scene.dialogueEs || scene.dialogue || ''}`, 10);
-          } else if (isAll) {
-            addText(`PT: ${scene.dialoguePt || ''}`, 10);
-            addText(`EN: ${scene.dialogueEn || ''}`, 10);
-            addText(`ES: ${scene.dialogueEs || ''}`, 10);
-          } else {
-            addText(`PT: ${scene.dialoguePt || scene.dialogue || ''}`, 10);
+          ensurePageSpace(45);
+          
+          // Scene header badge
+          doc.setFillColor(79, 70, 229);
+          doc.roundedRect(margin, yPos, 45, 7, 1.5, 1.5, 'F');
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(255, 255, 255);
+          doc.text(`CENA ${scene.sceneNumber} (${scene.duration || 5}s)`, margin + 3, yPos + 5);
+          yPos += 10;
+
+          // Context
+          doc.setFontSize(8.5);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(100, 116, 139);
+          doc.text("Contexto Visual:", margin, yPos);
+          yPos += 4;
+          doc.setFontSize(8.5);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(15, 23, 42);
+          const ctxLines = doc.splitTextToSize(scene.contextPt || '', maxLineWidth);
+          for (const l of ctxLines) {
+            ensurePageSpace(5);
+            doc.text(l, margin, yPos);
+            yPos += 4;
           }
-          yPos += 3;
+          yPos += 1;
+
+          // Dialogue / Narration - Strict Language
+          doc.setFontSize(8.5);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(234, 88, 12); // orange-600
+          doc.text("Narração / Diálogo:", margin, yPos);
+          yPos += 4;
+          doc.setFontSize(8.5);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(15, 23, 42);
+
+          if (selectedLang === 'pt') {
+            const dialText = `PT: "${scene.dialoguePt || scene.dialogue || ''}"`;
+            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
+            for (const l of dLines) {
+              ensurePageSpace(5);
+              doc.text(l, margin, yPos);
+              yPos += 4;
+            }
+          } else if (selectedLang === 'en') {
+            const dialText = `EN: "${scene.dialogueEn || scene.dialogue || ''}"`;
+            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
+            for (const l of dLines) {
+              ensurePageSpace(5);
+              doc.text(l, margin, yPos);
+              yPos += 4;
+            }
+          } else if (selectedLang === 'es') {
+            const dialText = `ES: "${scene.dialogueEs || scene.dialogue || ''}"`;
+            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
+            for (const l of dLines) {
+              ensurePageSpace(5);
+              doc.text(l, margin, yPos);
+              yPos += 4;
+            }
+          } else if (selectedLang === 'all') {
+            const allDials = [
+              scene.dialoguePt ? `PT: "${scene.dialoguePt}"` : '',
+              scene.dialogueEn ? `EN: "${scene.dialogueEn}"` : '',
+              scene.dialogueEs ? `ES: "${scene.dialogueEs}"` : ''
+            ].filter(Boolean);
+            for (const d of allDials) {
+              const dLines = doc.splitTextToSize(d, maxLineWidth);
+              for (const l of dLines) {
+                ensurePageSpace(5);
+                doc.text(l, margin, yPos);
+                yPos += 4;
+              }
+            }
+          }
+          yPos += 1;
+
+          // Video prompt box
+          doc.setFontSize(8.5);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(16, 185, 129); // emerald-600
+          doc.text("Prompt de Vídeo (Midjourney / Runway / Kling):", margin, yPos);
+          yPos += 4;
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(51, 65, 85);
+          const pLines = doc.splitTextToSize(scene.videoPromptEn || '', maxLineWidth);
+          for (const l of pLines) {
+            ensurePageSpace(5);
+            doc.text(l, margin, yPos);
+            yPos += 3.8;
+          }
+          
+          yPos += 4;
+          // Divider
+          doc.setDrawColor(226, 232, 240);
+          doc.line(margin, yPos, margin + maxLineWidth, yPos);
+          yPos += 5;
         });
 
-        addText("LEGENDA DO INSTAGRAM", 13, true, [217, 70, 239]);
-        addText(result.instagramPost, 10);
+        if (result.instagramPost) {
+          ensurePageSpace(35);
+          doc.setFillColor(245, 243, 255); // purple-50
+          doc.setDrawColor(216, 180, 254);
+          doc.roundedRect(margin, yPos, maxLineWidth, 30, 2, 2, 'FD');
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(147, 51, 234);
+          doc.text("LEGENDA DO INSTAGRAM", margin + 3, yPos + 5);
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(30, 41, 59);
+          const igLines = doc.splitTextToSize(result.instagramPost, maxLineWidth - 6);
+          let subY = yPos + 10;
+          for (const l of igLines.slice(0, 5)) {
+            doc.text(l, margin + 3, subY);
+            subY += 3.8;
+          }
+          yPos += 35;
+        }
+
+        // Add page numbers
+        const totalPages = doc.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Página ${i} de ${totalPages} • PostForge AI Video & Carousel Generator`, margin, pageHeight - 8);
+        }
+
         doc.save("roteiro_postforge.pdf");
         addLog('success', 'DOWNLOAD', 'Arquivo PDF do roteiro exportado com sucesso: roteiro_postforge.pdf');
 
@@ -3862,40 +4359,154 @@ export default function App() {
           }
 
           const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
-          const isEn = car.language === 'en' || (car.slides?.[0]?.textInBubblesEn && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEs);
-          const isEs = car.language === 'es' || (car.slides?.[0]?.textInBubblesEs && !car.slides?.[0]?.textInBubblesPt && !car.slides?.[0]?.textInBubblesEn);
-          const isAll = car.language === 'all' || (car.slides?.[0]?.textInBubblesPt && car.slides?.[0]?.textInBubblesEn && car.slides?.[0]?.textInBubblesEs);
+          const selectedLang = car.language || dialogueLanguage || 'pt';
+          const langLabel = selectedLang === 'all' ? '3 IDIOMAS (PT, EN, ES)' : selectedLang === 'en' ? 'INGLÊS' : selectedLang === 'es' ? 'ESPANHOL' : 'PORTUGUÊS';
 
-          addText(isBatch ? `CARROSSEL ${cIdx + 1}: ${cTitle.toUpperCase()}` : `CARROSSEL: ${cTitle.toUpperCase()}`, 16, true, [30, 41, 59]);
-          addText(`Estilo: ${artStyle.toUpperCase()} | Nicho: ${niche.toUpperCase()}`, 10, true, [99, 102, 241]);
-          yPos += 3;
+          addHeaderBanner(
+            isBatch ? `CARROSSEL ${cIdx + 1}: ${cTitle.toUpperCase()}` : cTitle.toUpperCase(),
+            niche,
+            `Nicho: ${niche.toUpperCase()} • Estilo: ${artStyle.toUpperCase()} • Idioma: ${langLabel} • ${car.slides?.length || 0} Slides`
+          );
 
           car.slides?.forEach((slide) => {
-            addText(`SLIDE ${slide.slideNumber}`, 12, true, [15, 23, 42]);
-            addText("Descrição Visual:", 9, true, [100, 116, 139]);
-            addText(slide.descriptionPt || '', 9);
-            
-            addText("Texto nos Balões:", 9, true, [37, 99, 235]);
-            if (isEn) {
-              addText(`EN: "${slide.textInBubblesEn || slide.textInBubbles || ''}"`, 9);
-            } else if (isEs) {
-              addText(`ES: "${slide.textInBubblesEs || slide.textInBubbles || ''}"`, 9);
-            } else if (isAll) {
-              addText(`PT: "${slide.textInBubblesPt || ''}"`, 9);
-              addText(`EN: "${slide.textInBubblesEn || ''}"`, 9);
-              addText(`ES: "${slide.textInBubblesEs || ''}"`, 9);
-            } else {
-              addText(`PT: "${slide.textInBubblesPt || slide.textInBubbles || ''}"`, 9);
+            ensurePageSpace(45);
+
+            // Slide header badge
+            doc.setFillColor(79, 70, 229);
+            doc.roundedRect(margin, yPos, 32, 6.5, 1.5, 1.5, 'F');
+            doc.setFontSize(8.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(255, 255, 255);
+            doc.text(`SLIDE ${String(slide.slideNumber).padStart(2, '0')}`, margin + 3, yPos + 4.5);
+            yPos += 9.5;
+
+            // Visual Description
+            if (slide.descriptionPt) {
+              doc.setFontSize(8);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(100, 116, 139);
+              doc.text("Descrição Visual da Cena:", margin, yPos);
+              yPos += 3.8;
+              doc.setFontSize(8);
+              doc.setFont("helvetica", "normal");
+              doc.setTextColor(15, 23, 42);
+              const descLines = doc.splitTextToSize(slide.descriptionPt, maxLineWidth);
+              for (const l of descLines) {
+                ensurePageSpace(4.5);
+                doc.text(l, margin, yPos);
+                yPos += 3.8;
+              }
+              yPos += 1;
             }
 
-            addText("Prompt de Imagem (Midjourney / Dall-E):", 9, true, [5, 150, 105]);
-            addText(slide.imagePromptEn || '', 9);
-            yPos += 2;
+            // Dialogue / Speech Bubble - Strict Language Filter
+            doc.setFontSize(8);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(37, 99, 235); // blue-600
+            doc.text("Texto nos Balões de Fala:", margin, yPos);
+            yPos += 3.8;
+            doc.setFontSize(8.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(30, 41, 59);
+
+            if (selectedLang === 'pt') {
+              const textVal = slide.textInBubblesPt || slide.textInBubbles || '';
+              const bLines = doc.splitTextToSize(`PT: "${textVal}"`, maxLineWidth);
+              for (const l of bLines) {
+                ensurePageSpace(4.5);
+                doc.text(l, margin, yPos);
+                yPos += 4;
+              }
+            } else if (selectedLang === 'en') {
+              const textVal = slide.textInBubblesEn || slide.textInBubbles || '';
+              const bLines = doc.splitTextToSize(`EN: "${textVal}"`, maxLineWidth);
+              for (const l of bLines) {
+                ensurePageSpace(4.5);
+                doc.text(l, margin, yPos);
+                yPos += 4;
+              }
+            } else if (selectedLang === 'es') {
+              const textVal = slide.textInBubblesEs || slide.textInBubbles || '';
+              const bLines = doc.splitTextToSize(`ES: "${textVal}"`, maxLineWidth);
+              for (const l of bLines) {
+                ensurePageSpace(4.5);
+                doc.text(l, margin, yPos);
+                yPos += 4;
+              }
+            } else if (selectedLang === 'all') {
+              const allBubbles = [
+                slide.textInBubblesPt ? `PT: "${slide.textInBubblesPt}"` : '',
+                slide.textInBubblesEn ? `EN: "${slide.textInBubblesEn}"` : '',
+                slide.textInBubblesEs ? `ES: "${slide.textInBubblesEs}"` : ''
+              ].filter(Boolean);
+              for (const b of allBubbles) {
+                const bLines = doc.splitTextToSize(b, maxLineWidth);
+                for (const l of bLines) {
+                  ensurePageSpace(4.5);
+                  doc.text(l, margin, yPos);
+                  yPos += 4;
+                }
+              }
+            }
+            yPos += 1.5;
+
+            // Prompt for Image Generator (Clean Box)
+            if (slide.imagePromptEn) {
+              doc.setFontSize(8);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(5, 150, 105); // emerald-600
+              doc.text("Prompt de Imagem (Midjourney / DALL-E / Leonardo / Flux):", margin, yPos);
+              yPos += 3.8;
+              doc.setFontSize(7.5);
+              doc.setFont("helvetica", "normal");
+              doc.setTextColor(51, 65, 85);
+              const pLines = doc.splitTextToSize(slide.imagePromptEn, maxLineWidth);
+              for (const l of pLines) {
+                ensurePageSpace(4.5);
+                doc.text(l, margin, yPos);
+                yPos += 3.5;
+              }
+            }
+
+            yPos += 3;
+            // Divider
+            doc.setDrawColor(226, 232, 240);
+            doc.line(margin, yPos, margin + maxLineWidth, yPos);
+            yPos += 4.5;
           });
 
-          addText("LEGENDA DO INSTAGRAM", 12, true, [217, 70, 239]);
-          addText(car.instagramPost || '', 9);
+          // Instagram Post
+          if (car.instagramPost) {
+            ensurePageSpace(30);
+            doc.setFillColor(245, 243, 255);
+            doc.setDrawColor(216, 180, 254);
+            doc.roundedRect(margin, yPos, maxLineWidth, 26, 2, 2, 'FD');
+            doc.setFontSize(8.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(147, 51, 234);
+            doc.text("LEGENDA DO INSTAGRAM", margin + 3, yPos + 5);
+            doc.setFontSize(8);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(30, 41, 59);
+            const igLines = doc.splitTextToSize(car.instagramPost, maxLineWidth - 6);
+            let subY = yPos + 9.5;
+            for (const l of igLines.slice(0, 4)) {
+              doc.text(l, margin + 3, subY);
+              subY += 3.8;
+            }
+            yPos += 30;
+          }
         });
+
+        // Add page numbers on all pages
+        const totalPages = doc.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Página ${i} de ${totalPages} • PostForge AI Carousel Generator`, margin, pageHeight - 8);
+        }
 
         const filename = isBatch ? `lote_${listToExport.length}_carrosseis_postforge.pdf` : `carrossel_postforge.pdf`;
         doc.save(filename);
@@ -4432,11 +5043,11 @@ export default function App() {
 
         if (carouselQuantity > 1) {
           promptText += `\n=== GERAÇÃO EM LOTE: EXATAMENTE ${carouselQuantity} CARROSSÉIS OBRIGATÓRIOS ===
-          REGRA CRÍTICA E INVIOLÁVEL: Você DEVE gerar EXATAMENTE ${carouselQuantity} carrosséis completos no array "carousels". NÃO gere menos que ${carouselQuantity}. NÃO gere mais que ${carouselQuantity}. O número exato é ${carouselQuantity}.
+          REGRA CRÍTICA E INVIOLÁVEL: Você DEVE gerar RIGOROSAMENTE ${carouselQuantity} carrosséis completos no array "carousels". NÃO gere menos que ${carouselQuantity} e NÃO gere mais que ${carouselQuantity}. O número exato é ${carouselQuantity}.
           - Se foi digitado um tema geral ou anexado material de estudo: Crie ${carouselQuantity} carrosséis que abordem ângulos, subtemas, ganchos e metáforas 100% diferentes e complementares.
-          - Se foi fornecida uma lista de tópicos (um por linha): Crie 1 carrossel completo para cada tópico da lista.
+          - Se foi fornecida uma lista de tópicos (um por linha): Crie 1 carrossel completo para cada tópico da lista (máximo ${carouselQuantity}).
           - Cada um dos ${carouselQuantity} carrosséis DEVE ter: "title" (título descritivo em Português), "theme" (tema central), "slides" (com exatamente ${sceneCount} slides com "slideNumber", "imagePromptEn", "textInBubbles...", "descriptionPt") e "instagramPost" (legenda dedicada).
-          - O array "carousels" na resposta DEVE conter exatamente ${carouselQuantity} objetos. Retornar menos que ${carouselQuantity} é PROIBIDO.
+          - O array "carousels" na resposta DEVE conter exatamente ${carouselQuantity} objetos. Retornar mais ou menos que ${carouselQuantity} é PROIBIDO.
           LEMBRETE FINAL: carousels.length === ${carouselQuantity}. Gere TODOS os ${carouselQuantity} carrosséis completos.`;
 
           responseSchema = {
@@ -4603,7 +5214,7 @@ export default function App() {
         addLog('success', 'GERADOR', `✅ Roteiro de vídeo gerado em ${totalSeconds}s (${jsonResult.scenes?.length || 0} cenas) via ${data.provider.toUpperCase()} (${data.model})!`);
       } else {
         if (jsonResult && jsonResult.carousels && Array.isArray(jsonResult.carousels) && jsonResult.carousels.length > 0) {
-          const list = jsonResult.carousels.map((car: any, idx: number) => {
+          let list = jsonResult.carousels.map((car: any, idx: number) => {
             car.title = car.title || `Carrossel ${idx + 1}`;
             car.language = dialogueLanguage;
             if (car.slides && Array.isArray(car.slides)) {
@@ -4619,6 +5230,12 @@ export default function App() {
             }
             return car;
           });
+
+          // Corte rígido de segurança para garantir a quantidade exata solicitada
+          if (carouselQuantity > 0 && list.length > carouselQuantity) {
+            list = list.slice(0, carouselQuantity);
+          }
+
           setBatchCarouselResults(list);
           setCarouselResult(list[0]);
           setActiveCarouselIndex(0);
@@ -4712,6 +5329,38 @@ export default function App() {
               Espião Flow
             </button>
           </nav>
+
+          {/* Botões de Salvar / Carregar Projeto */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleExportProjectJSON}
+              className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded-xl text-[10px] sm:text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Salvar todo o projeto, prompts e configurações em arquivo JSON"
+            >
+              <Save className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden md:inline">Salvar Projeto</span>
+            </button>
+
+            <label
+              className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded-xl text-[10px] sm:text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Carregar projeto salvo (.JSON) ou importar roteiro de .PDF / .DOC / .TXT"
+            >
+              <input
+                type="file"
+                accept=".json,.postforge,.pdf,.docx,.doc,.txt,.md"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleImportProjectFile(e.target.files[0]);
+                    e.target.value = '';
+                  }
+                }}
+                className="hidden"
+              />
+              <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden md:inline">Carregar</span>
+            </label>
+          </div>
 
           <button 
             onClick={() => {
@@ -5097,7 +5746,7 @@ export default function App() {
                                 {/* Thumbnail do Snapshot */}
                                 {step.screenshot ? (
                                   <div 
-                                    onClick={() => setAuditImageModalUrl({ url: step.screenshot!, title: `Passo ${idx + 1}: ${step.description}` })}
+                                    onClick={() => openSingleImageInLightbox(step.screenshot!, `Passo ${idx + 1}: ${step.description}`, step.description)}
                                     className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:border-indigo-500 transition group/img relative"
                                     title="Ver captura de tela em tela cheia"
                                   >
@@ -5494,7 +6143,7 @@ export default function App() {
                               {/* Snapshot do Resultado */}
                               {item.screenshot && (
                                 <div 
-                                  onClick={() => setAuditImageModalUrl({ url: item.screenshot!, title: `Resultado: ${item.label}` })}
+                                  onClick={() => openSingleImageInLightbox(item.screenshot!, `Resultado: ${item.label}`, `Item: ${item.label}`)}
                                   className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:border-indigo-500 transition relative group/snap"
                                   title="Ver captura final em tela cheia"
                                 >
@@ -6632,9 +7281,9 @@ module.exports = { runCompleteWorkflow };`
             {/* Coluna Esquerda: Formulário de Auditoria & Upload de Imagens */}
             <aside className="lg:col-span-5 h-full flex flex-col overflow-hidden">
               <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 flex flex-col gap-5 h-full overflow-y-auto">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-2xs">
                       <ListOrdered className="w-4 h-4" />
                     </div>
                     <div>
@@ -6642,6 +7291,16 @@ module.exports = { runCompleteWorkflow };`
                       <p className="text-[11px] text-slate-400">Consistência de personagens e ordem dos slides</p>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleResetEntireAudit}
+                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Limpar todas as imagens, roteiros e resultados para iniciar uma nova auditoria"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Nova Auditoria</span>
+                  </button>
                 </div>
 
                 {/* Bloco 1: Upload em Lote de Imagens */}
@@ -6651,18 +7310,48 @@ module.exports = { runCompleteWorkflow };`
                       <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
                       <span>Imagens Geradas em Lote</span>
                     </label>
-                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                      {uploadedAuditImages.length} {uploadedAuditImages.length === 1 ? 'imagem' : 'imagens'}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Selecionar uma pasta inteira com imagens"
+                      >
+                        <input
+                          type="file"
+                          // @ts-ignore
+                          webkitdirectory=""
+                          directory=""
+                          multiple
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              handleAuditImagesSelect(e.target.files);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <FolderPlus className="w-3 h-3 text-indigo-600" />
+                        <span>Selecionar Pasta</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                        {uploadedAuditImages.length} {uploadedAuditImages.length === 1 ? 'imagem' : 'imagens'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Dropzone Drag and Drop */}
                   <div 
                     onDragOver={(e) => { e.preventDefault(); setIsDragOverAudit(true); }}
                     onDragLeave={() => setIsDragOverAudit(false)}
-                    onDrop={(e) => {
+                    onDrop={async (e) => {
                       e.preventDefault();
                       setIsDragOverAudit(false);
+                      if (e.dataTransfer.items) {
+                        const files = await scanFilesFromDataTransfer(e.dataTransfer.items);
+                        if (files.length > 0) {
+                          handleAuditImagesSelect(files);
+                          return;
+                        }
+                      }
                       if (e.dataTransfer.files) {
                         handleAuditImagesSelect(e.dataTransfer.files);
                       }
@@ -6685,10 +7374,10 @@ module.exports = { runCompleteWorkflow };`
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-700">
-                        Arraste e solte várias imagens aqui
+                        Arraste imagens ou pastas inteiras aqui
                       </p>
                       <p className="text-[10px] text-slate-400 mt-0.5">
-                        PNG, JPG, WEBP • Selecione de uma só vez as imagens geradas pela IA
+                        PNG, JPG, WEBP • Clique para selecionar arquivos ou use "Selecionar Pasta" acima
                       </p>
                     </div>
                   </div>
@@ -6707,13 +7396,22 @@ module.exports = { runCompleteWorkflow };`
                         </button>
                       </div>
                       <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1.5 bg-slate-100/60 rounded-xl border border-slate-200/70">
-                        {uploadedAuditImages.map((img) => (
+                        {uploadedAuditImages.map((img, imgIdx) => (
                           <div key={img.id} className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white aspect-square flex items-center justify-center shadow-2xs">
                             <img 
                               src={img.dataUrl} 
                               alt={img.name} 
                               className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
-                              onClick={() => setAuditImageModalUrl({ url: img.dataUrl, title: img.name })}
+                              onClick={() => setLightboxGallery({
+                                items: uploadedAuditImages.map((m, i) => ({
+                                  url: m.dataUrl,
+                                  title: m.name,
+                                  filename: m.name,
+                                  slideNumber: i + 1,
+                                  totalSlides: uploadedAuditImages.length
+                                })),
+                                currentIndex: imgIdx
+                              })}
                             />
                             <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 text-white text-[8px] font-mono px-1 py-0.5 truncate text-center">
                               {img.name}
@@ -6907,10 +7605,20 @@ module.exports = { runCompleteWorkflow };`
                             key={img.id}
                             className="group relative bg-slate-50 border border-slate-200 rounded-lg overflow-hidden flex flex-col items-center justify-center p-1 hover:border-indigo-400 transition shadow-2xs"
                           >
-                            <div 
-                              className="relative w-full aspect-square rounded-md overflow-hidden bg-slate-100 cursor-pointer"
-                              onClick={() => setAuditImageModalUrl({ url: img.dataUrl, title: `Personagem Ref #${idx + 1} - ${img.name}` })}
-                            >
+                              <div 
+                                className="relative w-full aspect-square rounded-md overflow-hidden bg-slate-100 cursor-pointer"
+                                onClick={() => setLightboxGallery({
+                                  items: auditReferenceImages.map((m, i) => ({
+                                    url: m.dataUrl,
+                                    title: `Personagem Ref #${i + 1} - ${m.name}`,
+                                    filename: m.name,
+                                    slideNumber: i + 1,
+                                    totalSlides: auditReferenceImages.length,
+                                    description: `Imagem de referência ${i + 1} para consistência visual dos personagens.`
+                                  })),
+                                  currentIndex: idx
+                                })}
+                              >
                               <img 
                                 src={img.dataUrl} 
                                 alt={img.name} 
@@ -7259,9 +7967,9 @@ module.exports = { runCompleteWorkflow };`
                                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                   />
                                   <button
-                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${index + 1} - ${matchedImg.name}` })}
+                                    onClick={() => openAuditSlideInLightbox(index)}
                                     className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
-                                    title="Expandir Imagem"
+                                    title="Expandir Imagem e Navegar no Carrossel"
                                   >
                                     <div className="p-2 bg-slate-900/80 rounded-xl backdrop-blur-xs flex items-center gap-1.5 text-xs font-bold">
                                       <ZoomIn className="w-4 h-4" /> Expandir
@@ -7444,8 +8152,8 @@ module.exports = { runCompleteWorkflow };`
                                   <img 
                                     src={matchedImg.dataUrl} 
                                     alt={surplus.nome_arquivo} 
-                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
-                                    className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0"
+                                    onClick={() => openSurplusInLightbox(sIdx)}
+                                    className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0 hover:scale-105 transition-transform"
                                   />
                                 )}
                                 <div className="flex-1 min-w-0">
@@ -8025,13 +8733,20 @@ module.exports = { runCompleteWorkflow };`
 
               {/* Export Actions for Video */}
               <div className="flex flex-wrap items-center justify-end gap-2 px-1">
-                <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition">
+                <button 
+                  onClick={handleExportProjectJSON} 
+                  className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-2 rounded-xl border border-indigo-200 transition cursor-pointer shadow-2xs"
+                  title="Salvar projeto completo em JSON (inclui tema, configurações e todos os prompts)"
+                >
+                  <Save className="w-4 h-4 text-indigo-600" /> Salvar Projeto (.JSON)
+                </button>
+                <button onClick={exportAsTXT} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 transition cursor-pointer">
                   <FileText className="w-4 h-4" /> TXT
                 </button>
-                <button onClick={exportAsDOCX} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-blue-700 transition">
+                <button onClick={exportAsDOCX} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-blue-700 transition cursor-pointer">
                   <FileText className="w-4 h-4" /> DOCX
                 </button>
-                <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm">
+                <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer">
                   <Download className="w-4 h-4" /> PDF
                 </button>
               </div>
@@ -8333,6 +9048,13 @@ module.exports = { runCompleteWorkflow };`
                 </div>
 
                 <div className="flex items-center flex-wrap gap-2">
+                  <button 
+                    onClick={handleExportProjectJSON} 
+                    className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3.5 py-2 rounded-xl border border-indigo-200 transition cursor-pointer shadow-2xs"
+                    title="Salvar lote de carrosséis e configurações em arquivo JSON"
+                  >
+                    <Save className="w-4 h-4 text-indigo-600" /> Salvar Projeto (.JSON)
+                  </button>
                   {(!batchCarouselResults || batchCarouselResults.length <= 1) && (
                     <button
                       type="button"
@@ -8352,14 +9074,14 @@ module.exports = { runCompleteWorkflow };`
                   </button>
                   <button 
                     onClick={exportAsDOCX} 
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-blue-500 transition cursor-pointer shadow-sm"
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-blue-500 transition cursor-pointer shadow-sm" 
                     title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em Word (.DOCX)` : 'Exportar DOCX'}
                   >
                     <FileText className="w-4 h-4" /> DOCX
                   </button>
                   <button 
                     onClick={exportAsPDF} 
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-red-500 transition shadow-sm cursor-pointer"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-red-500 transition shadow-sm cursor-pointer" 
                     title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em PDF` : 'Exportar PDF'}
                   >
                     <Download className="w-4 h-4" /> PDF
@@ -8387,6 +9109,15 @@ module.exports = { runCompleteWorkflow };`
                   <div className="flex items-center justify-between">
                     <h3 className="text-white font-bold text-lg">Slide {slide.slideNumber}</h3>
                     <div className="flex items-center gap-2">
+                       <button
+                         type="button"
+                         onClick={() => openCarouselSlideInLightbox(index)}
+                         className="flex items-center gap-1 text-[10px] font-bold py-1 px-2.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg transition cursor-pointer"
+                         title="Visualizar em Modo Apresentação / Lightbox com navegação"
+                       >
+                         <ZoomIn className="w-3 h-3" />
+                         <span>Apresentar Slide</span>
+                       </button>
                        <span className="text-[10px] font-bold py-1 px-2 bg-indigo-500/20 text-indigo-400 rounded uppercase">Slide Completo</span>
                     </div>
                   </div>
@@ -10871,9 +11602,9 @@ module.exports = { runCompleteWorkflow };`
                                       className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                     />
                                     <button
-                                      onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: `Slide ${index + 1} - ${matchedImg.name}` })}
+                                      onClick={() => openAuditSlideInLightbox(index)}
                                       className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
-                                      title="Expandir Imagem"
+                                      title="Expandir Imagem e Navegar no Carrossel"
                                     >
                                       <div className="p-1.5 bg-slate-900/80 rounded-lg text-[10px] font-bold flex items-center gap-1">
                                         <ZoomIn className="w-3.5 h-3.5" /> Ver Grande
@@ -10995,7 +11726,7 @@ module.exports = { runCompleteWorkflow };`
                                   <img 
                                     src={matchedImg.dataUrl} 
                                     alt={surplus.nome_arquivo}
-                                    onClick={() => setAuditImageModalUrl({ url: matchedImg.dataUrl, title: surplus.nome_arquivo })}
+                                    onClick={() => openSurplusInLightbox(sIdx)}
                                     className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
                                   />
                                 </div>
@@ -11354,65 +12085,251 @@ module.exports = { runCompleteWorkflow };`
         </button>
       )}
 
-      {/* Modal de Zoom em Alta Resolução (Lightbox) no Nível Mais Alto (z-[100]) */}
-      {auditImageModalUrl && (
-        <div 
-          onClick={() => setAuditImageModalUrl(null)}
-          className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150"
-        >
+      {/* Modal de Zoom e Navegação em Carrossel (Lightbox) no Nível Mais Alto (z-[100]) */}
+      {((lightboxGallery && lightboxGallery.items.length > 0) || auditImageModalUrl) && (() => {
+        const gallery = lightboxGallery && lightboxGallery.items.length > 0
+          ? lightboxGallery
+          : {
+              items: [{
+                url: auditImageModalUrl!.url,
+                title: auditImageModalUrl!.title,
+                filename: auditImageModalUrl!.title,
+                slideNumber: 1,
+                totalSlides: 1
+              }],
+              currentIndex: 0
+            };
+
+        const currentItem = gallery.items[gallery.currentIndex] || gallery.items[0];
+        const totalCount = gallery.items.length;
+        const hasPrev = totalCount > 1;
+        const hasNext = totalCount > 1;
+
+        const handleClose = () => {
+          setLightboxGallery(null);
+          setAuditImageModalUrl(null);
+        };
+
+        const handlePrev = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          setLightboxGallery(prev => {
+            if (!prev) return null;
+            const newIdx = (prev.currentIndex - 1 + prev.items.length) % prev.items.length;
+            return { ...prev, currentIndex: newIdx };
+          });
+        };
+
+        const handleNext = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          setLightboxGallery(prev => {
+            if (!prev) return null;
+            const newIdx = (prev.currentIndex + 1) % prev.items.length;
+            return { ...prev, currentIndex: newIdx };
+          });
+        };
+
+        return (
           <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl animate-in zoom-in-95"
+            onClick={handleClose}
+            className="fixed inset-0 z-[100] bg-slate-950/92 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
           >
-            {/* Header do Lightbox */}
-            <div className="p-4 bg-slate-850 border-b border-slate-800 flex items-center justify-between text-white">
-              <div className="flex items-center gap-2.5 min-w-0 pr-3">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
-                  <ZoomIn className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs sm:text-sm font-bold text-white truncate font-mono">
-                    {auditImageModalUrl.title}
-                  </h4>
-                  <p className="text-[10px] text-slate-400">Pressione ESC ou clique fora para fechar</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => saveAs(auditImageModalUrl.url, auditImageModalUrl.title.replace(/[^a-zA-Z0-9._-]/g, '_'))}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
-                  title="Baixar imagem individual"
-                >
-                  <Download className="w-3.5 h-3.5" /> <span>Baixar Imagem</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuditImageModalUrl(null)}
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                  title="Fechar (ESC)"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Imagem em Tamanho Grande */}
             <div 
-              onClick={() => setAuditImageModalUrl(null)}
-              className="flex-1 p-4 sm:p-6 flex items-center justify-center bg-slate-950 overflow-auto cursor-zoom-out"
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden max-w-5xl w-full max-h-[96vh] flex flex-col shadow-2xl animate-in zoom-in-95"
             >
-              <img 
-                src={auditImageModalUrl.url} 
-                alt={auditImageModalUrl.title} 
-                onClick={(e) => e.stopPropagation()}
-                className="max-h-[78vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800"
-              />
+              {/* Header do Lightbox */}
+              <div className="p-3 sm:p-4 bg-slate-850 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0 pr-3">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                    <ZoomIn className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 bg-indigo-600 text-white text-[11px] font-black rounded-lg shadow-xs">
+                        Slide {currentItem.slideNumber || gallery.currentIndex + 1} de {totalCount}
+                      </span>
+                      <h4 className="text-xs sm:text-sm font-bold text-white truncate font-mono">
+                        {currentItem.filename || currentItem.title}
+                      </h4>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Navegue com as setas ⬅️ ➡️ do teclado ou use os botões • ESC para fechar
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {currentItem.url && (
+                    <button
+                      type="button"
+                      onClick={() => saveAs(currentItem.url, (currentItem.filename || currentItem.title).replace(/[^a-zA-Z0-9._-]/g, '_'))}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                      title="Baixar imagem individual"
+                    >
+                      <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Baixar Imagem</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                    title="Fechar (ESC)"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Área Central da Imagem com Botões de Navegação */}
+              <div className="relative flex-1 p-2 sm:p-4 flex items-center justify-center bg-slate-950 overflow-hidden min-h-[300px] max-h-[58vh]">
+                {/* Botão Anterior */}
+                {hasPrev && (
+                  <button
+                    type="button"
+                    onClick={handlePrev}
+                    className="absolute left-3 z-10 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-900/80 hover:bg-indigo-600 border border-slate-700 text-white flex items-center justify-center shadow-xl backdrop-blur-xs transition cursor-pointer hover:scale-105"
+                    title="Slide Anterior (Seta Esquerda)"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {/* Imagem Central */}
+                {currentItem.url ? (
+                  <img 
+                    src={currentItem.url} 
+                    alt={currentItem.title} 
+                    className="max-h-[54vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800 transition-all duration-200"
+                  />
+                ) : (
+                  <div className="w-72 h-72 flex flex-col items-center justify-center text-slate-500 border border-slate-800 rounded-2xl bg-slate-900/50 p-4 text-center">
+                    <ImageIcon className="w-12 h-12 mb-2 text-slate-600" />
+                    <span className="text-xs font-bold text-slate-300 font-mono">{currentItem.title}</span>
+                    <span className="text-[10px] text-slate-500 mt-1">Nenhuma miniatura em alta resolução disponível</span>
+                  </div>
+                )}
+
+                {/* Botão Próximo */}
+                {hasNext && (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="absolute right-3 z-10 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-900/80 hover:bg-indigo-600 border border-slate-700 text-white flex items-center justify-center shadow-xl backdrop-blur-xs transition cursor-pointer hover:scale-105"
+                    title="Próximo Slide (Seta Direita)"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
+
+              {/* Barra de Miniaturas / Paginação Rápida */}
+              {totalCount > 1 && (
+                <div className="px-4 py-2 bg-slate-900/90 border-t border-slate-800/80 flex items-center justify-center gap-1.5 overflow-x-auto shrink-0">
+                  {gallery.items.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setLightboxGallery(prev => prev ? { ...prev, currentIndex: idx } : null)}
+                      className={`h-2.5 rounded-full transition-all cursor-pointer ${
+                        idx === gallery.currentIndex 
+                          ? 'w-8 bg-indigo-500 shadow-md shadow-indigo-500/50' 
+                          : 'w-2.5 bg-slate-700 hover:bg-slate-500'
+                      }`}
+                      title={`Ir para Slide ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Painel Inferior de Metadados e Informações do Slide */}
+              <div className="p-4 bg-slate-850 border-t border-slate-800 flex flex-col gap-3 max-h-[28vh] overflow-y-auto shrink-0">
+                {/* Diálogo / Fala no Balão */}
+                {currentItem.dialogue && (
+                  <div className="p-3 bg-indigo-950/50 border border-indigo-500/30 rounded-xl flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-black uppercase text-indigo-300 tracking-wider">
+                        Fala no Balão de Diálogo:
+                      </span>
+                      <p className="text-xs sm:text-sm font-semibold text-indigo-100 mt-0.5 leading-relaxed">
+                        "{currentItem.dialogue}"
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Descrição Visual do Slide */}
+                {currentItem.description && (
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-slate-800 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5 border border-slate-700">
+                      <Clapperboard className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        Descrição da Cena:
+                      </span>
+                      <p className="text-xs text-slate-200 mt-0.5 leading-relaxed">
+                        {currentItem.description}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Consistência / Feedback da IA (se disponível) */}
+                {(currentItem.consistencyScore || currentItem.consistencyFeedback) && (
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-950 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-800/50">
+                      <Sparkles className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">
+                          Consistência Visual da IA:
+                        </span>
+                        {currentItem.consistencyScore && (
+                          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-black rounded-md border border-emerald-500/30">
+                            {currentItem.consistencyScore}
+                          </span>
+                        )}
+                      </div>
+                      {currentItem.consistencyFeedback && (
+                        <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                          {currentItem.consistencyFeedback}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prompt Original da Imagem */}
+                {currentItem.prompt && (
+                  <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[9px] font-mono font-bold uppercase text-slate-500">
+                        Prompt de Geração (Midjourney / DALL-E):
+                      </span>
+                      <p className="text-[11px] font-mono text-slate-400 mt-0.5 line-clamp-2 select-all">
+                        {currentItem.prompt}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(currentItem.prompt || '', `lightbox_prompt_${currentItem.slideNumber}`)}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[10px] font-bold rounded-lg transition shrink-0 border border-slate-700 cursor-pointer flex items-center gap-1"
+                      title="Copiar prompt completo"
+                    >
+                      {copiedStates[`lightbox_prompt_${currentItem.slideNumber}`] ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                      <span>Copiar</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
