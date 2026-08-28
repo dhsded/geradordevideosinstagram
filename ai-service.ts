@@ -729,12 +729,12 @@ export class AIService {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${activeKey}`
             },
-            signal: AbortSignal.timeout(60000),
+            signal: AbortSignal.timeout(120000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
-              max_tokens: 16384,
+              max_tokens: 32768,
               response_format: { type: "json_object" }
             })
           });
@@ -958,12 +958,12 @@ export class AIService {
               "HTTP-Referer": "https://postforge.app",
               "X-Title": "PostForge"
             },
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(120000),
             body: JSON.stringify({
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
-              max_tokens: 16384,
+              max_tokens: 32768,
             })
           });
 
