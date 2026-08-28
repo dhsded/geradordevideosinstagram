@@ -1425,6 +1425,18 @@ Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e se
   // Funções Auxiliares de Extração Resiliente de Documentos
   async function extractPdfTextSafe(buffer: Buffer): Promise<string> {
     try {
+      // 0. Verificação instantânea de payload lossless incorporado do PostForge
+      const rawText = buffer.toString("binary");
+      const payloadMatch = rawText.match(/POSTFORGE_PAYLOAD:([A-Za-z0-9+/=]+)/);
+      if (payloadMatch) {
+        try {
+          const decodedJson = Buffer.from(payloadMatch[1], "base64").toString("utf-8");
+          if (decodedJson && (decodedJson.startsWith("{") || decodedJson.startsWith("["))) {
+            return decodedJson;
+          }
+        } catch {}
+      }
+
       const parsePromise = (async () => {
         const pdfModule: any = await import("pdf-parse");
         const PDFParseClass = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse) || (typeof pdfModule.default === 'function' && pdfModule.default.prototype?.getText ? pdfModule.default : null) || pdfModule;
@@ -1498,13 +1510,13 @@ Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e se
             if (m[1]) extractedChunks.push(m[1]);
           }
 
-          // Capturar matrizes TJ: [(Texto) -10 (Mais)] TJ
+          // Capturar matrizes TJ: [(Texto) -10 (Mais)] TJ com espaçamento adequado entre palavras
           const tjArrayRegex = /\[([^\[\]]{1,1500})\]\s*TJ/g;
           while ((m = tjArrayRegex.exec(decompressed)) !== null) {
             const inner = m[1];
             const innerMatches = inner.match(/\(([^()]+)\)/g);
             if (innerMatches) {
-              extractedChunks.push(innerMatches.map(im => im.slice(1, -1)).join(""));
+              extractedChunks.push(innerMatches.map(im => im.slice(1, -1)).join(" "));
             }
           }
         }
@@ -1516,7 +1528,7 @@ Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e se
           .replace(/\\([0-9]{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
           .replace(/\\[rnbtf]/g, " ")
           .replace(/\\/g, "")
-          .replace(/\s+/g, " ")
+          .replace(/ +/g, " ")
           .trim();
         if (decoded.length > 10) {
           return decoded;

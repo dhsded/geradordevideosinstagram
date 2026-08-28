@@ -3294,7 +3294,7 @@ export default function App() {
 
             // Descrição Visual
             let desc = '';
-            const descMatch = sBody.match(/(?:CONTEÚDO DO SLIDE\s*\(DESCRIÇÃO VISUAL\)|Descrição Visual)(?:[^\n:]*):\s*([\s\S]*?)(?=(?:FALA NO BALÃO|Texto nos Balões|PROMPT DE IMAGEM|Prompt de Imagem|SLIDE|LEGENDA|---|\Z))/i);
+            const descMatch = sBody.match(/(?:CONTEÚDO DO SLIDE(?:\s*\(DESCRIÇÃO VISUAL\))?|Descrição Visual)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:FALA NO BALÃO|Texto nos Balões|PROMPT DE IMAGEM|Prompt de Imagem|SLIDE|LEGENDA|---|\Z))/i);
             if (descMatch) {
               desc = descMatch[1].trim();
             }
@@ -3304,7 +3304,7 @@ export default function App() {
             const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
             const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
             const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
-            const bubbleMatch = sBody.match(/(?:FALA NO BALÃO DE DIÁLOGO|Texto nos Balões)(?:[^\n:]*):\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+            const bubbleMatch = sBody.match(/(?:FALA NO BALÃO DE DIÁLOGO|Texto nos Balões)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
 
             if (ptMatch) textPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
             if (enMatch) textEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -3313,7 +3313,7 @@ export default function App() {
 
             // Prompt de Imagem
             let prompt = '';
-            const promptMatch = sBody.match(/(?:PROMPT DE IMAGEM|Prompt de Imagem)(?:[^\n:]*):\s*([\s\S]*?)(?=(?:---|___|\n\n\n|SLIDE|LEGENDA|\Z))/i);
+            const promptMatch = sBody.match(/(?:PROMPT DE IMAGEM|Prompt de Imagem)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|SLIDE|LEGENDA|\Z))/i);
             if (promptMatch) {
               prompt = promptMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
             }
@@ -3368,14 +3368,14 @@ export default function App() {
 
           let duration = parseInt(durationStr.replace(/\D/g, ''), 10) || 5;
           let ctx = '';
-          const ctxMatch = sBody.match(/Contexto(?:[^\n:]*):\s*([\s\S]*?)(?=(?:Narração|Falas|Diálogo|Prompt de Vídeo|CENA|LEGENDA|---|\Z))/i);
+          const ctxMatch = sBody.match(/(?:CONTEXTO VISUAL DA CENA|Contexto)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:NARRAÇÃO|Narração|Falas|Diálogo|PROMPT DE VÍDEO|Prompt de Vídeo|CENA|LEGENDA|---|\Z))/i);
           if (ctxMatch) ctx = ctxMatch[1].trim();
 
           let dialPt = '', dialEn = '', dialEs = '', dialGeneral = '';
           const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
           const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
           const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
-          const dialMatch = sBody.match(/(?:Narração|Falas|Diálogo)(?:[^\n:]*):\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+          const dialMatch = sBody.match(/(?:NARRAÇÃO\s*\/\s*DIÁLOGO|Narração|Falas|Diálogo)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
 
           if (ptMatch) dialPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
           if (enMatch) dialEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -3383,7 +3383,7 @@ export default function App() {
           if (dialMatch && !dialPt && !dialEn && !dialEs) dialGeneral = dialMatch[1].trim().replace(/^["']|["']$/g, '');
 
           let videoPrompt = '';
-          const vpMatch = sBody.match(/Prompt de Vídeo(?:[^\n:]*):\s*([\s\S]*?)(?=(?:---|___|\n\n\n|CENA|LEGENDA|\Z))/i);
+          const vpMatch = sBody.match(/(?:PROMPT DE VÍDEO|Prompt de Vídeo)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|CENA|LEGENDA|\Z))/i);
           if (vpMatch) videoPrompt = vpMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
 
           scenes.push({
@@ -3435,7 +3435,7 @@ export default function App() {
       } else if (ext === 'txt' || ext === 'md') {
         rawText = await file.text();
       } else {
-        // PDF ou Word (.docx / .doc) via backend endpoint
+        // PDF ou Word (.docx / .doc)
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve, reject) => {
           reader.onload = () => {
@@ -3448,25 +3448,43 @@ export default function App() {
         reader.readAsDataURL(file);
         const base64 = await base64Promise;
 
-        const mimeType = ext === 'pdf' || file.type === 'application/pdf' ? 'application/pdf' : file.type || 'application/octet-stream';
-        
-        const res = await fetch(getApiUrl('/api/extract-document-text'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: base64,
-            filename: file.name,
-            mimeType
-          })
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'Erro ao extrair texto do documento');
+        // 1. Tentar recuperação instantânea direta de metadados POSTFORGE_PAYLOAD incorporados no PDF
+        if (ext === 'pdf') {
+          try {
+            const binaryString = atob(base64);
+            const payloadMatch = binaryString.match(/POSTFORGE_PAYLOAD:([A-Za-z0-9+/=]+)/);
+            if (payloadMatch) {
+              const decodedJson = decodeURIComponent(escape(atob(payloadMatch[1])));
+              if (decodedJson && (decodedJson.startsWith('{') || decodedJson.startsWith('['))) {
+                rawText = decodedJson;
+                addLog('success', 'PROJETO', `✨ Metadados nativos do PostForge encontrados no PDF! Restauração em 100% de fidelidade.`);
+              }
+            }
+          } catch {}
         }
 
-        const data = await res.json();
-        rawText = data.text || '';
+        // 2. Se não houver payload nativo, extrair via backend
+        if (!rawText) {
+          const mimeType = ext === 'pdf' || file.type === 'application/pdf' ? 'application/pdf' : file.type || 'application/octet-stream';
+          
+          const res = await fetch(getApiUrl('/api/extract-document-text'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: base64,
+              filename: file.name,
+              mimeType
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || 'Erro ao extrair texto do documento');
+          }
+
+          const data = await res.json();
+          rawText = data.text || '';
+        }
       }
 
       if (!rawText || !rawText.trim()) {
@@ -4618,6 +4636,30 @@ export default function App() {
           doc.text(`Página ${i} de ${totalPages} • PostForge AI Video Generator`, margin, pageHeight - 6);
         }
 
+        const fullExportState = {
+          version: "1.2.0",
+          timestamp: new Date().toISOString(),
+          activeTab: 'script',
+          topic,
+          niche,
+          artStyle,
+          animationStyle,
+          dialogueLanguage,
+          scriptTone,
+          characterDescription,
+          sceneCount,
+          duration,
+          result
+        };
+        try {
+          const base64Payload = btoa(unescape(encodeURIComponent(JSON.stringify(fullExportState))));
+          doc.setProperties({
+            title: 'Roteiro de Vídeo - PostForge',
+            subject: `POSTFORGE_PAYLOAD:${base64Payload}`,
+            author: 'PostForge v1.2.0'
+          });
+        } catch {}
+
         doc.save("roteiro_postforge.pdf");
         addLog('success', 'DOWNLOAD', 'Arquivo PDF do roteiro exportado com sucesso: roteiro_postforge.pdf');
 
@@ -4821,6 +4863,30 @@ export default function App() {
           doc.setTextColor(148, 163, 184);
           doc.text(`Página ${i} de ${totalPages} • PostForge AI Carousel Generator`, margin, pageHeight - 6);
         }
+
+        const fullExportState = {
+          version: "1.2.0",
+          timestamp: new Date().toISOString(),
+          activeTab: 'carousel',
+          topic,
+          niche,
+          artStyle,
+          animationStyle,
+          dialogueLanguage,
+          carouselTone,
+          characterDescription,
+          carouselQuantity,
+          batchCarouselResults: isBatch ? listToExport : undefined,
+          carouselResult: !isBatch ? listToExport[0] : undefined
+        };
+        try {
+          const base64Payload = btoa(unescape(encodeURIComponent(JSON.stringify(fullExportState))));
+          doc.setProperties({
+            title: isBatch ? `Lote de ${listToExport.length} Carrosséis - PostForge` : (listToExport[0]?.title || 'Carrossel PostForge'),
+            subject: `POSTFORGE_PAYLOAD:${base64Payload}`,
+            author: 'PostForge v1.2.0'
+          });
+        } catch {}
 
         const filename = isBatch ? `lote_${listToExport.length}_carrosseis_postforge.pdf` : `carrossel_postforge.pdf`;
         doc.save(filename);
