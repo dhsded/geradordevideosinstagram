@@ -146,7 +146,7 @@ function createMainWindow() {
       webviewTag: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    title: 'PostForge v1.1.0 - Carregando...',
+    title: 'PostForge v1.2.0 - Carregando...',
   });
 
   if (!isDev) {
@@ -283,7 +283,7 @@ app.whenReady().then(async () => {
   // 3. Assim que a porta 3000 responder, carrega a aplicação
   pollServerReady(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setTitle('PostForge v1.1.0');
+      mainWindow.setTitle('PostForge v1.2.0');
       mainWindow.loadURL('http://localhost:3000');
     }
   });

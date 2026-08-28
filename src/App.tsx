@@ -3244,14 +3244,240 @@ export default function App() {
     }
   };
 
+  const parsePostForgeDocument = (text: string) => {
+    if (!text || typeof text !== 'string') return { type: 'text' as const, text: '' };
+
+    // Limpeza de cabeçalhos / paginação de PDFs
+    const cleanText = text
+      .replace(/Página\s+\d+\s+de\s+\d+\s+•\s+PostForge[^\n]*/gi, '')
+      .replace(/POSTFORGE\s+•\s+GERADOR\s+ESTRUTURADO\s+DE\s+CONTEÚDO/gi, '')
+      .trim();
+
+    // 1. Tentar parse como JSON estruturado
+    try {
+      const trimmed = cleanText.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        const data = JSON.parse(trimmed);
+        return { type: 'json' as const, data };
+      }
+    } catch {}
+
+    // 2. Tentar parse como Carrossel (Único ou em Lote)
+    const hasCarouselKeywords = /(?:CARROSSEL|SLIDE\s*\d+)/i.test(cleanText);
+    if (hasCarouselKeywords) {
+      const carousels: any[] = [];
+      const carSplit = cleanText.split(/(?:(?:^|\n)\s*CARROSSEL\s*(?:\d+)?\s*:\s*)/i);
+      const chunks = carSplit.length > 1 ? carSplit.slice(1) : [cleanText];
+
+      chunks.forEach((chunk, cIdx) => {
+        const lines = chunk.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        let title = `Carrossel ${cIdx + 1}`;
+
+        if (lines.length > 0) {
+          const first = lines[0].replace(/^(?:CARROSSEL\s*\d*:\s*)/i, '').replace(/Nicho:.*$/i, '').replace(/•.*$/i, '').trim();
+          if (first && !first.toUpperCase().startsWith('SLIDE')) {
+            title = first;
+          }
+        }
+
+        const nicheMatch = chunk.match(/Nicho:\s*([^•|\n]+)/i);
+        const styleMatch = chunk.match(/Estilo:\s*([^•|\n]+)/i);
+        const langMatch = chunk.match(/Idioma:\s*([^•|\n]+)/i);
+
+        const slideChunks = chunk.split(/(?:^|\n)\s*SLIDE\s*(\d+)[\s:]*/i);
+        const slides: any[] = [];
+
+        if (slideChunks.length > 1) {
+          for (let i = 1; i < slideChunks.length; i += 2) {
+            const slideNum = parseInt(slideChunks[i], 10);
+            const sBody = slideChunks[i + 1] || '';
+
+            // Descrição Visual
+            let desc = '';
+            const descMatch = sBody.match(/(?:CONTEÚDO DO SLIDE\s*\(DESCRIÇÃO VISUAL\)|Descrição Visual)(?:[^\n:]*):\s*([\s\S]*?)(?=(?:FALA NO BALÃO|Texto nos Balões|PROMPT DE IMAGEM|Prompt de Imagem|SLIDE|LEGENDA|---|\Z))/i);
+            if (descMatch) {
+              desc = descMatch[1].trim();
+            }
+
+            // Balões de Diálogo
+            let textPt = '', textEn = '', textEs = '', textGeneral = '';
+            const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
+            const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
+            const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
+            const bubbleMatch = sBody.match(/(?:FALA NO BALÃO DE DIÁLOGO|Texto nos Balões)(?:[^\n:]*):\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+
+            if (ptMatch) textPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
+            if (enMatch) textEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
+            if (esMatch) textEs = esMatch[1].trim().replace(/^["']|["']$/g, '');
+            if (bubbleMatch && !textPt && !textEn && !textEs) textGeneral = bubbleMatch[1].trim().replace(/^["']|["']$/g, '');
+
+            // Prompt de Imagem
+            let prompt = '';
+            const promptMatch = sBody.match(/(?:PROMPT DE IMAGEM|Prompt de Imagem)(?:[^\n:]*):\s*([\s\S]*?)(?=(?:---|___|\n\n\n|SLIDE|LEGENDA|\Z))/i);
+            if (promptMatch) {
+              prompt = promptMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
+            }
+
+            slides.push({
+              slideNumber: slideNum,
+              descriptionPt: desc,
+              textInBubblesPt: textPt || textGeneral,
+              textInBubblesEn: textEn,
+              textInBubblesEs: textEs,
+              textInBubbles: textPt || textGeneral || textEn || textEs,
+              imagePromptEn: prompt
+            });
+          }
+        }
+
+        // Legenda do Instagram
+        let igPost = '';
+        const igMatch = chunk.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=(?:CARROSSEL|\Z))/i);
+        if (igMatch) {
+          igPost = igMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
+        }
+
+        if (slides.length > 0) {
+          carousels.push({
+            title,
+            theme: title,
+            slides,
+            instagramPost: igPost,
+            niche: nicheMatch ? nicheMatch[1].trim() : undefined,
+            artStyle: styleMatch ? styleMatch[1].trim() : undefined,
+            language: langMatch ? (langMatch[1].toLowerCase().includes('ingl') ? 'en' : langMatch[1].toLowerCase().includes('espan') ? 'es' : langMatch[1].toLowerCase().includes('3') ? 'all' : 'pt') : 'pt'
+          });
+        }
+      });
+
+      if (carousels.length > 0) {
+        return { type: 'carousel' as const, carousels };
+      }
+    }
+
+    // 3. Tentar parse como Roteiro de Vídeo
+    const hasScriptKeywords = /(?:ROTEIRO|CENA\s*\d+)/i.test(cleanText);
+    if (hasScriptKeywords) {
+      const sceneChunks = cleanText.split(/(?:^|\n)\s*CENA\s*(\d+)(?:\s*\(([^)]+)\))?[\s:]*/i);
+      const scenes: any[] = [];
+      if (sceneChunks.length > 1) {
+        for (let i = 1; i < sceneChunks.length; i += 3) {
+          const sceneNum = parseInt(sceneChunks[i], 10);
+          const durationStr = sceneChunks[i + 1] || '5s';
+          const sBody = sceneChunks[i + 2] || '';
+
+          let duration = parseInt(durationStr.replace(/\D/g, ''), 10) || 5;
+          let ctx = '';
+          const ctxMatch = sBody.match(/Contexto(?:[^\n:]*):\s*([\s\S]*?)(?=(?:Narração|Falas|Diálogo|Prompt de Vídeo|CENA|LEGENDA|---|\Z))/i);
+          if (ctxMatch) ctx = ctxMatch[1].trim();
+
+          let dialPt = '', dialEn = '', dialEs = '', dialGeneral = '';
+          const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
+          const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
+          const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
+          const dialMatch = sBody.match(/(?:Narração|Falas|Diálogo)(?:[^\n:]*):\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+
+          if (ptMatch) dialPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
+          if (enMatch) dialEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
+          if (esMatch) dialEs = esMatch[1].trim().replace(/^["']|["']$/g, '');
+          if (dialMatch && !dialPt && !dialEn && !dialEs) dialGeneral = dialMatch[1].trim().replace(/^["']|["']$/g, '');
+
+          let videoPrompt = '';
+          const vpMatch = sBody.match(/Prompt de Vídeo(?:[^\n:]*):\s*([\s\S]*?)(?=(?:---|___|\n\n\n|CENA|LEGENDA|\Z))/i);
+          if (vpMatch) videoPrompt = vpMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
+
+          scenes.push({
+            sceneNumber: sceneNum,
+            duration,
+            contextPt: ctx,
+            dialoguePt: dialPt || dialGeneral,
+            dialogueEn: dialEn,
+            dialogueEs: dialEs,
+            dialogue: dialPt || dialGeneral || dialEn || dialEs,
+            videoPromptEn: videoPrompt
+          });
+        }
+      }
+
+      let coverPrompt = '';
+      const cpMatch = cleanText.match(/PROMPT DA IMAGEM DE CAPA[^\n]*\n([\s\S]*?)(?=(?:CENA\s*1|CENA\s*\d+|\Z))/i);
+      if (cpMatch) coverPrompt = cpMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
+
+      let igPost = '';
+      const igMatch = cleanText.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=\Z)/i);
+      if (igMatch) igPost = igMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
+
+      if (scenes.length > 0) {
+        return {
+          type: 'script' as const,
+          result: {
+            nanoBananaImagePrompt: coverPrompt,
+            scenes,
+            instagramPost: igPost
+          }
+        };
+      }
+    }
+
+    return { type: 'text' as const, text: cleanText };
+  };
+
   const handleImportProjectFile = async (file: File) => {
     if (!file) return;
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
-      if (ext === 'json' || ext === 'postforge') {
-        const text = await file.text();
-        const data = JSON.parse(text);
+      addLog('doc', 'PROJETO', `Lendo arquivo "${file.name}" para importar para o PostForge...`);
 
+      let rawText = '';
+
+      if (ext === 'json' || ext === 'postforge') {
+        rawText = await file.text();
+      } else if (ext === 'txt' || ext === 'md') {
+        rawText = await file.text();
+      } else {
+        // PDF ou Word (.docx / .doc) via backend endpoint
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            resolve(b64);
+          };
+          reader.onerror = () => reject(new Error('Falha ao ler arquivo local'));
+        });
+        reader.readAsDataURL(file);
+        const base64 = await base64Promise;
+
+        const mimeType = ext === 'pdf' || file.type === 'application/pdf' ? 'application/pdf' : file.type || 'application/octet-stream';
+        
+        const res = await fetch(getApiUrl('/api/extract-document-text'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: base64,
+            filename: file.name,
+            mimeType
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Erro ao extrair texto do documento');
+        }
+
+        const data = await res.json();
+        rawText = data.text || '';
+      }
+
+      if (!rawText || !rawText.trim()) {
+        throw new Error(`Não foi possível extrair texto legível de "${file.name}".`);
+      }
+
+      // Analisar conteúdo e reconstruir estado original da interface
+      const parsed = parsePostForgeDocument(rawText);
+
+      if (parsed.type === 'json') {
+        const data = parsed.data;
         if (data.topic !== undefined) setTopic(data.topic);
         if (data.niche) setNiche(data.niche);
         if (data.artStyle) setArtStyle(data.artStyle);
@@ -3282,27 +3508,28 @@ export default function App() {
           setActiveTab('script');
           addLog('success', 'PROJETO', `📂 Roteiro de vídeo carregado com sucesso de "${file.name}"!`);
         }
-      } else if (ext === 'pdf' || ext === 'docx' || ext === 'txt' || ext === 'md') {
-        addLog('doc', 'PROJETO', `Lendo documento "${file.name}" para importar roteiro/carrossel...`);
-        if (ext === 'txt' || ext === 'md') {
-          const text = await file.text();
-          setTopic(text);
-          addLog('success', 'PROJETO', `Texto de "${file.name}" importado para o tema.`);
-        } else {
-          const formData = new FormData();
-          formData.append('document', file);
-          const res = await fetch(getApiUrl('/api/extract-document-text'), {
-            method: 'POST',
-            body: formData
-          });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.text) {
-              setTopic(json.text.substring(0, 3000));
-              addLog('success', 'PROJETO', `Conteúdo de "${file.name}" extraído e carregado no tema.`);
-            }
-          }
+      } else if (parsed.type === 'carousel') {
+        setBatchCarouselResults(parsed.carousels);
+        setCarouselResult(parsed.carousels[0]);
+        setActiveCarouselIndex(0);
+        setCarouselQuantity(parsed.carousels.length);
+
+        if (parsed.carousels[0]?.niche) setNiche(parsed.carousels[0].niche);
+        if (parsed.carousels[0]?.artStyle) setArtStyle(parsed.carousels[0].artStyle);
+        if (parsed.carousels[0]?.language) setDialogueLanguage(parsed.carousels[0].language);
+
+        setActiveTab('carousel');
+        addLog('success', 'PROJETO', `✅ ${parsed.carousels.length} carrossel(is) restaurado(s) e organizado(s) na interface a partir de "${file.name}"!`);
+      } else if (parsed.type === 'script') {
+        setResult(parsed.result);
+        if (parsed.result.scenes && parsed.result.scenes.length > 0) {
+          setSceneCount(parsed.result.scenes.length);
         }
+        setActiveTab('script');
+        addLog('success', 'PROJETO', `✅ Roteiro de vídeo (${parsed.result.scenes?.length || 0} cenas) restaurado e organizado na interface a partir de "${file.name}"!`);
+      } else {
+        setTopic(parsed.text.substring(0, 3000));
+        addLog('info', 'PROJETO', `📄 Conteúdo do documento "${file.name}" extraído e carregado no campo de tema.`);
       }
     } catch (err: any) {
       console.error('Erro ao importar projeto:', err);
@@ -4140,43 +4367,57 @@ export default function App() {
   const exportAsPDF = () => {
     try {
       const doc = new jsPDF();
-      let yPos = 16;
-      const margin = 14;
+      let yPos = 14;
+      const margin = 12;
       const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
       const maxLineWidth = pageWidth - margin * 2;
+      const cardWidth = maxLineWidth;
+      const boxWidth = cardWidth - 10;
 
-      const ensurePageSpace = (neededHeight: number) => {
-        if (yPos + neededHeight > pageHeight - margin - 8) {
-          doc.addPage();
-          yPos = margin + 4;
-          return true;
-        }
-        return false;
+      const cleanPdfText = (str: any): string => {
+        if (!str) return '';
+        return String(str)
+          .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, '')
+          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')
+          .replace(/[^\x20-\x7E\xA0-\xFF\u0100-\u017F\u0180-\u024F\n\r\t]/g, ' ')
+          .replace(/ +/g, ' ')
+          .trim();
       };
 
       const addHeaderBanner = (mainTitle: string, subtitle: string, tags: string) => {
-        const bannerHeight = 26;
-        doc.setFillColor(30, 27, 75); // Dark Indigo #1e1b4b
-        doc.roundedRect(margin, yPos, maxLineWidth, bannerHeight, 3, 3, 'F');
+        const bannerHeight = 25;
+        doc.setFillColor(15, 23, 42); // slate-900
+        doc.roundedRect(margin, yPos, maxLineWidth, bannerHeight, 2.5, 2.5, 'F');
         
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(199, 210, 254); // Indigo 200
-        doc.text("POSTFORGE • GERADOR ESTRUTURADO DE CONTEÚDO", margin + 4, yPos + 6);
-
-        doc.setFontSize(12);
+        // Brand tag
+        doc.setFillColor(79, 70, 229);
+        doc.roundedRect(margin + 4, yPos + 3.5, 22, 4.5, 1, 1, 'F');
+        doc.setFontSize(6.5);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(255, 255, 255);
-        const titleLines = doc.splitTextToSize(mainTitle, maxLineWidth - 8);
-        doc.text(titleLines[0] || mainTitle, margin + 4, yPos + 13);
+        doc.text("POSTFORGE", margin + 6, yPos + 6.8);
 
-        doc.setFontSize(8);
+        // Subtitle / Label
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(199, 210, 254);
+        doc.text(cleanPdfText(subtitle), margin + 29, yPos + 6.8);
+
+        // Title
+        doc.setFontSize(10.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(255, 255, 255);
+        const titleLines = doc.splitTextToSize(cleanPdfText(mainTitle), maxLineWidth - 8);
+        doc.text(titleLines[0] || cleanPdfText(mainTitle), margin + 4, yPos + 14);
+
+        // Tags / Metadata
+        doc.setFontSize(7.5);
         doc.setFont("helvetica", "normal");
-        doc.setTextColor(224, 231, 255); // Indigo 100
-        doc.text(tags, margin + 4, yPos + 20);
+        doc.setTextColor(148, 163, 184); // slate-400
+        doc.text(cleanPdfText(tags), margin + 4, yPos + 20.5);
 
-        yPos += bannerHeight + 6;
+        yPos += bannerHeight + 4.5;
       };
 
       if (activeTab === 'script' && result) {
@@ -4185,161 +4426,196 @@ export default function App() {
         
         addHeaderBanner(
           "ROTEIRO DE VÍDEO VIRAL",
-          niche,
+          "ROTEIRO ESTRUTURADO",
           `Nicho: ${niche.toUpperCase()} • Estilo: ${animationStyle.toUpperCase()} • Idioma: ${langLabel} • ${result.scenes?.length || 0} Cenas`
         );
 
         if (result.nanoBananaImagePrompt) {
-          ensurePageSpace(24);
-          doc.setFillColor(241, 245, 249); // slate-100
-          doc.setDrawColor(203, 213, 225); // slate-300
-          doc.roundedRect(margin, yPos, maxLineWidth, 20, 2, 2, 'FD');
-          
-          doc.setFontSize(9);
+          const coverLines = doc.splitTextToSize(cleanPdfText(result.nanoBananaImagePrompt), boxWidth - 6);
+          const coverHeight = Math.max(16, 7 + coverLines.length * 3.5);
+          const cardH = coverHeight + 9;
+
+          if (yPos + cardH > pageHeight - margin - 8) {
+            doc.addPage();
+            yPos = margin + 2;
+          }
+
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(203, 213, 225);
+          doc.roundedRect(margin, yPos, cardWidth, cardH, 2.5, 2.5, 'FD');
+          doc.setFillColor(79, 70, 229);
+          doc.rect(margin, yPos + 1, 3, cardH - 2, 'F');
+
+          doc.setFontSize(7.5);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(79, 70, 229);
-          doc.text("PROMPT DA IMAGEM DE CAPA / BANNER", margin + 3, yPos + 5);
+          doc.text("PROMPT DA IMAGEM DE CAPA / BANNER", margin + 6, yPos + 5.5);
 
-          doc.setFontSize(8);
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.roundedRect(margin + 5, yPos + 7.5, boxWidth, coverHeight, 1.5, 1.5, 'FD');
+
+          doc.setFontSize(7.5);
           doc.setFont("helvetica", "normal");
           doc.setTextColor(30, 41, 59);
-          const coverLines = doc.splitTextToSize(result.nanoBananaImagePrompt, maxLineWidth - 6);
-          doc.text(coverLines.slice(0, 3), margin + 3, yPos + 10);
-          yPos += 24;
+          let lY = yPos + 12;
+          for (const l of coverLines) {
+            doc.text(l, margin + 8, lY);
+            lY += 3.5;
+          }
+          yPos += cardH + 4;
         }
 
         result.scenes?.forEach((scene) => {
-          ensurePageSpace(45);
-          
-          // Scene header badge
+          const ctxText = cleanPdfText(scene.contextPt || '');
+          const ctxLines = ctxText ? doc.splitTextToSize(ctxText, boxWidth - 6) : [];
+          const ctxHeight = ctxLines.length > 0 ? Math.max(12, 6.5 + ctxLines.length * 3.8) : 0;
+
+          let dialText = '';
+          if (selectedLang === 'pt') dialText = `PT: "${cleanPdfText(scene.dialoguePt || scene.dialogue || '')}"`;
+          else if (selectedLang === 'en') dialText = `EN: "${cleanPdfText(scene.dialogueEn || scene.dialogue || '')}"`;
+          else if (selectedLang === 'es') dialText = `ES: "${cleanPdfText(scene.dialogueEs || scene.dialogue || '')}"`;
+          else {
+            dialText = [
+              scene.dialoguePt ? `PT: "${cleanPdfText(scene.dialoguePt)}"` : '',
+              scene.dialogueEn ? `EN: "${cleanPdfText(scene.dialogueEn)}"` : '',
+              scene.dialogueEs ? `ES: "${cleanPdfText(scene.dialogueEs)}"` : ''
+            ].filter(Boolean).join('\n');
+          }
+          const dialLines = dialText ? doc.splitTextToSize(dialText, boxWidth - 6) : [];
+          const dialHeight = dialLines.length > 0 ? Math.max(12, 6.5 + dialLines.length * 3.8) : 0;
+
+          const promptText = cleanPdfText(scene.videoPromptEn || '');
+          const promptLines = promptText ? doc.splitTextToSize(promptText, boxWidth - 6) : [];
+          const promptHeight = promptLines.length > 0 ? Math.max(12, 6.5 + promptLines.length * 3.5) : 0;
+
+          const cardHeight = 8 + (ctxHeight ? ctxHeight + 2.5 : 0) + (dialHeight ? dialHeight + 2.5 : 0) + (promptHeight ? promptHeight + 2.5 : 0) + 3;
+
+          if (yPos + cardHeight > pageHeight - margin - 8) {
+            doc.addPage();
+            yPos = margin + 2;
+          }
+
+          // Card Outer Box
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(203, 213, 225);
+          doc.roundedRect(margin, yPos, cardWidth, cardHeight, 2.5, 2.5, 'FD');
           doc.setFillColor(79, 70, 229);
-          doc.roundedRect(margin, yPos, 45, 7, 1.5, 1.5, 'F');
-          doc.setFontSize(9);
+          doc.rect(margin, yPos + 1, 3, cardHeight - 2, 'F');
+
+          // Header
+          doc.setFillColor(79, 70, 229);
+          doc.roundedRect(margin + 5, yPos + 2.5, 26, 5, 1.2, 1.2, 'F');
+          doc.setFontSize(7.5);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(255, 255, 255);
-          doc.text(`CENA ${scene.sceneNumber} (${scene.duration || 5}s)`, margin + 3, yPos + 5);
-          yPos += 10;
+          doc.text(`CENA ${String(scene.sceneNumber).padStart(2, '0')} (${scene.duration || 5}s)`, margin + 7, yPos + 6);
 
-          // Context
-          doc.setFontSize(8.5);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(100, 116, 139);
-          doc.text("Contexto Visual:", margin, yPos);
-          yPos += 4;
-          doc.setFontSize(8.5);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(15, 23, 42);
-          const ctxLines = doc.splitTextToSize(scene.contextPt || '', maxLineWidth);
-          for (const l of ctxLines) {
-            ensurePageSpace(5);
-            doc.text(l, margin, yPos);
-            yPos += 4;
+          let curY = yPos + 9.5;
+
+          if (ctxHeight > 0) {
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.roundedRect(margin + 5, curY, boxWidth, ctxHeight, 1.5, 1.5, 'FD');
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(100, 116, 139);
+            doc.text("CONTEXTO VISUAL DA CENA", margin + 7, curY + 3.8);
+            doc.setFontSize(7.5);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(15, 23, 42);
+            let lineY = curY + 7.5;
+            for (const l of ctxLines) {
+              doc.text(l, margin + 7, lineY);
+              lineY += 3.8;
+            }
+            curY += ctxHeight + 2.5;
           }
-          yPos += 1;
 
-          // Dialogue / Narration - Strict Language
-          doc.setFontSize(8.5);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(234, 88, 12); // orange-600
-          doc.text("Narração / Diálogo:", margin, yPos);
-          yPos += 4;
-          doc.setFontSize(8.5);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(15, 23, 42);
+          if (dialHeight > 0) {
+            doc.setFillColor(255, 247, 237); // orange-50
+            doc.setDrawColor(254, 215, 170); // orange-200
+            doc.roundedRect(margin + 5, curY, boxWidth, dialHeight, 1.5, 1.5, 'FD');
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(194, 65, 12);
+            doc.text("NARRAÇÃO / DIÁLOGO", margin + 7, curY + 3.8);
+            doc.setFontSize(7.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(124, 45, 18);
+            let lineY = curY + 7.5;
+            for (const l of dialLines) {
+              doc.text(l, margin + 7, lineY);
+              lineY += 3.8;
+            }
+            curY += dialHeight + 2.5;
+          }
 
-          if (selectedLang === 'pt') {
-            const dialText = `PT: "${scene.dialoguePt || scene.dialogue || ''}"`;
-            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
-            for (const l of dLines) {
-              ensurePageSpace(5);
-              doc.text(l, margin, yPos);
-              yPos += 4;
-            }
-          } else if (selectedLang === 'en') {
-            const dialText = `EN: "${scene.dialogueEn || scene.dialogue || ''}"`;
-            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
-            for (const l of dLines) {
-              ensurePageSpace(5);
-              doc.text(l, margin, yPos);
-              yPos += 4;
-            }
-          } else if (selectedLang === 'es') {
-            const dialText = `ES: "${scene.dialogueEs || scene.dialogue || ''}"`;
-            const dLines = doc.splitTextToSize(dialText, maxLineWidth);
-            for (const l of dLines) {
-              ensurePageSpace(5);
-              doc.text(l, margin, yPos);
-              yPos += 4;
-            }
-          } else if (selectedLang === 'all') {
-            const allDials = [
-              scene.dialoguePt ? `PT: "${scene.dialoguePt}"` : '',
-              scene.dialogueEn ? `EN: "${scene.dialogueEn}"` : '',
-              scene.dialogueEs ? `ES: "${scene.dialogueEs}"` : ''
-            ].filter(Boolean);
-            for (const d of allDials) {
-              const dLines = doc.splitTextToSize(d, maxLineWidth);
-              for (const l of dLines) {
-                ensurePageSpace(5);
-                doc.text(l, margin, yPos);
-                yPos += 4;
-              }
+          if (promptHeight > 0) {
+            doc.setFillColor(240, 253, 244);
+            doc.setDrawColor(187, 247, 208);
+            doc.roundedRect(margin + 5, curY, boxWidth, promptHeight, 1.5, 1.5, 'FD');
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(5, 150, 105);
+            doc.text("PROMPT DE VÍDEO (MIDJOURNEY / RUNWAY / KLING)", margin + 7, curY + 3.8);
+            doc.setFontSize(7);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(6, 78, 59);
+            let lineY = curY + 7.5;
+            for (const l of promptLines) {
+              doc.text(l, margin + 7, lineY);
+              lineY += 3.5;
             }
           }
-          yPos += 1;
 
-          // Video prompt box
-          doc.setFontSize(8.5);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(16, 185, 129); // emerald-600
-          doc.text("Prompt de Vídeo (Midjourney / Runway / Kling):", margin, yPos);
-          yPos += 4;
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(51, 65, 85);
-          const pLines = doc.splitTextToSize(scene.videoPromptEn || '', maxLineWidth);
-          for (const l of pLines) {
-            ensurePageSpace(5);
-            doc.text(l, margin, yPos);
-            yPos += 3.8;
-          }
-          
-          yPos += 4;
-          // Divider
-          doc.setDrawColor(226, 232, 240);
-          doc.line(margin, yPos, margin + maxLineWidth, yPos);
-          yPos += 5;
+          yPos += cardHeight + 3.5;
         });
 
         if (result.instagramPost) {
-          ensurePageSpace(35);
-          doc.setFillColor(245, 243, 255); // purple-50
-          doc.setDrawColor(216, 180, 254);
-          doc.roundedRect(margin, yPos, maxLineWidth, 30, 2, 2, 'FD');
-          doc.setFontSize(9);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(147, 51, 234);
-          doc.text("LEGENDA DO INSTAGRAM", margin + 3, yPos + 5);
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(30, 41, 59);
-          const igLines = doc.splitTextToSize(result.instagramPost, maxLineWidth - 6);
-          let subY = yPos + 10;
-          for (const l of igLines.slice(0, 5)) {
-            doc.text(l, margin + 3, subY);
-            subY += 3.8;
+          const igText = cleanPdfText(result.instagramPost);
+          const igLines = doc.splitTextToSize(igText, boxWidth - 6);
+          const igHeight = Math.max(16, 7 + igLines.length * 3.8);
+          const igCardH = igHeight + 8;
+
+          if (yPos + igCardH > pageHeight - margin - 8) {
+            doc.addPage();
+            yPos = margin + 2;
           }
-          yPos += 35;
+
+          doc.setFillColor(250, 245, 255);
+          doc.setDrawColor(216, 180, 254);
+          doc.roundedRect(margin, yPos, cardWidth, igCardH, 2.5, 2.5, 'FD');
+          doc.setFillColor(168, 85, 247);
+          doc.rect(margin, yPos + 1, 3, igCardH - 2, 'F');
+
+          doc.setFontSize(7.5);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(126, 34, 206);
+          doc.text("LEGENDA DO INSTAGRAM", margin + 6, yPos + 5.5);
+
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(243, 232, 255);
+          doc.roundedRect(margin + 5, yPos + 7.5, boxWidth, igHeight, 1.5, 1.5, 'FD');
+
+          doc.setFontSize(7.5);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(59, 7, 100);
+          let lY = yPos + 12;
+          for (const l of igLines) {
+            doc.text(l, margin + 8, lY);
+            lY += 3.8;
+          }
+          yPos += igCardH + 4;
         }
 
-        // Add page numbers
         const totalPages = doc.getNumberOfPages();
         for (let i = 1; i <= totalPages; i++) {
           doc.setPage(i);
-          doc.setFontSize(8);
+          doc.setFontSize(7.5);
           doc.setFont("helvetica", "normal");
           doc.setTextColor(148, 163, 184);
-          doc.text(`Página ${i} de ${totalPages} • PostForge AI Video & Carousel Generator`, margin, pageHeight - 8);
+          doc.text(`Página ${i} de ${totalPages} • PostForge AI Video Generator`, margin, pageHeight - 6);
         }
 
         doc.save("roteiro_postforge.pdf");
@@ -4364,137 +4640,175 @@ export default function App() {
 
           addHeaderBanner(
             isBatch ? `CARROSSEL ${cIdx + 1}: ${cTitle.toUpperCase()}` : cTitle.toUpperCase(),
-            niche,
+            isBatch ? `LOTE DE ${listToExport.length} CARROSSÉIS` : "CARROSSEL ESTRUTURADO",
             `Nicho: ${niche.toUpperCase()} • Estilo: ${artStyle.toUpperCase()} • Idioma: ${langLabel} • ${car.slides?.length || 0} Slides`
           );
 
           car.slides?.forEach((slide) => {
-            ensurePageSpace(45);
+            // Visual Description lines & height
+            const descText = cleanPdfText(slide.descriptionPt || '');
+            const descLines = descText ? doc.splitTextToSize(descText, boxWidth - 6) : [];
+            const descHeight = descLines.length > 0 ? Math.max(12, 6.5 + descLines.length * 3.8) : 0;
 
-            // Slide header badge
+            // Dialogue lines & height
+            let dialText = '';
+            if (selectedLang === 'pt') dialText = `PT: "${cleanPdfText(slide.textInBubblesPt || slide.textInBubbles || '')}"`;
+            else if (selectedLang === 'en') dialText = `EN: "${cleanPdfText(slide.textInBubblesEn || slide.textInBubbles || '')}"`;
+            else if (selectedLang === 'es') dialText = `ES: "${cleanPdfText(slide.textInBubblesEs || slide.textInBubbles || '')}"`;
+            else {
+              dialText = [
+                slide.textInBubblesPt ? `PT: "${cleanPdfText(slide.textInBubblesPt)}"` : '',
+                slide.textInBubblesEn ? `EN: "${cleanPdfText(slide.textInBubblesEn)}"` : '',
+                slide.textInBubblesEs ? `ES: "${cleanPdfText(slide.textInBubblesEs)}"` : ''
+              ].filter(Boolean).join('\n');
+            }
+            const dialLines = dialText ? doc.splitTextToSize(dialText, boxWidth - 6) : [];
+            const dialHeight = dialLines.length > 0 ? Math.max(12, 6.5 + dialLines.length * 3.8) : 0;
+
+            // Image Prompt lines & height
+            const promptText = cleanPdfText(slide.imagePromptEn || '');
+            const promptLines = promptText ? doc.splitTextToSize(promptText, boxWidth - 6) : [];
+            const promptHeight = promptLines.length > 0 ? Math.max(12, 6.5 + promptLines.length * 3.5) : 0;
+
+            // Total Card Height calculation
+            const cardHeight = 8 + (descHeight ? descHeight + 2.5 : 0) + (dialHeight ? dialHeight + 2.5 : 0) + (promptHeight ? promptHeight + 2.5 : 0) + 3;
+
+            // Check if card fits on page - never cut cards across pages!
+            if (yPos + cardHeight > pageHeight - margin - 8) {
+              doc.addPage();
+              yPos = margin + 2;
+            }
+
+            // Draw Card Container
+            doc.setFillColor(248, 250, 252); // slate-50
+            doc.setDrawColor(203, 213, 225); // slate-300
+            doc.roundedRect(margin, yPos, cardWidth, cardHeight, 2.5, 2.5, 'FD');
+
+            // Left Indigo Accent Bar
             doc.setFillColor(79, 70, 229);
-            doc.roundedRect(margin, yPos, 32, 6.5, 1.5, 1.5, 'F');
-            doc.setFontSize(8.5);
+            doc.rect(margin, yPos + 1, 3, cardHeight - 2, 'F');
+
+            // Slide Pill Header
+            doc.setFillColor(79, 70, 229);
+            doc.roundedRect(margin + 5, yPos + 2.5, 20, 5, 1.2, 1.2, 'F');
+            doc.setFontSize(7.5);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(255, 255, 255);
-            doc.text(`SLIDE ${String(slide.slideNumber).padStart(2, '0')}`, margin + 3, yPos + 4.5);
-            yPos += 9.5;
+            doc.text(`SLIDE ${String(slide.slideNumber).padStart(2, '0')}`, margin + 7, yPos + 6);
 
-            // Visual Description
-            if (slide.descriptionPt) {
-              doc.setFontSize(8);
+            doc.setFillColor(224, 231, 255);
+            doc.roundedRect(margin + 26, yPos + 2.5, 24, 5, 1.2, 1.2, 'F');
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(67, 56, 202);
+            doc.text("Slide Completo", margin + 28, yPos + 6);
+
+            let curY = yPos + 9.5;
+
+            // Sub-box 1: Visual Description
+            if (descHeight > 0) {
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(226, 232, 240);
+              doc.roundedRect(margin + 5, curY, boxWidth, descHeight, 1.5, 1.5, 'FD');
+
+              doc.setFontSize(6.5);
               doc.setFont("helvetica", "bold");
               doc.setTextColor(100, 116, 139);
-              doc.text("Descrição Visual da Cena:", margin, yPos);
-              yPos += 3.8;
-              doc.setFontSize(8);
-              doc.setFont("helvetica", "normal");
-              doc.setTextColor(15, 23, 42);
-              const descLines = doc.splitTextToSize(slide.descriptionPt, maxLineWidth);
-              for (const l of descLines) {
-                ensurePageSpace(4.5);
-                doc.text(l, margin, yPos);
-                yPos += 3.8;
-              }
-              yPos += 1;
-            }
+              doc.text("CONTEÚDO DO SLIDE (DESCRIÇÃO VISUAL)", margin + 7, curY + 3.8);
 
-            // Dialogue / Speech Bubble - Strict Language Filter
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(37, 99, 235); // blue-600
-            doc.text("Texto nos Balões de Fala:", margin, yPos);
-            yPos += 3.8;
-            doc.setFontSize(8.5);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(30, 41, 59);
-
-            if (selectedLang === 'pt') {
-              const textVal = slide.textInBubblesPt || slide.textInBubbles || '';
-              const bLines = doc.splitTextToSize(`PT: "${textVal}"`, maxLineWidth);
-              for (const l of bLines) {
-                ensurePageSpace(4.5);
-                doc.text(l, margin, yPos);
-                yPos += 4;
-              }
-            } else if (selectedLang === 'en') {
-              const textVal = slide.textInBubblesEn || slide.textInBubbles || '';
-              const bLines = doc.splitTextToSize(`EN: "${textVal}"`, maxLineWidth);
-              for (const l of bLines) {
-                ensurePageSpace(4.5);
-                doc.text(l, margin, yPos);
-                yPos += 4;
-              }
-            } else if (selectedLang === 'es') {
-              const textVal = slide.textInBubblesEs || slide.textInBubbles || '';
-              const bLines = doc.splitTextToSize(`ES: "${textVal}"`, maxLineWidth);
-              for (const l of bLines) {
-                ensurePageSpace(4.5);
-                doc.text(l, margin, yPos);
-                yPos += 4;
-              }
-            } else if (selectedLang === 'all') {
-              const allBubbles = [
-                slide.textInBubblesPt ? `PT: "${slide.textInBubblesPt}"` : '',
-                slide.textInBubblesEn ? `EN: "${slide.textInBubblesEn}"` : '',
-                slide.textInBubblesEs ? `ES: "${slide.textInBubblesEs}"` : ''
-              ].filter(Boolean);
-              for (const b of allBubbles) {
-                const bLines = doc.splitTextToSize(b, maxLineWidth);
-                for (const l of bLines) {
-                  ensurePageSpace(4.5);
-                  doc.text(l, margin, yPos);
-                  yPos += 4;
-                }
-              }
-            }
-            yPos += 1.5;
-
-            // Prompt for Image Generator (Clean Box)
-            if (slide.imagePromptEn) {
-              doc.setFontSize(8);
-              doc.setFont("helvetica", "bold");
-              doc.setTextColor(5, 150, 105); // emerald-600
-              doc.text("Prompt de Imagem (Midjourney / DALL-E / Leonardo / Flux):", margin, yPos);
-              yPos += 3.8;
               doc.setFontSize(7.5);
               doc.setFont("helvetica", "normal");
-              doc.setTextColor(51, 65, 85);
-              const pLines = doc.splitTextToSize(slide.imagePromptEn, maxLineWidth);
-              for (const l of pLines) {
-                ensurePageSpace(4.5);
-                doc.text(l, margin, yPos);
-                yPos += 3.5;
+              doc.setTextColor(15, 23, 42);
+              let lineY = curY + 7.5;
+              for (const l of descLines) {
+                doc.text(l, margin + 7, lineY);
+                lineY += 3.8;
+              }
+              curY += descHeight + 2.5;
+            }
+
+            // Sub-box 2: Speech Bubble / Dialogue
+            if (dialHeight > 0) {
+              doc.setFillColor(239, 246, 255); // blue-50
+              doc.setDrawColor(191, 219, 254); // blue-200
+              doc.roundedRect(margin + 5, curY, boxWidth, dialHeight, 1.5, 1.5, 'FD');
+
+              doc.setFontSize(6.5);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(29, 78, 216); // blue-700
+              doc.text("FALA NO BALÃO DE DIÁLOGO", margin + 7, curY + 3.8);
+
+              doc.setFontSize(7.5);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(30, 58, 138); // blue-900
+              let lineY = curY + 7.5;
+              for (const l of dialLines) {
+                doc.text(l, margin + 7, lineY);
+                lineY += 3.8;
+              }
+              curY += dialHeight + 2.5;
+            }
+
+            // Sub-box 3: Image Prompt
+            if (promptHeight > 0) {
+              doc.setFillColor(240, 253, 244); // emerald-50
+              doc.setDrawColor(187, 247, 208); // emerald-200
+              doc.roundedRect(margin + 5, curY, boxWidth, promptHeight, 1.5, 1.5, 'FD');
+
+              doc.setFontSize(6.5);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(5, 150, 105); // emerald-600
+              doc.text("PROMPT DE IMAGEM (MIDJOURNEY / FLUX / DALL-E / LEONARDO)", margin + 7, curY + 3.8);
+
+              doc.setFontSize(7);
+              doc.setFont("helvetica", "normal");
+              doc.setTextColor(6, 78, 59); // emerald-950
+              let lineY = curY + 7.5;
+              for (const l of promptLines) {
+                doc.text(l, margin + 7, lineY);
+                lineY += 3.5;
               }
             }
 
-            yPos += 3;
-            // Divider
-            doc.setDrawColor(226, 232, 240);
-            doc.line(margin, yPos, margin + maxLineWidth, yPos);
-            yPos += 4.5;
+            yPos += cardHeight + 3.5;
           });
 
-          // Instagram Post
+          // Instagram Post Card
           if (car.instagramPost) {
-            ensurePageSpace(30);
-            doc.setFillColor(245, 243, 255);
-            doc.setDrawColor(216, 180, 254);
-            doc.roundedRect(margin, yPos, maxLineWidth, 26, 2, 2, 'FD');
-            doc.setFontSize(8.5);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(147, 51, 234);
-            doc.text("LEGENDA DO INSTAGRAM", margin + 3, yPos + 5);
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(30, 41, 59);
-            const igLines = doc.splitTextToSize(car.instagramPost, maxLineWidth - 6);
-            let subY = yPos + 9.5;
-            for (const l of igLines.slice(0, 4)) {
-              doc.text(l, margin + 3, subY);
-              subY += 3.8;
+            const igText = cleanPdfText(car.instagramPost);
+            const igLines = doc.splitTextToSize(igText, boxWidth - 6);
+            const igHeight = Math.max(16, 7 + igLines.length * 3.8);
+            const igCardH = igHeight + 8;
+
+            if (yPos + igCardH > pageHeight - margin - 8) {
+              doc.addPage();
+              yPos = margin + 2;
             }
-            yPos += 30;
+
+            doc.setFillColor(250, 245, 255); // purple-50
+            doc.setDrawColor(216, 180, 254); // purple-300
+            doc.roundedRect(margin, yPos, cardWidth, igCardH, 2.5, 2.5, 'FD');
+            doc.setFillColor(168, 85, 247); // purple-500
+            doc.rect(margin, yPos + 1, 3, igCardH - 2, 'F');
+
+            doc.setFontSize(7.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(126, 34, 206);
+            doc.text("LEGENDA DO INSTAGRAM", margin + 6, yPos + 5.5);
+
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(243, 232, 255);
+            doc.roundedRect(margin + 5, yPos + 7.5, boxWidth, igHeight, 1.5, 1.5, 'FD');
+
+            doc.setFontSize(7.5);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(59, 7, 100);
+            let lY = yPos + 12;
+            for (const l of igLines) {
+              doc.text(l, margin + 8, lY);
+              lY += 3.8;
+            }
+            yPos += igCardH + 4;
           }
         });
 
@@ -4502,10 +4816,10 @@ export default function App() {
         const totalPages = doc.getNumberOfPages();
         for (let i = 1; i <= totalPages; i++) {
           doc.setPage(i);
-          doc.setFontSize(8);
+          doc.setFontSize(7.5);
           doc.setFont("helvetica", "normal");
           doc.setTextColor(148, 163, 184);
-          doc.text(`Página ${i} de ${totalPages} • PostForge AI Carousel Generator`, margin, pageHeight - 8);
+          doc.text(`Página ${i} de ${totalPages} • PostForge AI Carousel Generator`, margin, pageHeight - 6);
         }
 
         const filename = isBatch ? `lote_${listToExport.length}_carrosseis_postforge.pdf` : `carrossel_postforge.pdf`;
@@ -5285,7 +5599,7 @@ export default function App() {
           </div>
           <div className="flex items-baseline gap-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">PostForge</h1>
-            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-md border border-indigo-200/70 uppercase tracking-wider">v1.1.0</span>
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-md border border-indigo-200/70 uppercase tracking-wider">v1.2.0</span>
           </div>
         </div>
         
