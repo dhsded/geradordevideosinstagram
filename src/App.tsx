@@ -701,6 +701,17 @@ export default function App() {
     setExecutionLogs([]);
   };
 
+  const handleClearResults = () => {
+    if (!window.confirm('Tem certeza que deseja limpar todos os resultados gerados? Esta ação não pode ser desfeita.')) return;
+    setResult(null);
+    setCarouselResult(null);
+    setBatchCarouselResults([]);
+    setActiveCarouselIndex(0);
+    setError(null);
+    setLastGenerationMeta(null);
+    addLog('info', 'PROJETO', '🗑️ Resultados limpos com sucesso. Interface pronta para nova geração.');
+  };
+
   const handleCopyLogs = () => {
     const text = executionLogs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.category}] ${l.message}${l.details ? `\n  Det: ${l.details}` : ''}`).join('\n');
     navigator.clipboard.writeText(text);
@@ -9130,6 +9141,13 @@ module.exports = { runCompleteWorkflow };`
                 <button onClick={exportAsPDF} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer">
                   <Download className="w-4 h-4" /> PDF
                 </button>
+                <button 
+                  onClick={handleClearResults} 
+                  className="flex items-center gap-2 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white text-xs font-semibold px-3 py-2 rounded-xl border border-slate-600 hover:border-red-500 transition cursor-pointer" 
+                  title="Limpar todos os resultados e começar de novo"
+                >
+                  <Trash2 className="w-4 h-4" /> Limpar
+                </button>
               </div>
 
               {/* Cover Image Prompt */}
@@ -9466,6 +9484,13 @@ module.exports = { runCompleteWorkflow };`
                     title={batchCarouselResults.length > 1 ? `Exportar todos os ${batchCarouselResults.length} carrosséis em PDF` : 'Exportar PDF'}
                   >
                     <Download className="w-4 h-4" /> PDF
+                  </button>
+                  <button 
+                    onClick={handleClearResults} 
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-600 hover:border-red-500 transition cursor-pointer shadow-sm" 
+                    title="Limpar todos os carrosséis e resultados para começar de novo"
+                  >
+                    <Trash2 className="w-4 h-4" /> Limpar
                   </button>
                 </div>
               </div>
