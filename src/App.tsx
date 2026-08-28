@@ -5409,10 +5409,11 @@ export default function App() {
 
         promptText += `Para cada slide, forneça:
         1. "slideNumber": número do slide.
-        2. "imagePromptEn": Prompt altamente detalhado em Inglês para geradores de imagem, focado no cenário e personagens, descrevendo onde o balão de fala fica, mas sem o texto literal.
+        2. "imagePromptEn": Prompt COMPLETO, ALTAMENTE DETALHADO e EXTENSO em Inglês para geradores de imagem (Midjourney, DALL-E, Leonardo). REGRA CRÍTICA: Cada prompt DEVE ter no MÍNIMO 80 palavras e JAMAIS ser cortado, resumido, abreviado ou truncado. Descreva com riqueza de detalhes: estilo artístico, cenário, iluminação, posição dos personagens, expressões faciais, cores, texturas, atmosfera, ângulo de câmera e composição. NUNCA use referências vagas como "consistent with previous" ou "same style as slide 1" — cada prompt deve ser COMPLETO e INDEPENDENTE. Se for ${artStyle}, descreva explicitamente o estilo visual em cada prompt.
         3. ${dialogueLanguage === 'pt' ? '"textInBubblesPt": Texto no balão em Português.' : dialogueLanguage === 'en' ? '"textInBubblesEn": Texto no balão em Inglês.' : dialogueLanguage === 'es' ? '"textInBubblesEs": Texto no balão em Espanhol.' : '"textInBubblesPt", "textInBubblesEn", "textInBubblesEs": Textos nos balões em PT, EN e ES.'}
         4. "descriptionPt": Breve descrição do que está acontecendo visualmente no slide em Português.
         
+        REGRA ABSOLUTA DE COMPLETUDE: Cada "imagePromptEn" DEVE ser um prompt auto-suficiente, completo e detalhado. NUNCA abrevie, resuma ou trunque prompts. NUNCA use "consistent with previous", "same as before", "similar style" ou qualquer referência a slides anteriores. Cada prompt é independente e deve funcionar sozinho.
         Também forneça "instagramPost" com a legenda engajadora e emocionante.`;
 
         const requiredSlideFields = ["slideNumber", "imagePromptEn", "descriptionPt"];

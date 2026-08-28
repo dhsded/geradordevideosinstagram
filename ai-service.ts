@@ -568,6 +568,7 @@ export class AIService {
 
       const config: any = {
         temperature: 0.7,
+        maxOutputTokens: 65536,
       };
 
       if (options.responseSchema) {
