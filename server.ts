@@ -1172,6 +1172,73 @@ module.exports = { runCompleteWorkflow };
     }
   });
 
+  // Analisar imagem do personagem para identificar cores exatas, tipo e detalhes visuais
+  app.post("/api/analyze-character", async (req, res) => {
+    try {
+      const { imageData, mimeType } = req.body;
+      if (!imageData || !mimeType) {
+        return res.status(400).json({ error: "Dados da imagem ('imageData' e 'mimeType') são obrigatórios." });
+      }
+
+      const prompt = `Você é um diretor de arte e engenheiro de prompts de IA especialista em consistência visual de personagens.
+Analise com extrema atenção a imagem deste personagem:
+1. Identifique o tipo de personagem (ex: Coração humanizado, Cérebro com circuitos, Mascote estilizado, Atleta, etc.).
+2. Identifique a COR PRINCIPAL e CORES SECUNDÁRIAS com máxima fidelidade (ex: "Azul médio acetinado com costuras escuras e veias azul-marinho", ou "Cinza metálico com filamentos em cobre"). JAMAIS presuma cores padrão (como dizer que um coração é vermelho se na imagem ele é azul!).
+3. Identifique texturas e traços marcantes (costuras, circuitos, expressões faciais, olhos, boca, acabamento de luz).
+4. Forneça uma descrição concisa em inglês focando em sua cor exata, características físicas e estilo para uso direto em prompts de imagem (FLOW / Midjourney).
+
+Responda em formato JSON rigoroso:
+{
+  "characterName": "Nome do personagem",
+  "primaryColor": "Cor principal exata",
+  "secondaryColors": ["Cores secundárias"],
+  "visualFeatures": "Breve descrição das características visuais, texturas e detalhes em português",
+  "englishPromptDescription": "Descrição concisa em inglês focando em sua cor exata e características físicas para prompts (ex: 'A cute blue stitched heart character with visible dark blue veins and rustic stitches')"
+}`;
+
+      const result = await aiService.generate({
+        prompt,
+        parts: [
+          { text: prompt },
+          { inlineData: { data: imageData, mimeType } }
+        ],
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            characterName: { type: "STRING" },
+            primaryColor: { type: "STRING" },
+            secondaryColors: { type: "ARRAY", items: { type: "STRING" } },
+            visualFeatures: { type: "STRING" },
+            englishPromptDescription: { type: "STRING" }
+          },
+          required: ["characterName", "primaryColor", "visualFeatures", "englishPromptDescription"]
+        }
+      });
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(result.text);
+      } catch {
+        parsed = {
+          characterName: "Personagem",
+          primaryColor: "Cores detectadas da imagem",
+          visualFeatures: result.text,
+          englishPromptDescription: result.text
+        };
+      }
+
+      res.json({
+        success: true,
+        data: parsed,
+        provider: result.provider,
+        model: result.model
+      });
+    } catch (error: any) {
+      console.error("Analyze Character Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao analisar personagem." });
+    }
+  });
+
   // ==========================================
   // CLONADOR DE VÍDEOS DO INSTAGRAM (REELS & POSTS)
   // ==========================================

@@ -572,6 +572,9 @@ export default function App() {
   const [carouselTone, setCarouselTone] = useState('Acolhedor / Compassivo');
   const [characterDescription, setCharacterDescription] = useState('');
   const [dialogueLanguage, setDialogueLanguage] = useState<DialogueLanguage>('pt');
+  const [speechBubbleMode, setSpeechBubbleMode] = useState<'bubbles-ai-safe' | 'clean-art'>('bubbles-ai-safe');
+  const [analyzingCharacterIndex, setAnalyzingCharacterIndex] = useState<{ [key: number]: boolean }>({});
+  const [detectedCharacterDetails, setDetectedCharacterDetails] = useState<({ name: string; color: string; secondaryColors: string[]; features: string; englishDesc: string } | undefined)[]>([]);
   
   React.useEffect(() => {
     const availableCarouselTones = NICHE_CAROUSEL_TONES[niche] || [];
@@ -3750,7 +3753,7 @@ export default function App() {
           const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
           scriptText += `[SLIDE ${s.slideNumber}]\n`;
           scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
-          scriptText += `• Prompt Visual de Geração (Midjourney / DALL-E): ${s.imagePromptEn}\n`;
+          scriptText += `• Prompt de Imagem (FLOW / I.A): ${s.imagePromptEn}\n`;
           if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
           scriptText += `\n`;
         });
@@ -3772,7 +3775,7 @@ export default function App() {
         const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
         scriptText += `[SLIDE ${s.slideNumber}]\n`;
         scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
-        scriptText += `• Prompt Visual de Geração (Midjourney / DALL-E): ${s.imagePromptEn}\n`;
+        scriptText += `• Prompt de Imagem (FLOW / I.A): ${s.imagePromptEn}\n`;
         if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
         scriptText += `\n`;
       });
@@ -4331,7 +4334,7 @@ export default function App() {
             } else {
               content += `Texto no Balão (PT): "${slide.textInBubblesPt || slide.textInBubbles || ''}"\n`;
             }
-            content += `[PROMPT MIDJOURNEY / DALL-E]:\n${slide.imagePromptEn || ''}\n\n`;
+            content += `[PROMPT DE IMAGEM (FLOW / I.A)]:\n${slide.imagePromptEn || ''}\n\n`;
           });
 
           content += `--- LEGENDA DO INSTAGRAM ---\n`;
@@ -4587,7 +4590,7 @@ export default function App() {
             doc.setFontSize(6.5);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(5, 150, 105);
-            doc.text("PROMPT DE VÍDEO (MIDJOURNEY / RUNWAY / KLING)", margin + 7, curY + 3.8);
+            doc.text("PROMPT DE VÍDEO", margin + 7, curY + 3.8);
             doc.setFontSize(7);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(6, 78, 59);
@@ -4811,7 +4814,7 @@ export default function App() {
               doc.setFontSize(6.5);
               doc.setFont("helvetica", "bold");
               doc.setTextColor(5, 150, 105); // emerald-600
-              doc.text("PROMPT DE IMAGEM (MIDJOURNEY / FLUX / DALL-E / LEONARDO)", margin + 7, curY + 3.8);
+              doc.text("PROMPT DE IMAGEM (FLOW / I.A)", margin + 7, curY + 3.8);
 
               doc.setFontSize(7);
               doc.setFont("helvetica", "normal");
@@ -4988,7 +4991,7 @@ export default function App() {
             } else {
               children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
             }
-            children.push(new Paragraph({ children: [new TextRun({ text: "Prompt Imagem (Midjourney / Dall-E): ", bold: true, color: "059669" }), new TextRun({ text: slide.imagePromptEn || '' })] }));
+            children.push(new Paragraph({ children: [new TextRun({ text: "Prompt de Imagem (FLOW / I.A): ", bold: true, color: "059669" }), new TextRun({ text: slide.imagePromptEn || '' })] }));
           });
 
           children.push(new Paragraph({ text: "" }));
@@ -5013,7 +5016,7 @@ export default function App() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const dataUrl = event.target?.result as string;
       const [header, base64] = dataUrl.split(',');
       const mimeType = header.split(':')[1].split(';')[0];
@@ -5023,6 +5026,53 @@ export default function App() {
         newImages[index] = { data: base64, mimeType };
         return newImages;
       });
+
+      // Análise automática das cores e traços visuais do personagem
+      setAnalyzingCharacterIndex(prev => ({ ...prev, [index]: true }));
+      addLog('ai', 'PERSONAGEM', `Analisando cores e características visuais da imagem do Personagem ${index + 1}...`);
+      
+      try {
+        const res = await apiFetch('/api/analyze-character', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageData: base64, mimeType })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            const { characterName, primaryColor, secondaryColors, visualFeatures, englishPromptDescription } = json.data;
+            const secStr = Array.isArray(secondaryColors) && secondaryColors.length > 0 ? ` e ${secondaryColors.join(', ')}` : '';
+            const detectedInfo = `${characterName || `Personagem ${index + 1}`} (Cor: ${primaryColor}${secStr} - ${visualFeatures || ''})`;
+            
+            setDetectedCharacterDetails(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                name: characterName || `Personagem ${index + 1}`,
+                color: primaryColor,
+                secondaryColors: secondaryColors || [],
+                features: visualFeatures,
+                englishDesc: englishPromptDescription
+              };
+              return updated;
+            });
+
+            setCharacterDescription(prev => {
+              const prefix = `Personagem ${index + 1}: ${detectedInfo}`;
+              if (!prev.trim()) return prefix;
+              if (prev.includes(`Personagem ${index + 1}:`)) {
+                return prev.replace(new RegExp(`Personagem ${index + 1}:[^;\\n]+`, 'g'), prefix);
+              }
+              return `${prev}; ${prefix}`;
+            });
+
+            addLog('success', 'PERSONAGEM', `✨ Personagem ${index + 1} identificado: "${characterName}" com cor principal "${primaryColor}". Consistência ativada.`);
+          }
+        }
+      } catch (err: any) {
+        console.warn('Erro ao analisar personagem automaticamente:', err);
+      } finally {
+        setAnalyzingCharacterIndex(prev => ({ ...prev, [index]: false }));
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -5032,6 +5082,11 @@ export default function App() {
       const newImages = [...prev];
       newImages[index] = undefined;
       return newImages;
+    });
+    setDetectedCharacterDetails(prev => {
+      const updated = [...prev];
+      updated[index] = undefined;
+      return updated;
     });
   };
 
@@ -5202,6 +5257,47 @@ export default function App() {
     }
   };
 
+  const handleShieldPromptAgainstBlankBubbles = (slideIdx: number) => {
+    const shieldSnippet = ` | CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. Only the speaking character has a speech bubble with the written text. The listening character MUST NOT have any speech bubble, thought bubble, or text above it. Exactly one bubble in the entire frame, with no unfilled bubbles anywhere.`;
+
+    if (carouselResult && carouselResult.slides && carouselResult.slides[slideIdx]) {
+      const currentPrompt = carouselResult.slides[slideIdx].imagePromptEn || '';
+      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE')) {
+        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui a blindagem anti-balão vazio.`);
+        return;
+      }
+      const updatedSlides = [...carouselResult.slides];
+      updatedSlides[slideIdx] = {
+        ...updatedSlides[slideIdx],
+        imagePromptEn: currentPrompt + shieldSnippet
+      };
+      setCarouselResult({ ...carouselResult, slides: updatedSlides });
+      addLog('success', 'PROMPT', `🛡️ Slide ${slideIdx + 1} blindado contra balões vazios (FLOW / I.A)!`);
+      return;
+    }
+
+    if (batchCarouselResults.length > 0 && batchCarouselResults[activeCarouselIndex]?.slides?.[slideIdx]) {
+      const targetCar = batchCarouselResults[activeCarouselIndex];
+      const currentPrompt = targetCar.slides[slideIdx].imagePromptEn || '';
+      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE')) {
+        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui a blindagem anti-balão vazio.`);
+        return;
+      }
+      const updatedSlides = [...targetCar.slides];
+      updatedSlides[slideIdx] = {
+        ...updatedSlides[slideIdx],
+        imagePromptEn: currentPrompt + shieldSnippet
+      };
+      const updatedBatch = [...batchCarouselResults];
+      updatedBatch[activeCarouselIndex] = {
+        ...targetCar,
+        slides: updatedSlides
+      };
+      setBatchCarouselResults(updatedBatch);
+      addLog('success', 'PROMPT', `🛡️ Slide ${slideIdx + 1} do Carrossel ${activeCarouselIndex + 1} blindado contra balões vazios!`);
+    }
+  };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!topic.trim() && contextImages.length === 0 && referencePdfs.length === 0) {
@@ -5254,7 +5350,9 @@ export default function App() {
         ${topicInstruction}
         ${includeHook ? 'A primeira cena (CENA 1) DEVE conter um "HOOK" (gancho) poderoso que prenda a atenção nos primeiros 3 segundos e gere identificação instantânea.' : 'Não é necessário um gancho comercial na primeira cena; foque no fluxo emocional natural e profundo.'}
         
-        INSTRUÇÕES PARA O DIÁLOGO/NARRAÇÃO:
+        INSTRUÇÕES PARA O DIÁLOGO/NARRAÇÃO E PERSONAGENS:
+        - IDENTIFICAÇÃO DE CORES E PERSONAGENS: Se houver imagens de personagens enviadas, analise-as com máxima atenção e identifique as CORES EXATAS e características de cada um (ex: Coração Azul com costuras, Cérebro Cinza com circuitos). No prompt em inglês "videoPromptEn", descreva os personagens mencionando explicitamente suas CORES, QUEM ESTÁ FALANDO e QUEM ESTÁ OUVINDO, ou a fala de cada um segundo suas características.
+        - O "videoPromptEn" DEVE SER SEMPRE E INTEGRALMENTE EM INGLÊS.
         - IDENTIFICAÇÃO DE VOZ: Analise as imagens de personagem enviadas. Se houver um personagem feminino proeminente, a voz da narração deve ser FEMININA. Se for masculino, MASCULINA. Se não houver clareza ou não houver fotos, use uma voz que melhor se adapte ao tema.
         - Use PSICOLOGIA e FILOSOFIA para criar falas que toquem na ferida, que façam o espectador se sentir compreendido.
         - O objetivo é gerar identificação visceral. O espectador deve pensar: "Isso foi escrito para mim".
@@ -5283,7 +5381,7 @@ export default function App() {
 
         promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA PARA AS FALAS/NARRAÇÃO:
         O usuário selecionou o idioma: "${langName}".
-        ${dialogueLanguage === 'pt' ? 'Gere todas as falas/narração estritamente em PORTUGUÊS (Brasil) no campo "dialoguePt".' : ''}
+        ${dialogueLanguage === 'pt' ? 'Gere todas as falas/narração estritamente em PORTUGUÊS (Brasil) (PT-BR) no campo "dialoguePt".' : ''}
         ${dialogueLanguage === 'en' ? 'Gere todas as falas/narração estritamente em INGLÊS (English) no campo "dialogueEn".' : ''}
         ${dialogueLanguage === 'es' ? 'Gere todas as falas/narração estritamente em ESPANHOL (Español) no campo "dialogueEs".' : ''}
         ${dialogueLanguage === 'all' ? 'Gere as falas/narração nos 3 idiomas: Português ("dialoguePt"), Inglês ("dialogueEn") e Espanhol ("dialogueEs").' : ''}\n\n`;
@@ -5395,32 +5493,52 @@ export default function App() {
           promptText += `Como o tom é de Curiosidades / Bastidores, revele segredos inacreditáveis ocorridos por trás das câmeras, curiosidades sobre roteiros e mistérios de produção.\n`;
         }
 
-        promptText += `REGRA CRÍTICA PARA OS PROMPTS DE IMAGEM: 
-        1. Os diálogos DEVEM estar contidos dentro de balões de fala (speech bubbles) integrados na própria imagem. O estilo do balão deve ser PADRONIZADO em todos os slides para manter a identidade visual.
-        2. No prompt (em Inglês), descreva detalhadamente o balão (round, elegant, hand-drawn style, etc.), a fonte e a posição, mas **NÃO** escreva o conteúdo final do texto dentro da string do prompt. Use "dialogue placeholder".
-        3. Mantenha a CONSISTÊNCIA VISUAL ABSOLUTA: 
-           - As cores originais dos personagens DEVEM ser mantidas (ex: o Coração deve manter seus tons vermelhos/vibrantes que o destacam, mesmo que o estilo geral seja "fosco" ou "desenho a mão").
-           - As características físicas originais devem ser respeitadas em cada prompt.
-           - O estilo de desenho deve ser idêntico em cada slide.
+        promptText += `REGRA CRÍTICA PARA IDENTIFICAÇÃO DE CORES E PERSONAGENS:
+        1. SE HOUVER IMAGENS DE PERSONAGENS ANEXADAS: Você DEVE inspecionar com MÁXIMA ATENÇÃO cada imagem de personagem fornecida.
+           - Identifique a COR EXATA, dominante e secundária de cada personagem (ex: se o Coração for Azul com costuras e veias azul-escuras, descreva-o ESTRITAMENTE como azul e com suas costuras; se o Cérebro for Cinza metálico com circuitos, descreva-o ESTRITAMENTE como cinza com circuitos).
+           - NUNCA assuma cores genéricas (NUNCA presuma que um coração é vermelho ou que um cérebro é rosa se na imagem ou descrição ele for azul, cinza, verde ou metálico!). A consistência de cor da imagem de referência é 100% prioritária e obrigatória.
+        2. QUEM ESTÁ FALANDO E QUEM ESTÁ OUVINDO:
+           - Em cada cena/slide, DEVE FICAR CRISTALINO E INEQUÍVOCO quem está falando e quem está apenas ouvindo, ou a fala de cada um segundo suas características emocionais e cognitivas (ex: o Coração fala com afeto, empatia e vulnerabilidade; o Cérebro pondera com lógica, clareza e análise).
+           - Em "descriptionPt": Descreva explicitamente a ação, quem fala, quem ouve e suas cores (ex: "O Coração Azul acolhedor conforta o Cérebro Cinza, que ouve atentamente em silêncio.").
+           - Em "imagePromptEn": Descreva visualmente cada personagem mencionando explicitamente sua COR, quem está falando e sua expressão ativa, e quem está ouvindo e sua postura atenta e silenciosa.
+
+        DIRETRIZES RIGOROSAS PARA O "imagePromptEn" (PROMPTS DE IMAGEM):
+        1. IDIOMA DO PROMPT:
+           - O prompt de imagem "imagePromptEn" DEVE SER SEMPRE E INTEGRALMENTE EM INGLÊS.
+           - A ÚNICA EXCEÇÃO SÃO AS PALAVRAS DITAS DENTRO DAS ASPAS DO BALÃO DE FALA, que devem ser escritas exatamente no idioma determinado pelo usuário.
+           - QUANDO O IDIOMA FOR PORTUGUÊS BRASILEIRO: Você DEVE especificar expressamente a indicação "Brazilian Portuguese (PT-BR)" antes do texto literal entre aspas. Exemplo:
+             a single speech bubble with text in Brazilian Portuguese (PT-BR): "Abrir-se pode ser o primeiro passo para a cura."
+        
+        2. BLINDAGEM ANTI-ERRO DE IMAGEM (PROIBIÇÃO ABSOLUTA DE BALÕES VAZIOS / EM BRANCO NO FLOW):
+           - REGRA DE OURO CONTRA BALÕES VAZIOS NO FLOW / GERADORES DE IMAGEM: Geradores de imagem cometem o erro grave de desenhar um balão vazio ou em branco sobre o personagem que está apenas ouvindo ou em silêncio. VOCÊ DEVE IMPEDIR ESSE ERRO COM DIRETIVAS POSITIVAS E NEGATIVAS EXPLÍCITAS:
+           - SE APENAS UM PERSONAGEM ESTÁ FALANDO NO SLIDE:
+             * Ordene EXATAMENTE UM balão de fala na cena inteira: "There is EXACTLY ONE single speech bubble in the entire image, originating exclusively from the speaking [cor e tipo do personagem falante]."
+             * Proíba expressamente balões no ouvinte: "The listening [cor e tipo do personagem ouvinte] is silently listening and MUST NOT have any speech bubble, thought bubble, or text above it."
+             * Adicione restrição negativa obrigatória: "CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. DO NOT generate any unfilled speech bubbles, placeholder bubbles, or duplicate bubbles. Only the speaking character has a speech bubble, containing the exact specified text."
+           - SE AMBOS OS PERSONAGENS FALAM NO MESMO SLIDE:
+             * Ambos os balões devem ter seus textos completos especificados entre aspas, ancorados aos seus respectivos personagens por cor: "Two speech bubbles in the scene: one from the [cor falante 1] with text in [idioma]: \"[fala 1]\", and one from the [cor falante 2] with text in [idioma]: \"[fala 2]\". Both bubbles MUST contain their full written text. STRICTLY NO empty or blank bubbles."
+           - SE NENHUM PERSONAGEM FALA (Cena silenciosa ou reflexiva):
+             * "NO speech bubbles, NO text balloons in this scene. Clean cinematic scene without any dialogue bubbles."
+        ${speechBubbleMode === 'clean-art' ? `\n- MODO ARTE LIMPA ATIVADO PELO USUÁRIO: O usuário selecionou "Arte Limpa Sem Balões". Portanto, no "imagePromptEn" NÃO crie balões de fala nem texto na imagem (use 'Clean cinematic illustration without any speech bubbles, text or words'). As falas geradas serão usadas para inserção externa no Canva/CapCut.` : ''}
+        
         REGRA SOBRE NOMES NOS DIÁLOGOS:
         - Os textos dos balões de fala (textInBubblesPt/En/Es) NUNCA devem conter o nome do personagem como prefixo (ex: NÃO faça "Coração: Você precisa..." ou "Cérebro: Pense bem...").
         - O balão deve conter APENAS a frase dita, sem identificação de quem fala (ex: "Você precisa se permitir sentir.").
-        - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt", que descreve a cena (ex: "O Coração, com expressão acolhedora, diz ao Cérebro...").
-        - Isso é OBRIGATÓRIO porque o nome do personagem ficará visualmente indicado na própria imagem, e repetir no balão polui a experiência.`;
+        - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt" e dentro das instruções em inglês do "imagePromptEn".`;
 
         const selectedLangInfoCarousel = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
         const langNameCarousel = selectedLangInfoCarousel.name;
 
         promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA PARA OS BALÕES DE DIÁLOGO:
         O usuário selecionou o idioma: "${langNameCarousel}".
-        ${dialogueLanguage === 'pt' ? 'Gere todos os textos dos balões estritamente em PORTUGUÊS (Brasil) no campo "textInBubblesPt".' : ''}
+        ${dialogueLanguage === 'pt' ? 'Gere todos os textos dos balões estritamente em PORTUGUÊS (Brasil) (PT-BR) no campo "textInBubblesPt".' : ''}
         ${dialogueLanguage === 'en' ? 'Gere todos os textos dos balões estritamente em INGLÊS (English) no campo "textInBubblesEn".' : ''}
         ${dialogueLanguage === 'es' ? 'Gere todos os textos dos balões estritamente em ESPANHOL (Español) no campo "textInBubblesEs".' : ''}
         ${dialogueLanguage === 'all' ? 'Gere os textos dos balões nos 3 idiomas: Português ("textInBubblesPt"), Inglês ("textInBubblesEn") e Espanhol ("textInBubblesEs").' : ''}\n\n`;
 
         promptText += `Para cada slide, forneça:
         1. "slideNumber": número do slide.
-        2. "imagePromptEn": Prompt COMPLETO, ALTAMENTE DETALHADO e EXTENSO em Inglês para geradores de imagem (Midjourney, DALL-E, Leonardo). REGRA CRÍTICA: Cada prompt DEVE ter no MÍNIMO 80 palavras e JAMAIS ser cortado, resumido, abreviado ou truncado. Descreva com riqueza de detalhes: estilo artístico, cenário, iluminação, posição dos personagens, expressões faciais, cores, texturas, atmosfera, ângulo de câmera e composição. NUNCA use referências vagas como "consistent with previous" ou "same style as slide 1" — cada prompt deve ser COMPLETO e INDEPENDENTE. Se for ${artStyle}, descreva explicitamente o estilo visual em cada prompt.
+        2. "imagePromptEn": Prompt COMPLETO, ALTAMENTE DETALHADO e EXTENSO em Inglês para geradores de imagem modernos (FLOW, Flux, Ideogram, Midjourney). REGRA CRÍTICA: Cada prompt DEVE ter no MÍNIMO 80 palavras e JAMAIS ser cortado, resumido, abreviado ou truncado. Descreva com riqueza de detalhes: estilo artístico, cenário, iluminação, posição dos personagens, expressões faciais, cores, texturas, atmosfera, ângulo de câmera e composição. NUNCA use referências vagas como "consistent with previous" ou "same style as slide 1" — cada prompt deve ser COMPLETO e INDEPENDENTE. Se for ${artStyle}, descreva explicitamente o estilo visual em cada prompt.
         3. ${dialogueLanguage === 'pt' ? '"textInBubblesPt": Texto no balão em Português.' : dialogueLanguage === 'en' ? '"textInBubblesEn": Texto no balão em Inglês.' : dialogueLanguage === 'es' ? '"textInBubblesEs": Texto no balão em Espanhol.' : '"textInBubblesPt", "textInBubblesEn", "textInBubblesEs": Textos nos balões em PT, EN e ES.'}
         4. "descriptionPt": Breve descrição do que está acontecendo visualmente no slide em Português.
         
@@ -8806,37 +8924,63 @@ module.exports = { runCompleteWorkflow };`
 
               {/* Character Images Upload */}
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-900">Referências de Personagens (Opcional)</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-900">Referências de Personagens (Opcional)</label>
+                  <span className="text-[10px] text-slate-500">IA detecta cores e traços automaticamente</span>
+                </div>
                 <div className="space-y-2">
                   {Array.from({ length: characterCount }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <label className="relative flex-1 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-2 hover:bg-slate-100 transition flex items-center justify-center gap-2 text-xs font-medium text-slate-600">
-                        <Upload className="w-4 h-4" />
-                        <span className="truncate">{characterImages[i] ? 'Imagem carregada' : `Upload Personagem ${i + 1}`}</span>
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="hidden" 
-                          onChange={(e) => handleImageUpload(i, e)}
-                        />
-                      </label>
-                      {characterImages[i] && (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <div className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200">
-                            <img 
-                              src={`data:${characterImages[i]!.mimeType};base64,${characterImages[i]!.data}`} 
-                              alt={`Char ref ${i + 1}`} 
-                              className="w-full h-full object-cover"
-                            />
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <label className="relative flex-1 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-2 hover:bg-slate-100 transition flex items-center justify-center gap-2 text-xs font-medium text-slate-600">
+                          {analyzingCharacterIndex[i] ? (
+                            <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          <span className="truncate">
+                            {analyzingCharacterIndex[i] 
+                              ? 'Identificando cores...' 
+                              : characterImages[i] 
+                                ? (detectedCharacterDetails[i]?.name || `Personagem ${i + 1} Carregado`) 
+                                : `Upload Personagem ${i + 1}`}
+                          </span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={(e) => handleImageUpload(i, e)}
+                          />
+                        </label>
+                        {characterImages[i] && (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 shadow-2xs">
+                              <img 
+                                src={`data:${characterImages[i]!.mimeType};base64,${characterImages[i]!.data}`} 
+                                alt={`Char ref ${i + 1}`} 
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => handleRemoveImage(i)}
+                              className="w-9 h-9 flex items-center justify-center bg-red-50 text-red-500 rounded-lg border border-red-100 hover:bg-red-100 transition cursor-pointer"
+                              title="Remover personagem"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
-                          <button 
-                            type="button"
-                            onClick={() => handleRemoveImage(i)}
-                            className="w-9 h-9 flex items-center justify-center bg-red-50 text-red-500 rounded-lg border border-red-100 hover:bg-red-100 transition"
-                            title="Remover personagem"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                        )}
+                      </div>
+
+                      {/* Badge de Cor e Traços Detectados */}
+                      {detectedCharacterDetails[i] && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50/70 border border-indigo-100 rounded-lg text-[11px] text-indigo-900">
+                          <Palette className="w-3 h-3 text-indigo-600 shrink-0" />
+                          <span className="truncate">
+                            Cor: <strong className="text-indigo-700">{detectedCharacterDetails[i]?.color}</strong>
+                            {detectedCharacterDetails[i]?.features ? ` • ${detectedCharacterDetails[i]?.features}` : ''}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -8900,6 +9044,60 @@ module.exports = { runCompleteWorkflow };`
                   </button>
                 </div>
               </div>
+
+              {/* Seletor de Modo de Balões de Fala (Prevenção Ativa de Balões Vazios no FLOW) */}
+              {activeTab === 'carousel' && (
+                <div className="space-y-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Balões de Fala (FLOW / I.A)</span>
+                    </label>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs ${
+                      speechBubbleMode === 'bubbles-ai-safe' 
+                        ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
+                        : 'text-amber-700 bg-amber-50 border-amber-200'
+                    }`}>
+                      {speechBubbleMode === 'bubbles-ai-safe' ? '🛡️ Anti-Balão Vazio Ativo' : '🖼️ Arte Limpa (Sem Balão)'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSpeechBubbleMode('bubbles-ai-safe')}
+                      className={`p-2.5 text-left rounded-xl border transition cursor-pointer select-none flex flex-col gap-1 ${
+                        speechBubbleMode === 'bubbles-ai-safe'
+                          ? 'bg-white text-indigo-950 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                          : 'bg-white/60 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700">
+                        <span>💬 Balão Integrado</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight">
+                        Protege contra balões vazios. Balão exclusivo no falante com fala em PT-BR.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSpeechBubbleMode('clean-art')}
+                      className={`p-2.5 text-left rounded-xl border transition cursor-pointer select-none flex flex-col gap-1 ${
+                        speechBubbleMode === 'clean-art'
+                          ? 'bg-white text-indigo-950 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                          : 'bg-white/60 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
+                        <span>🖼️ Arte Limpa</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight">
+                        Cena 100% limpa sem balões, ideal para inserir no Canva ou CapCut.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -9645,15 +9843,26 @@ module.exports = { runCompleteWorkflow };`
 
                   <div className="border-t border-slate-700 pt-4 mt-2">
                     <div className="flex justify-between items-center mb-3">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                        <ImageIcon className="w-3.5 h-3.5" /> Prompt de Imagem (Midjourney / DALL-E)
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <ImageIcon className="w-3.5 h-3.5 text-indigo-400" /> Prompt de Imagem (FLOW / I.A)
                       </label>
-                      <button 
-                        onClick={() => handleCopy(slide.imagePromptEn || '', `cp_${index}`)}
-                        className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition"
-                      >
-                        {copiedStates[`cp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          type="button"
+                          onClick={() => handleShieldPromptAgainstBlankBubbles(index)}
+                          className="flex items-center gap-1 text-[10px] font-bold uppercase text-amber-400 hover:text-amber-300 transition bg-amber-950/40 border border-amber-800/60 px-2 py-1 rounded-lg cursor-pointer"
+                          title="Garante regras rígidas anti-balão vazio para que o FLOW não desenhe balões em branco no ouvinte"
+                        >
+                          <ShieldCheck className="w-3 h-3 text-amber-400" />
+                          <span>Blindar Anti-Vazio</span>
+                        </button>
+                        <button 
+                          onClick={() => handleCopy(slide.imagePromptEn || '', `cp_${index}`)}
+                          className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition cursor-pointer"
+                        >
+                          {copiedStates[`cp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
+                        </button>
+                      </div>
                     </div>
                     <div className="bg-slate-800/80 rounded-xl p-4 border border-slate-700">
                       <code className="text-[11px] lg:text-xs text-green-400 leading-relaxed font-mono block whitespace-pre-wrap">
@@ -12713,8 +12922,8 @@ module.exports = { runCompleteWorkflow };`
                 {currentItem.prompt && (
                   <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <span className="text-[9px] font-mono font-bold uppercase text-slate-500">
-                        Prompt de Geração (Midjourney / DALL-E):
+                      <span className="text-[9px] font-mono font-bold uppercase text-slate-400">
+                        Prompt de Imagem (FLOW / I.A):
                       </span>
                       <p className="text-[11px] font-mono text-slate-400 mt-0.5 line-clamp-2 select-all">
                         {currentItem.prompt}
