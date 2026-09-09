@@ -5011,6 +5011,43 @@ export default function App() {
     }
   };
 
+  const compressImageForVision = (dataUrl: string, maxDim = 512): Promise<{ data: string; mimeType: string }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const [h, b64] = compressedDataUrl.split(',');
+          const mime = h.split(':')[1].split(';')[0];
+          resolve({ data: b64, mimeType: mime });
+          return;
+        }
+        const [h, b64] = dataUrl.split(',');
+        resolve({ data: b64, mimeType: h.split(':')[1].split(';')[0] });
+      };
+      img.onerror = () => {
+        const [h, b64] = dataUrl.split(',');
+        resolve({ data: b64, mimeType: h.split(':')[1].split(';')[0] });
+      };
+      img.src = dataUrl;
+    });
+  };
+
   const handleImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -5027,15 +5064,16 @@ export default function App() {
         return newImages;
       });
 
-      // Análise automática das cores e traços visuais do personagem
+      // Análise automática ultrarrápida das cores e traços visuais do personagem
       setAnalyzingCharacterIndex(prev => ({ ...prev, [index]: true }));
-      addLog('ai', 'PERSONAGEM', `Analisando cores e características visuais da imagem do Personagem ${index + 1}...`);
+      addLog('ai', 'PERSONAGEM', `Analisando cores e características visuais do Personagem ${index + 1}...`);
       
       try {
+        const compressed = await compressImageForVision(dataUrl, 512);
         const res = await apiFetch('/api/analyze-character', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageData: base64, mimeType })
+          body: JSON.stringify({ imageData: compressed.data, mimeType: compressed.mimeType })
         });
         if (res.ok) {
           const json = await res.json();

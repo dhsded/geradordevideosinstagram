@@ -218,6 +218,31 @@ export class AIService {
       parts: partsWithPdf
     };
 
+    // Se a requisição contiver imagens ou vídeos para interpretação visual
+    const hasVisualMedia = (execOptions.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/') || p.inlineData?.mimeType?.startsWith('video/'));
+    const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+
+    // Se houver mídia visual e Groq estiver selecionado como ativo (modelos de texto do Groq não suportam imagens),
+    // rotear diretamente para o Gemini Vision para evitar travamentos ou timeouts de 60-120s
+    if (hasVisualMedia && geminiKeyAvailable && activeProvider === 'groq' && !options.provider) {
+      try {
+        addLocalLog('ai', 'GEMINI', `Mídia visual detectada. Groq não possui visão computacional nativa nesta rota; acionando Google Gemini Vision (${providersManager.getConfig().gemini.preferredModel || 'gemini-2.5-flash'})...`);
+        const geminiResult = await this.generateWithGemini({
+          ...execOptions,
+          provider: 'gemini',
+          model: providersManager.getConfig().gemini.preferredModel || 'gemini-2.5-flash'
+        }, addLocalLog);
+        const totalElapsed = Date.now() - tStart;
+        return {
+          ...geminiResult,
+          elapsedMs: totalElapsed,
+          logs: [...collectedLogs, ...(geminiResult.logs || [])]
+        };
+      } catch (gemErr: any) {
+        addLocalLog('warning', 'FAILOVER', `Gemini Vision falhou (${gemErr.message}). Continuando fluxo com provedor alternativo...`);
+      }
+    }
+
     // --- ROTA 1: GROQ CLOUD ---
     if (activeProvider === 'groq') {
       try {
@@ -435,6 +460,21 @@ export class AIService {
       });
     }
 
+    const hasMedia = Boolean(options.videoData && options.mimeType);
+    const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+
+    // Se houver vídeo ou imagem para análise, o Gemini Vision é o único com suporte multimodal nativo rápido
+    if (hasMedia && geminiKeyAvailable && activeProvider !== 'gemini' && !options.provider) {
+      try {
+        return await this.generateWithGemini({
+          parts,
+          model: preferredModel
+        });
+      } catch (gemErr: any) {
+        console.warn('[analyze] Gemini Vision falhou, tentando rota alternativa...', gemErr.message);
+      }
+    }
+
     if (activeProvider === 'groq') {
       try {
         return await this.generateWithGroq({
@@ -535,7 +575,8 @@ export class AIService {
     const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
     const modelsToTry = [preferredModel];
     if (!modelsToTry.includes("gemini-2.5-flash")) modelsToTry.push("gemini-2.5-flash");
-    if (!modelsToTry.includes("gemini-3.6-flash")) modelsToTry.push("gemini-3.6-flash");
+    if (!modelsToTry.includes("gemini-1.5-flash")) modelsToTry.push("gemini-1.5-flash");
+    if (!modelsToTry.includes("gemini-2.0-flash")) modelsToTry.push("gemini-2.0-flash");
 
     let currentModelIndex = 0;
     const triedKeys = new Set<string>();

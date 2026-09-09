@@ -1196,6 +1196,11 @@ Responda em formato JSON rigoroso:
   "englishPromptDescription": "Descrição concisa em inglês focando em sua cor exata e características físicas para prompts (ex: 'A cute blue stitched heart character with visible dark blue veins and rustic stitches')"
 }`;
 
+      // Priorizar diretamente Gemini Vision (ultrarrápido ~1s e máxima precisão em cores e texturas)
+      const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+      const targetProvider = geminiKeyAvailable ? 'gemini' : undefined;
+      const targetModel = geminiKeyAvailable ? 'gemini-2.5-flash' : undefined;
+
       const result = await aiService.generate({
         prompt,
         parts: [
@@ -1212,7 +1217,9 @@ Responda em formato JSON rigoroso:
             englishPromptDescription: { type: "STRING" }
           },
           required: ["characterName", "primaryColor", "visualFeatures", "englishPromptDescription"]
-        }
+        },
+        provider: targetProvider,
+        model: targetModel
       });
 
       let parsed: any;
