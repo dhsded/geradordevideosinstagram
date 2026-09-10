@@ -96,8 +96,14 @@ interface GeneratedCarousel {
     textInBubblesEs?: string;
     textInBubbles?: string;
     descriptionPt: string;
+    imageUrl?: string;
+    originalImagePreview?: string;
+    originalImageName?: string;
+    originalHadCharacter?: boolean;
+    characterReplaced?: string;
   }[];
   instagramPost: string;
+  isCloned?: boolean;
 }
 
 interface ReferencePdfFile {
@@ -624,6 +630,16 @@ export default function App() {
   const [carouselQuantity, setCarouselQuantity] = useState<number>(1);
   const [batchCarouselResults, setBatchCarouselResults] = useState<GeneratedCarousel[]>([]);
   const [activeCarouselIndex, setActiveCarouselIndex] = useState<number>(0);
+
+  // Image Cloner states (integrated within the Carousel post creator)
+  const [carouselCreationMode, setCarouselCreationMode] = useState<'generate' | 'clone'>('generate');
+  const [clonerSourceImages, setClonerSourceImages] = useState<{ data: string; mimeType: string; name: string; preview: string }[]>([]);
+  const [isCloningImages, setIsCloningImages] = useState(false);
+  const [clonerTargetCharMode, setClonerTargetCharMode] = useState<'active' | 'custom' | 'none'>('active');
+  const [customCloneCharName, setCustomCloneCharName] = useState('');
+  const [customCloneCharColor, setCustomCloneCharColor] = useState('');
+  const [customCloneCharDesc, setCustomCloneCharDesc] = useState('');
+  const [customCloneCharImg, setCustomCloneCharImg] = useState<{ data: string; mimeType: string; preview: string } | null>(null);
 
   // Video Analysis & Instagram Cloner states
   const [analysisSubTab, setAnalysisSubTab] = useState<'cloner' | 'local'>('cloner');
@@ -3028,6 +3044,7 @@ export default function App() {
     setIsLoading(false);
     setIsAnalyzing(false);
     setIsAuditing(false);
+    setIsCloningImages(false);
     setError('Operação cancelada pelo usuário.');
     setAuditError('Auditoria cancelada pelo usuário.');
   };
@@ -3204,7 +3221,7 @@ export default function App() {
 
       const refImg = characterImages[0]?.data ? `data:${characterImages[0]?.mimeType};base64,${characterImages[0]?.data}` : '';
       return {
-        url: s.imageUrl || refImg || '',
+        url: s.imageUrl || s.originalImagePreview || refImg || '',
         title: `Slide ${s.slideNumber || idx + 1} - ${carouselResult.title || 'Carrossel'}`,
         filename: `Slide_${s.slideNumber || idx + 1}`,
         slideNumber: s.slideNumber || idx + 1,
@@ -5355,6 +5372,186 @@ export default function App() {
       };
       setBatchCarouselResults(updatedBatch);
       addLog('success', 'PROMPT', `🛡️ Slide ${slideIdx + 1} do Carrossel ${activeCarouselIndex + 1} blindado contra balões vazios!`);
+    }
+  };
+
+  const handleUploadClonerImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray: File[] = Array.from(files);
+
+    const newImages: { data: string; mimeType: string; name: string; preview: string }[] = [];
+    for (const file of fileArray) {
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const compressed = await compressImageForVision(dataUrl, 768);
+        newImages.push({
+          data: compressed.data,
+          mimeType: compressed.mimeType,
+          name: file.name,
+          preview: dataUrl
+        });
+      } catch (err) {
+        console.error("Erro ao carregar imagem para clonagem:", file.name, err);
+      }
+    }
+
+    setClonerSourceImages(prev => [...prev, ...newImages]);
+    addLog('info', 'CLONADOR', `${fileArray.length} imagem(ns) adicionada(s) para clonagem. Total: ${clonerSourceImages.length + fileArray.length}`);
+    e.target.value = '';
+  };
+
+  const handleRemoveClonerImage = (index: number) => {
+    setClonerSourceImages(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleClearAllClonerImages = () => {
+    setClonerSourceImages([]);
+  };
+
+  const handleUploadCustomCloneCharImg = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const compressed = await compressImageForVision(dataUrl, 512);
+      setCustomCloneCharImg({
+        data: compressed.data,
+        mimeType: compressed.mimeType,
+        preview: dataUrl
+      });
+      addLog('info', 'CLONADOR', `Foto do personagem personalizada carregada com sucesso.`);
+    } catch (err) {
+      console.error("Erro ao carregar avatar do personagem personalizado:", err);
+    }
+    e.target.value = '';
+  };
+
+  const handleExecuteImageClone = async () => {
+    if (clonerSourceImages.length === 0) {
+      setError('Por favor, carregue pelo menos 1 imagem para clonar.');
+      addLog('warning', 'CLONADOR', 'Tentativa de clonagem sem imagens.');
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsCloningImages(true);
+    setIsLoading(true);
+    setError(null);
+    setResult(null);
+    setCarouselResult(null);
+
+    try {
+      addLog('ai', 'CLONADOR', `Iniciando clonagem de ${clonerSourceImages.length} imagem(ns) com análise de visão computacional Gemini Vision...`);
+
+      let targetCharacterPayload: any = undefined;
+
+      if (clonerTargetCharMode === 'active') {
+        const activeChar = characterImages[0];
+        const activeDetail = detectedCharacterDetails[0];
+        if (activeChar && activeChar.data) {
+          targetCharacterPayload = {
+            name: activeDetail?.name || "Personagem Principal",
+            color: activeDetail?.color || "",
+            secondaryColors: activeDetail?.secondaryColors || [],
+            features: activeDetail?.features || "",
+            englishDesc: activeDetail?.englishDesc || "",
+            data: activeChar.data,
+            mimeType: activeChar.mimeType
+          };
+          addLog('info', 'CLONADOR', `Substituição ativada: Usando personagem principal "${targetCharacterPayload.name}" (Cor: ${targetCharacterPayload.color || 'Padrão'}).`);
+        } else {
+          addLog('info', 'CLONADOR', `Nenhum personagem carregado no app. A IA clonará a cena mantendo fidelidade total.`);
+        }
+      } else if (clonerTargetCharMode === 'custom') {
+        targetCharacterPayload = {
+          name: customCloneCharName || "Personagem Personalizado",
+          color: customCloneCharColor || "",
+          secondaryColors: [],
+          features: customCloneCharDesc || "",
+          englishDesc: customCloneCharDesc || "",
+          data: customCloneCharImg?.data,
+          mimeType: customCloneCharImg?.mimeType
+        };
+        addLog('info', 'CLONADOR', `Substituição ativada: Usando personagem personalizado "${targetCharacterPayload.name}".`);
+      } else {
+        addLog('info', 'CLONADOR', `Modo sem substituição: Clonagem fiel de cada cena.`);
+      }
+
+      const response = await apiFetch('/api/cloner/clone-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images: clonerSourceImages.map(img => ({
+            data: img.data,
+            mimeType: img.mimeType,
+            name: img.name
+          })),
+          targetCharacter: targetCharacterPayload,
+          options: {
+            dialogueLanguage: 'pt'
+          }
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => null);
+        throw new Error(errJson?.error || `Erro HTTP ${response.status} ao clonar imagens.`);
+      }
+
+      const data = await response.json();
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Resposta inválida do servidor ao clonar imagens.');
+      }
+
+      const rawSlides = data.data.slides || [];
+      const slidesWithPreview = rawSlides.map((slide: any, idx: number) => ({
+        ...slide,
+        originalImagePreview: clonerSourceImages[idx]?.preview || (clonerSourceImages[idx]?.data ? `data:${clonerSourceImages[idx].mimeType};base64,${clonerSourceImages[idx].data}` : undefined),
+        originalImageName: clonerSourceImages[idx]?.name
+      }));
+
+      const clonedCarousel: GeneratedCarousel = {
+        title: data.data.title || `Post Clonado (${slidesWithPreview.length} imagens)`,
+        theme: `Clonagem Reversa de Imagens (${slidesWithPreview.length} slides)`,
+        language: 'pt',
+        isCloned: true,
+        slides: slidesWithPreview,
+        instagramPost: data.data.instagramPost || ''
+      };
+
+      setCarouselResult(clonedCarousel);
+      setBatchCarouselResults([clonedCarousel]);
+      setActiveCarouselIndex(0);
+      addLog('success', 'CLONADOR', `🎉 Clonagem finalizada com sucesso! ${slidesWithPreview.length} slides gerados com prompts idênticos em inglês e legendas.`);
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        addLog('warning', 'CLONADOR', 'Clonagem cancelada pelo usuário.');
+        return;
+      }
+      console.error("Cloner error:", err);
+      setError(err.message || 'Erro ao clonar imagens.');
+      addLog('error', 'CLONADOR', `Falha na clonagem: ${err.message}`);
+    } finally {
+      setIsCloningImages(false);
+      setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -8819,8 +9016,310 @@ module.exports = { runCompleteWorkflow };`
             {/* Form Sidebar */}
             <aside className="lg:col-span-4 h-full flex flex-col overflow-hidden">
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-6 h-full overflow-y-auto">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Configurar Geração</h2>
-            <form onSubmit={handleGenerate} className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+                {activeTab === 'carousel' && carouselCreationMode === 'clone' ? 'Clonador de Imagens & Posts' : 'Configurar Geração'}
+              </h2>
+              {activeTab === 'carousel' && carouselCreationMode === 'clone' && clonerSourceImages.length > 0 && (
+                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                  {clonerSourceImages.length} {clonerSourceImages.length === 1 ? 'imagem' : 'imagens'}
+                </span>
+              )}
+            </div>
+
+            {/* Alternador de Modo no Carrossel: Criar por IA vs Clonar Imagens */}
+            {activeTab === 'carousel' && (
+              <div className="flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCarouselCreationMode('generate')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    carouselCreationMode === 'generate'
+                      ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/80 font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>✨ Criar por IA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCarouselCreationMode('clone')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    carouselCreationMode === 'clone'
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Repeat className="w-3.5 h-3.5" />
+                  <span>🧬 Clonador</span>
+                </button>
+              </div>
+            )}
+
+            {activeTab === 'carousel' && carouselCreationMode === 'clone' ? (
+              <div className="flex flex-col gap-5 animate-in fade-in duration-300">
+                {/* Dica / Info Box */}
+                <div className="p-3.5 bg-gradient-to-br from-indigo-50/90 to-purple-50/70 border border-indigo-200 rounded-2xl">
+                  <div className="flex items-start gap-2.5">
+                    <Repeat className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div className="text-[11px] text-slate-700 leading-relaxed">
+                      <strong>Engenharia Reversa de Imagens & Carrosséis:</strong> Carregue 1 imagem individual ou múltiplos slides sequenciais (ex: 2 a 10 imagens). A IA criará prompts idênticos em inglês para FLOW e substituirá o personagem original pelo seu personagem fornecido (caso haja personagem na imagem).
+                    </div>
+                  </div>
+                </div>
+
+                {/* Upload de Imagens a Clonar (Individual ou Grupo) */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-indigo-600" />
+                      <span>Imagens para Clonar (Individuais ou Sequenciais)</span>
+                    </label>
+                    {clonerSourceImages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllClonerImages}
+                        className="text-[10px] text-red-500 hover:text-red-700 font-bold hover:underline cursor-pointer"
+                      >
+                        Limpar Todas
+                      </button>
+                    )}
+                  </div>
+
+                  <label className="cursor-pointer border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 hover:bg-indigo-50/70 rounded-2xl p-5 flex flex-col items-center justify-center gap-2 transition group text-center">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">
+                        Clique ou arraste imagens aqui
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Suporta seleção única ou múltipla (JPG, PNG, WebP)
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUploadClonerImages}
+                    />
+                  </label>
+
+                  {/* Lista de Miniaturas das Imagens Carregadas */}
+                  {clonerSourceImages.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                        <span>Sequência de Slides ({clonerSourceImages.length}):</span>
+                        <span className="text-[10px] text-indigo-600 font-bold">Ordem dos prompts</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {clonerSourceImages.map((img, idx) => (
+                          <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 group aspect-square shadow-2xs">
+                            <img
+                              src={img.preview}
+                              alt={img.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 p-1.5 flex flex-col justify-between">
+                              <div className="flex items-center justify-between">
+                                <span className="px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-black">
+                                  #{idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveClonerImage(idx)}
+                                  className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition cursor-pointer"
+                                  title="Remover imagem"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <span className="text-[9px] text-white/90 truncate font-mono">
+                                {img.name}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Configuração de Substituição de Personagem */}
+                <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Palette className="w-4 h-4 text-indigo-600" />
+                      <span>Substituição de Personagem (Se Existir)</span>
+                    </label>
+                  </div>
+
+                  {/* Modos de Personagem */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setClonerTargetCharMode('active')}
+                      className={`py-2 px-1 text-[10px] font-bold rounded-xl border transition text-center cursor-pointer ${
+                        clonerTargetCharMode === 'active'
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      Personagem Atual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClonerTargetCharMode('custom')}
+                      className={`py-2 px-1 text-[10px] font-bold rounded-xl border transition text-center cursor-pointer ${
+                        clonerTargetCharMode === 'custom'
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      Personalizado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClonerTargetCharMode('none')}
+                      className={`py-2 px-1 text-[10px] font-bold rounded-xl border transition text-center cursor-pointer ${
+                        clonerTargetCharMode === 'none'
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      Sem Substituição
+                    </button>
+                  </div>
+
+                  {/* Modo 1: Personagem Atual do App */}
+                  {clonerTargetCharMode === 'active' && (
+                    <div className="space-y-2 pt-1">
+                      {characterImages[0] && characterImages[0]?.data ? (
+                        <div className="flex items-center gap-3 p-2.5 bg-white border border-indigo-100 rounded-xl shadow-2xs">
+                          <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                            <img
+                              src={`data:${characterImages[0].mimeType};base64,${characterImages[0].data}`}
+                              alt="Personagem Alvo"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-slate-800 truncate">
+                              {detectedCharacterDetails[0]?.name || "Personagem Principal"}
+                            </p>
+                            <p className="text-[10px] text-indigo-600 font-semibold truncate">
+                              Cor: {detectedCharacterDetails[0]?.color || "Detectada automaticamente"}
+                            </p>
+                            {detectedCharacterDetails[0]?.features && (
+                              <p className="text-[9px] text-slate-500 truncate">
+                                {detectedCharacterDetails[0]?.features}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-2">
+                          <p className="text-[11px] text-amber-800 font-medium">
+                            Nenhum personagem carregado no sistema ainda. Carregue um personagem abaixo ou alterne para "Personalizado":
+                          </p>
+                          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Carregar Personagem Principal</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => handleImageUpload(0, e)}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Modo 2: Personagem Personalizado */}
+                  {clonerTargetCharMode === 'custom' && (
+                    <div className="space-y-2 pt-1">
+                      <input
+                        type="text"
+                        placeholder="Nome do Personagem (ex: Raposa Astronauta 3D)"
+                        value={customCloneCharName}
+                        onChange={(e) => setCustomCloneCharName(e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Cor Predominante (ex: Laranja vibrante e branco)"
+                        value={customCloneCharColor}
+                        onChange={(e) => setCustomCloneCharColor(e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                      <textarea
+                        placeholder="Características visuais (ex: Estilo render 3D Pixar, olhos grandes expressivos, vestindo capacete espacial...)"
+                        value={customCloneCharDesc}
+                        onChange={(e) => setCustomCloneCharDesc(e.target.value)}
+                        rows={2}
+                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                      />
+                      <label className="cursor-pointer flex items-center justify-center gap-2 p-2 bg-white border border-dashed border-indigo-200 rounded-xl text-xs text-indigo-600 font-bold hover:bg-indigo-50 transition">
+                        <Upload className="w-4 h-4" />
+                        <span>{customCloneCharImg ? 'Foto do Personagem Carregada ✓' : 'Carregar Foto do Personagem (Opcional)'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleUploadCustomCloneCharImg}
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Modo 3: Sem Substituição */}
+                  {clonerTargetCharMode === 'none' && (
+                    <div className="p-2.5 bg-slate-100 rounded-xl text-[11px] text-slate-600">
+                      A IA clonará as imagens exatamente como estão no original, gerando o prompt descritivo em inglês fiel à cena.
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão de Ação do Clonador */}
+                <div className="space-y-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleExecuteImageClone}
+                    disabled={isCloningImages || clonerSourceImages.length === 0}
+                    className="w-full py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-sm rounded-2xl shadow-lg shadow-indigo-200 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isCloningImages ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Clonando {clonerSourceImages.length} Imagens com Gemini Vision...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Repeat className="w-5 h-5" />
+                        <span>Clonar e Gerar Prompts ({clonerSourceImages.length})</span>
+                      </>
+                    )}
+                  </button>
+
+                  {isCloningImages && (
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      className="w-full py-2 text-slate-500 hover:text-red-500 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Cancelar Clonagem</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleGenerate} className="flex flex-col gap-6">
               
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-slate-900">Nicho</label>
@@ -9392,6 +9891,7 @@ module.exports = { runCompleteWorkflow };`
               </div>
 
             </form>
+            )}
           </div>
         </aside>
 
@@ -9849,6 +10349,60 @@ module.exports = { runCompleteWorkflow };`
                        <span className="text-[10px] font-bold py-1 px-2 bg-indigo-500/20 text-indigo-400 rounded uppercase">Slide Completo</span>
                     </div>
                   </div>
+
+                  {/* Banner de Imagem de Referência Clonada & Substituição de Personagem */}
+                  {slide.originalImagePreview && (
+                    <div className="p-4 bg-slate-800/90 border border-indigo-500/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-700 shrink-0 relative group bg-black/40">
+                          <img
+                            src={slide.originalImagePreview}
+                            alt={slide.originalImageName || `Imagem Original Slide ${slide.slideNumber}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => openCarouselSlideInLightbox(index)}
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white cursor-pointer"
+                            title="Ver imagem original em tamanho ampliado"
+                          >
+                            <ZoomIn className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              Referência Original Clonada:
+                            </span>
+                            <span className="text-xs text-white font-semibold truncate font-mono">
+                              {slide.originalImageName || `Slide ${slide.slideNumber}`}
+                            </span>
+                          </div>
+                          <div>
+                            {slide.originalHadCharacter ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="truncate">{slide.characterReplaced || "Personagem original substituído"}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>Cena Técnica Fiel (Sem Personagem na Imagem Original)</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openCarouselSlideInLightbox(index)}
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer border border-slate-600"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                        <span>Comparar em Tela Cheia</span>
+                      </button>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-indigo-900/20 rounded-xl p-4 border border-indigo-500/30">

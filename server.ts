@@ -1247,6 +1247,180 @@ Responda em formato JSON rigoroso:
   });
 
   // ==========================================
+  // CLONADOR DE IMAGENS E POSTAGENS COM SUBSTITUIÇÃO DE PERSONAGENS
+  // ==========================================
+  app.post("/api/cloner/clone-images", async (req, res) => {
+    try {
+      const { images, targetCharacter, options } = req.body;
+
+      if (!images || !Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "Pelo menos uma imagem deve ser fornecida para clonagem." });
+      }
+
+      const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
+      const targetProvider = geminiKeyAvailable ? 'gemini' : undefined;
+      const targetModel = geminiKeyAvailable ? 'gemini-2.5-flash' : undefined;
+
+      // Descrição do personagem alvo para substituição (se fornecido)
+      let targetCharPrompt = "";
+      if (targetCharacter) {
+        const charName = targetCharacter.name || "Personagem Personalizado do Usuário";
+        const charColor = targetCharacter.color ? `com cor predominante "${targetCharacter.color}"` : "";
+        const charFeatures = targetCharacter.features || targetCharacter.description || targetCharacter.englishDesc || "";
+        targetCharPrompt = `PERSONAGEM ALVO DO USUÁRIO PARA SUBSTITUIÇÃO:
+Nome: ${charName} ${charColor}
+Características Visuais e Estilo: ${charFeatures}
+${targetCharacter.englishDesc ? `Descrição em inglês para prompts: "${targetCharacter.englishDesc}"` : ""}`;
+      }
+
+      // Processar cada imagem da sequência com Gemini Vision
+      const clonedSlides: any[] = [];
+
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const slideNum = i + 1;
+
+        const parts: any[] = [];
+
+        // Se houver imagem do personagem alvo, injetar como referência
+        let hasTargetCharImage = false;
+        if (targetCharacter && targetCharacter.data && targetCharacter.mimeType) {
+          hasTargetCharImage = true;
+          parts.push({
+            inlineData: {
+              data: targetCharacter.data,
+              mimeType: targetCharacter.mimeType
+            }
+          });
+        }
+
+        // Imagem original a ser clonada
+        parts.push({
+          inlineData: {
+            data: img.data,
+            mimeType: img.mimeType
+          }
+        });
+
+        const prompt = `Você é um diretor de arte e engenheiro de prompts de IA especialista em engenharia reversa de imagens para FLOW, Midjourney v6, Flux e Ideogram.
+Sua missão é clonar a imagem fornecida (${hasTargetCharImage ? 'Segunda imagem anexada' : 'Imagem anexada'}) com FIDELIDADE TOTAL e criar um prompt idêntico e auto-suficiente em inglês.
+
+${targetCharPrompt ? targetCharPrompt + '\n' : ''}
+
+INSTRUÇÕES RIGOROSAS:
+1. ANÁLISE MINUCIOSA DA IMAGEM ORIGINAL:
+   - Identifique o estilo artístico exato (Render 3D, Infográfico técnico com setas, Fotografia realista, Cartoon, Ilustração vetorial).
+   - Identifique a paleta de cores do fundo e iluminação (ex: fundo amarelo vibrante sólido, iluminação de estúdio de produto, canteiro de obras realista, etc.).
+   - Identifique todos os elementos em cena: peças mecânicas, ferramentas, diagramas esquemáticos, setas direcionais, textos, números ou etiquetas.
+   - Identifique qualquer texto, título, legenda ou balão de fala visível na imagem.
+
+2. REGRA DE VERIFICAÇÃO E SUBSTITUIÇÃO DE PERSONAGEM:
+   - Verifique com extrema precisão: HÁ ALGUM PERSONAGEM, PESSOA OU MASCOTE NESTA IMAGEM?
+   - CASO NÃO HAJA PERSONAGEM (é uma imagem puramente técnica, com peças de motor, ferramentas, parede, alvenaria, paisagem, infográfico limpo de objetos):
+     * Clone a imagem com fidelidade máxima SEM inventar personagens.
+     * "originalHadCharacter": false.
+     * "characterReplaced": "Nenhum personagem na imagem original. Cena técnica clonada."
+   - CASO HAJA PERSONAGEM / PESSOA / MASCOTE:
+     * "originalHadCharacter": true.
+     * ${targetCharPrompt ? `VOCÊ DEVE SUBSTITUIR O PERSONAGEM ORIGINAL PELO PERSONAGEM ALVO DO USUÁRIO (${targetCharacter?.name || 'Personagem do Usuário'}).
+       - Mantenha RIGOROSAMENTE a mesma pose, enquadramento, ação e gesto (ex: se o personagem original estava pensativo segurando um travesseiro com lupa, o NOVO PERSONAGEM deve estar exatamente na mesma pose segurando o travesseiro com lupa; se estava apontando para a peça, o novo personagem deve estar apontando para a peça).
+       - Mantenha a mesma iluminação e interação com os objetos.
+       - Retrate ESTRITAMENTE o novo personagem com suas cores, traços físicos e características visuais fornecidas.` : 'Descreva fielmente o personagem presente na imagem.'}
+     * "characterReplaced": "${targetCharacter?.name ? `Personagem original substituído por ${targetCharacter.name}` : 'Personagem mantido'}"
+
+3. GERAÇÃO DO "imagePromptEn":
+   - O prompt DEVE ser 100% em Inglês, altamente descritivo, completo e auto-suficiente (mínimo 80 palavras).
+   - Se for um infográfico com setas/etiquetas, descreva explicitamente a estrutura diagramática, as setas direcionais pretas e as legendas sob cada item.
+   - Inclua no prompt a diretiva: "CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES."
+
+4. TEXTO E LEGENDA:
+   - "textInBubblesPt": Texto da legenda principal, título ou fala em Português presente na imagem original (ou adaptada ao novo personagem).
+   - "descriptionPt": Breve explicação em Português do que acontece na imagem e da substituição realizada.
+
+Responda em formato JSON estrito:
+{
+  "slideNumber": ${slideNum},
+  "imagePromptEn": "Prompt em inglês completo e detalhado",
+  "textInBubblesPt": "Texto das legendas ou balões em Português",
+  "descriptionPt": "Descrição da cena em Português",
+  "originalHadCharacter": true ou false,
+  "characterReplaced": "Descrição do status do personagem"
+}`;
+
+        parts.unshift({ text: prompt });
+
+        const result = await aiService.generate({
+          prompt,
+          parts,
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              slideNumber: { type: "INTEGER" },
+              imagePromptEn: { type: "STRING" },
+              textInBubblesPt: { type: "STRING" },
+              descriptionPt: { type: "STRING" },
+              originalHadCharacter: { type: "BOOLEAN" },
+              characterReplaced: { type: "STRING" }
+            },
+            required: ["slideNumber", "imagePromptEn", "textInBubblesPt", "descriptionPt", "originalHadCharacter", "characterReplaced"]
+          },
+          provider: targetProvider,
+          model: targetModel
+        });
+
+        let parsedSlide: any;
+        try {
+          parsedSlide = JSON.parse(result.text);
+        } catch {
+          parsedSlide = {
+            slideNumber: slideNum,
+            imagePromptEn: result.text,
+            textInBubblesPt: "",
+            descriptionPt: `Slide ${slideNum} clonado`,
+            originalHadCharacter: false,
+            characterReplaced: ""
+          };
+        }
+
+        parsedSlide.originalImageName = img.name || `Imagem ${slideNum}`;
+        clonedSlides.push(parsedSlide);
+      }
+
+      // Gerar Legenda do Instagram para o post/carrossel clonado
+      const summaryContext = clonedSlides.map(s => `Slide ${s.slideNumber}: ${s.descriptionPt} - Texto: "${s.textInBubblesPt}"`).join("\n");
+      let instagramPostText = "";
+      try {
+        const postCaptionResult = await aiService.generate({
+          prompt: `Com base neste conteúdo de carrossel clonado:\n${summaryContext}\n\nCrie uma legenda de altíssimo engajamento para o Instagram em Português (Brasil).
+          Inclua:
+          - Hook impactante na primeira linha com emoji.
+          - Desenvolvimento com ensinamentos práticos e tópicos.
+          - Chamada para ação (CTA) convidando a salvar o post e comentar.
+          - 5 hashtags relevantes.`,
+          parts: [{ text: `Gere apenas o texto da legenda do Instagram para este post:\n${summaryContext}` }],
+          provider: targetProvider,
+          model: targetModel
+        });
+        instagramPostText = postCaptionResult.text.trim();
+      } catch {
+        instagramPostText = `Post clonado com sucesso com ${clonedSlides.length} imagens. Salve este conteúdo para consultar sempre que precisar!`;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          title: `Post Clonado (${clonedSlides.length} ${clonedSlides.length === 1 ? 'imagem' : 'imagens'})`,
+          slides: clonedSlides,
+          instagramPost: instagramPostText
+        }
+      });
+    } catch (error: any) {
+      console.error("Clone Images Error:", error);
+      res.status(500).json({ error: error.message || "Erro ao clonar imagens." });
+    }
+  });
+
+  // ==========================================
   // CLONADOR DE VÍDEOS DO INSTAGRAM (REELS & POSTS)
   // ==========================================
   
