@@ -716,7 +716,7 @@ export class AIService {
 
     const systemMessage = {
       role: "system",
-      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
+      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Suas falas e diálogos são profundamente humanos, naturais, empáticos e viscerais (estritamente sem clichês rasos de autoajuda ou coach), e seus infográficos/prompts técnicos de soluções para o dia a dia e causa/efeito são esquemáticos, didáticos e precisos. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
     };
 
     let combinedText = "";
@@ -923,7 +923,7 @@ export class AIService {
 
     const systemMessage = {
       role: "system",
-      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
+      content: `Você é um roteirista premiado, diretor criativo e especialista em Instagram de altíssimo engajamento. Suas falas e diálogos são profundamente humanos, naturais, empáticos e viscerais (estritamente sem clichês rasos de autoajuda ou coach), e seus infográficos/prompts técnicos de soluções para o dia a dia e causa/efeito são esquemáticos, didáticos e precisos. Responda ESTRITAMENTE em formato JSON válido e parseável, sem qualquer texto fora do JSON. REGRA OBRIGATÓRIA: Se o usuário solicitar múltiplos carrosséis ou itens, você DEVE gerar TODOS eles completos. NUNCA retorne menos itens do que o solicitado. Gere a resposta JSON COMPLETA até o último item.${schemaInstruction}`
     };
 
     const userContentArray: any[] = [];

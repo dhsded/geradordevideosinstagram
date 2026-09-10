@@ -450,7 +450,14 @@ export interface ExecutionLogItem {
   details?: string;
 }
 
-const NICHES = ['Fitness', 'Psicologia', 'Psiquiatria', 'Neuropsicologia', 'Top 10 Filmes e Séries'];
+const NICHES = [
+  'Soluções para o Dia a Dia (Faça Você Mesmo)',
+  'Fitness',
+  'Psicologia',
+  'Psiquiatria',
+  'Neuropsicologia',
+  'Top 10 Filmes e Séries'
+];
 const ANIMATION_STYLES = [
   'Stop Motion',
   '3D Pixar / Disney',
@@ -462,6 +469,8 @@ const ANIMATION_STYLES = [
   'Cyberpunk / Futurista'
 ];
 const ART_STYLES = [
+  'Infográfico 3D Didático (Render Amarelo/Vibrante)',
+  'Realista Fotográfico / Obra e Oficina',
   'Anime / Mangá',
   'Cartoon Animado',
   'Desenho à Mão (Sketched)',
@@ -473,6 +482,13 @@ const ART_STYLES = [
 ];
 
 const NICHE_CAROUSEL_TONES: Record<string, string[]> = {
+  'Soluções para o Dia a Dia (Faça Você Mesmo)': [
+    'Causa e Efeito (Se Essa Peça Falhar...)',
+    'A Falta Disso Causa Isso',
+    'Mito vs. Verdade (Com Mascote/Especialista)',
+    'Macetes de Mestre / Passo a Passo DIY',
+    'Diagnóstico Rápido / Como Identificar'
+  ],
   'Psicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
   'Psiquiatria': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
   'Neuropsicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Psicológico', 'Filosófico', 'Profundidade'],
@@ -481,6 +497,12 @@ const NICHE_CAROUSEL_TONES: Record<string, string[]> = {
 };
 
 const NICHE_SCRIPT_TONES: Record<string, string[]> = {
+  'Soluções para o Dia a Dia (Faça Você Mesmo)': [
+    'Passo a Passo / Macete de Obra',
+    'Diagnóstico Rápido Automotivo',
+    'Mito vs. Verdade',
+    'Faça Você Mesmo (DIY)'
+  ],
   'Psicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
   'Psiquiatria': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
   'Neuropsicologia': ['Acolhedor / Compassivo', 'Terapêutico / ACT', 'Vulnerável / Íntimo', 'Encorajador / Reparador', 'Poético', 'Metafórico e Profundo', 'Filosófico'],
@@ -5394,7 +5416,7 @@ export default function App() {
         - IDENTIFICAÇÃO DE VOZ: Analise as imagens de personagem enviadas. Se houver um personagem feminino proeminente, a voz da narração deve ser FEMININA. Se for masculino, MASCULINA. Se não houver clareza ou não houver fotos, use uma voz que melhor se adapte ao tema.
         - Use PSICOLOGIA e FILOSOFIA para criar falas que toquem na ferida, que façam o espectador se sentir compreendido.
         - O objetivo é gerar identificação visceral. O espectador deve pensar: "Isso foi escrito para mim".
-        ${niche !== 'Top 10 Filmes e Séries' && niche !== 'Fitness' ? `
+        ${niche !== 'Top 10 Filmes e Séries' && niche !== 'Fitness' && niche !== 'Soluções para o Dia a Dia (Faça Você Mesmo)' ? `
         - ${scriptTone === 'Acolhedor / Compassivo' ? 'Use um tom acolhedor e compassivo: diálogo suave, focado em validação emocional profunda, carinho e acolhimento sem cobranças ou julgamentos, ideal para cura interna e autocompaixão.' : ''}
         - ${scriptTone === 'Terapêutico / ACT' ? 'Use uma abordagem terapêutica baseada em ACT (Terapia de Aceitação e Compromisso): foco na observação consciente dos pensamentos ("você não é seus pensamentos"), aceitação de emoções difíceis sem lutar contra elas e atenção plena ao momento presente.' : ''}
         - ${scriptTone === 'Vulnerável / Íntimo' ? 'Use um tom vulnerável e íntimo: conversas sinceras e abertas sobre carência, medos, sensação de abandono e dor emocional que gerem identificação imediata.' : ''}
@@ -5402,6 +5424,12 @@ export default function App() {
         - ${scriptTone === 'Poético' ? 'Use rimas suaves, métrica e metáforas visuais delicadas, focando na beleza da dor e da superação.' : ''}
         - ${scriptTone === 'Metafórico e Profundo' ? 'Use analogias com a natureza, o universo ou objetos cotidianos para explicar sentimentos complexos que "quebram" quem lê.' : ''}
         - ${scriptTone === 'Filosófico' ? 'Explore dilemas existenciais, a brevidade da vida e a busca por sentido, citando ou aludindo a grandes pensadores de forma acessível.' : ''}
+        ` : ''}
+        ${niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)' ? `
+        - Para o nicho de Soluções para o Dia a Dia / Faça Você Mesmo:
+          * As cenas devem focar em ângulos macro e dinâmicos de ferramentas, peças mecânicas ou materiais de obra em ação prática (ex: chave apertando conector, motor vibrando, aplicação de argamassa, teste de vazamento).
+          * A narração em "dialoguePt" deve ser direta, sem enrolação, com autoridade e vocabulário técnico acessível de quem realmente entende do assunto ("Se você notar esse barulho...", "O segredo que nenhum profissional te conta...", "Nunca monte essa peça sem antes...").
+          * No "videoPromptEn", detalhe close-ups com iluminação de estúdio/oficina nítida e enquadramentos que mostrem o defeito e o conserto passo a passo.
         ` : ''}
         ${niche === 'Fitness' ? `
         - ${scriptTone === 'Motivacional / Foco' ? 'Foque em quebra de limites, superação de dores e barreiras mentais, disciplina férrea e mentalidade inabalável.' : ''}
@@ -5485,6 +5513,8 @@ export default function App() {
               promptText += `A dinâmica deve ser obrigatoriamente entre dois personagens do contexto fitness, como um treinador motivador e um aluno dedicado/desafiado, ou um indivíduo e sua voz interior consciente de esforço e superação. Eles devem conversar ou interagir de forma altamente engajadora.\n`;
             } else if (niche === 'Top 10 Filmes e Séries') {
               promptText += `A dinâmica deve ser obrigatoriamente entre personagens apaixonadas por cinema, como dois cinéfilos debatendo opiniões sobre produções marcantes, ou apresentadores carismáticos de um ranking especial.\n`;
+            } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
+              promptText += `A dinâmica deve ser entre um mascote/especialista técnico (ex: mecânico experiente, operário de macacão e capacete, ou mascote estilizado com ferramentas) e o espectador ou aprendiz, ensinando o diagnóstico e a solução prática com autoridade e carisma.\n`;
             } else {
               promptText += `A dinâmica deve ser obrigatoriamente entre dois personagens reflexivos (ex: o clássico Cérebro que representa Razão/Lógica e o Coração que representa Emoção/Sentimento, ou terapeuta e participante). Eles devem estar conversando ou debatendo de forma coerente com o tom "${carouselTone}" e o nicho "${niche}". O objetivo é criar profunda conexão com o leitor.\n`;
             }
@@ -5497,6 +5527,8 @@ export default function App() {
               promptText += `O personagem principal é um atleta comprometido ou alguém batalhando pela sua saúde, expressando seus pensamentos ou aprendizados em sintonia com o tom "${carouselTone}".\n`;
             } else if (niche === 'Top 10 Filmes e Séries') {
               promptText += `O personagem principal é um apresentador carismático de cinema ou um fã fanático contando as melhores indicações em sintonia com o tom "${carouselTone}".\n`;
+            } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
+              promptText += `O personagem principal é um especialista técnico ou mascote uniformizado (ex: macacão de trabalho, capacete de obra ou óculos de proteção) que apresenta com orgulho as peças, aponta as setas, defeitos e macetes práticos.\n`;
             } else {
               promptText += `O personagem principal deve estar sozinho "falando alto", expressando pensamentos introspectivos e emotivos em sintonia com o tom "${carouselTone}" de forma marcante.\n`;
             }
@@ -5516,7 +5548,15 @@ export default function App() {
         } else if (carouselTone === 'Filosófico') {
           promptText += `Como o tom é Filosófico, foque em grandes questões da existência, verdade, tempo, ética, moral e a natureza do ser. Cite ou aluda a correntes filosóficas de forma poética.\n`;
         } else if (carouselTone === 'Profundidade') {
-          promptText += `Como o tom é de Profundidade, foque em sentimentos crus e universais, empatia profunda e conexões humanas viscerais que toquem a alma.\n`;
+          promptText += `Como o tom é de Profundidade, você DEVE atingir um patamar verdadeiramente existencial, visceral, poético e comovente.
+          - PROIBIÇÃO ABSOLUTA DE CLICHÊS DE AUTOAJUDA OU OTIMISMO TÓXICO: Banimento total de frases feitas como "o universo conspira", "sorria", "seja forte", "tudo passa", "permita-se sentir".
+          - FOQUE NA DOR INVISÍVEL E SILENCIOSA: O cansaço da alma de quem carrega tudo calado para não incomodar os outros; a sensação de solidão mesmo rodeado de pessoas; o medo de chegar ao fim da vida e perceber que viveu apenas para agradar aos outros; a exaustão de sustentar uma armadura pesada; a saudade da versão de si mesmo que existia antes da vida endurecer; a reconciliação dolorosa com nossas próprias cicatrizes.
+          - POÉTICA DO SILÊNCIO E NÓ NA GARGANTA: Escreva frases densas, poéticas e humanas que façam o leitor parar de rolar o feed, respirar fundo e sentir que a alma dele foi lida em voz alta.
+          - EXEMPLOS REAIS DO PADRÃO DE PROFUNDIDADE ESPERADO:
+            * "Eu não tô cansado do que faço. Tô cansado de fingir que tá tudo bem o tempo todo."
+            * "A gente passa metade da vida se escondendo pra não incomodar, e a outra metade se perguntando por que ninguém nos enxerga de verdade."
+            * "Tem dias em que o silêncio é a única resposta que sobrou pra um cansaço que nem dormindo passa."
+            * "Você não precisa ser forte agora. Pode deixar doer um pouco. Eu fico aqui com você."\n`;
         } else if (carouselTone === 'Motivacional') {
           promptText += `Como o tom é Motivacional, foque em acender a chama interior do leitor, motivá-lo a tomar decisões saudáveis, superar barreiras mentais e adotar hábitos vigorosos.\n`;
         } else if (carouselTone === 'Tutorial / Passo a Passo') {
@@ -5529,11 +5569,38 @@ export default function App() {
           promptText += `Como o tom é de Recomendação Secreta, recomende uma obra-prima oculta com argumentos brilhantes, criando o desejo urgente de assistir.\n`;
         } else if (carouselTone === 'Curiosidades / Bastidores') {
           promptText += `Como o tom é de Curiosidades / Bastidores, revele segredos inacreditáveis ocorridos por trás das câmeras, curiosidades sobre roteiros e mistérios de produção.\n`;
+        } else if (carouselTone === 'Causa e Efeito (Se Essa Peça Falhar...)') {
+          promptText += `Como o tom é "Causa e Efeito (Se Essa Peça Falhar...)", estruture cada slide como um infográfico técnico diagramático de altíssimo engajamento:
+          - TÍTULO DE IMPACTO NO TOPO: Em caixa alta bold chamativa, ex: "SE ESSA PEÇA FALHAR, O QUE PARA DE FUNCIONAR?".
+          - FLUXO ESQUEMÁTICO DE SETAS (Cadeia Causal Implacável):
+            Cada linha/slide deve demonstrar: [ Peça 3D Renderizada / Ferramenta ] ➔ [ Falha no Sistema / Sintoma Visível ] ➔ [ Consequência Fatal / Motor Destruído / Carro Desliga / Não Liga com ícone de proibido ].
+          - EXEMPLOS CLÁSSICOS:
+            * Correia Dentada ➔ Pistões e Válvulas se chocam ➔ Motor Destruído Instantaneamente
+            * Alternador ➔ A Bateria Não Carrega ➔ O Carro Desliga em Movimento
+            * Bomba d'Água ➔ Líquido de arrefecimento não circula ➔ Superaquecimento / Junta Queima
+            * Bomba de Combustível ➔ Baixa pressão nos bicos injetores ➔ Motor não liga
+          - DIRETRIZES PARA O "imagePromptEn": Descreva um infográfico técnico educacional de alta definição com fundo sólido vibrante (ex: amarelo industrial/automotivo ou cinza técnico), peças mecânicas em render 3D hiper-detalhado com iluminação de produto, setas direcionais pretas grossas conectando as 3 etapas e etiquetas textuais legíveis sob cada imagem (Label: "[NOME DA PEÇA]" -> "[PROCESSO]" -> "[CONSEQUÊNCIA]").\n`;
+        } else if (carouselTone === 'A Falta Disso Causa Isso') {
+          promptText += `Como o tom é "A Falta Disso Causa Isso", estruture o carrossel no formato clássico de tela dividida (Split Screen horizontal) ou comparativo de causa x patologia:
+          - ESTRUTURA VISUAL DE ALTO CONTRASTE:
+            * PAINEL SUPERIOR: Texto grande em caixa alta bold "A FALTA DISSO", com uma seta amarela grossa destacando o detalhe técnico/peça essencial que as pessoas esquecem ou negligenciam (ex: a cantoneira de amarração na alvenaria, o anel o-ring de vedação, o relé protetor, o aditivo correto).
+            * PAINEL INFERIOR: Texto grande em caixa alta bold "CAUSA ISSO", com uma seta amarela apontando para o desastre/patologia estrutural resultante (ex: parede de reboco trincada de cima a baixo descolando do pilar, queima da ECU, vazamento destrutivo pelo teto, motor fundido).
+          - DIRETRIZES PARA O "imagePromptEn": Descreva a imagem em estilo fotográfico realista ou split-screen técnico de canteiro de obras / oficina, com setas amarelas chamativas apontando para os pontos exatos de causa e efeito.\n`;
+        } else if (carouselTone === 'Mito vs. Verdade (Com Mascote/Especialista)') {
+          promptText += `Como o tom é "Mito vs. Verdade (Com Mascote/Especialista)", estruture um infográfico desmistificador de alta autoridade:
+          - COLUNA DA ESQUERDA: "❌ MITO" em vermelho chamativo com o mascote/especialista em pose de dúvida ou segurando o item com a crença popular errada (ex: "O travesseiro serve para a vida toda", "Passar sabão na correia tira o barulho").
+          - COLUNA DA DIREITA: "✔️ VERDADE" em verde com o mascote apontando com lupa ou ferramenta, revelando o dado científico/técnico real (ex: "Após 2 anos, 1/3 do peso do travesseiro é formado por ácaros e suas fezes").
+          - CHECKLIST PRÁTICO: 2 a 3 tópicos com ícones gráficos de solução (ex: 🦠 perigos para saúde/motor; 📅 prazo correto de substituição; 🛡️ benefício final garantido).
+          - Se houver mascote (ex: o Touro Resolve em macacão de trabalho, capacete de obra e óculos de proteção), inclua-o ativamente nas duas colunas.\n`;
+        } else if (carouselTone === 'Macetes de Mestre / Passo a Passo DIY') {
+          promptText += `Como o tom é "Macetes de Mestre / Passo a Passo DIY", ensine soluções práticas de obra, oficina ou casa com passos numerados claros, mostrando truques de profissionais que economizam tempo e milhares de reais.\n`;
+        } else if (carouselTone === 'Diagnóstico Rápido / Como Identificar') {
+          promptText += `Como o tom é "Diagnóstico Rápido / Como Identificar", forneça um guia visual dos sintomas de falha: barulhos estranhos, fumaça, vibrações, folgas ou vazamentos, ensinando o leitor a identificar o defeito antes que vire um prejuízo gigantesco.\n`;
         }
 
         promptText += `REGRA CRÍTICA PARA IDENTIFICAÇÃO DE CORES E PERSONAGENS:
         1. SE HOUVER IMAGENS DE PERSONAGENS ANEXADAS: Você DEVE inspecionar com MÁXIMA ATENÇÃO cada imagem de personagem fornecida.
-           - Identifique a COR EXATA, dominante e secundária de cada personagem (ex: se o Coração for Azul com costuras e veias azul-escuras, descreva-o ESTRITAMENTE como azul e com suas costuras; se o Cérebro for Cinza metálico com circuitos, descreva-o ESTRITAMENTE como cinza com circuitos).
+           - Identifique a COR EXATA, dominante e secundária de cada personagem (ex: se o Coração for Azul com costuras e veias azul-escuras, descreva-o ESTRITAMENTE como azul e com suas costuras; se o Cérebro for Cinza metálico com circuitos, descreva-o ESTRITAMENTE como cinza com circuitos; se for o Touro Resolve, descreva o touro musculoso com macacão azul de operário e capacete amarelo de segurança).
            - NUNCA assuma cores genéricas (NUNCA presuma que um coração é vermelho ou que um cérebro é rosa se na imagem ou descrição ele for azul, cinza, verde ou metálico!). A consistência de cor da imagem de referência é 100% prioritária e obrigatória.
         2. QUEM ESTÁ FALANDO E QUEM ESTÁ OUVINDO:
            - Em cada cena/slide, DEVE FICAR CRISTALINO E INEQUÍVOCO quem está falando e quem está apenas ouvindo, ou a fala de cada um segundo suas características emocionais e cognitivas (ex: o Coração fala com afeto, empatia e vulnerabilidade; o Cérebro pondera com lógica, clareza e análise).
@@ -5543,9 +5610,9 @@ export default function App() {
         DIRETRIZES RIGOROSAS PARA O "imagePromptEn" (PROMPTS DE IMAGEM):
         1. IDIOMA DO PROMPT:
            - O prompt de imagem "imagePromptEn" DEVE SER SEMPRE E INTEGRALMENTE EM INGLÊS.
-           - A ÚNICA EXCEÇÃO SÃO AS PALAVRAS DITAS DENTRO DAS ASPAS DO BALÃO DE FALA, que devem ser escritas exatamente no idioma determinado pelo usuário.
+           - A ÚNICA EXCEÇÃO SÃO AS PALAVRAS DITAS DENTRO DAS ASPAS DO BALÃO DE FALA OU ETIQUETAS DO INFOGRÁFICO, que devem ser escritas exatamente no idioma determinado pelo usuário.
            - QUANDO O IDIOMA FOR PORTUGUÊS BRASILEIRO: Você DEVE especificar expressamente a indicação "Brazilian Portuguese (PT-BR)" antes do texto literal entre aspas. Exemplo:
-             a single speech bubble with text in Brazilian Portuguese (PT-BR): "Abrir-se pode ser o primeiro passo para a cura."
+             a single speech bubble with text in Brazilian Portuguese (PT-BR): "Não precisa carregar tudo isso sozinho."
         
         2. BLINDAGEM ANTI-ERRO DE IMAGEM (PROIBIÇÃO ABSOLUTA DE BALÕES VAZIOS / EM BRANCO NO FLOW):
            - REGRA DE OURO CONTRA BALÕES VAZIOS NO FLOW / GERADORES DE IMAGEM: Geradores de imagem cometem o erro grave de desenhar um balão vazio ou em branco sobre o personagem que está apenas ouvindo ou em silêncio. VOCÊ DEVE IMPEDIR ESSE ERRO COM DIRETIVAS POSITIVAS E NEGATIVAS EXPLÍCITAS:
@@ -5555,14 +5622,33 @@ export default function App() {
              * Adicione restrição negativa obrigatória: "CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. DO NOT generate any unfilled speech bubbles, placeholder bubbles, or duplicate bubbles. Only the speaking character has a speech bubble, containing the exact specified text."
            - SE AMBOS OS PERSONAGENS FALAM NO MESMO SLIDE:
              * Ambos os balões devem ter seus textos completos especificados entre aspas, ancorados aos seus respectivos personagens por cor: "Two speech bubbles in the scene: one from the [cor falante 1] with text in [idioma]: \"[fala 1]\", and one from the [cor falante 2] with text in [idioma]: \"[fala 2]\". Both bubbles MUST contain their full written text. STRICTLY NO empty or blank bubbles."
-           - SE NENHUM PERSONAGEM FALA (Cena silenciosa ou reflexiva):
-             * "NO speech bubbles, NO text balloons in this scene. Clean cinematic scene without any dialogue bubbles."
+           - SE NENHUM PERSONAGEM FALA OU FOR UM INFOGRÁFICO ESQUEMÁTICO:
+             * "NO speech bubbles, NO dialogue bubbles. Clean infographic technical layout with labels and diagram arrows."
         ${speechBubbleMode === 'clean-art' ? `\n- MODO ARTE LIMPA ATIVADO PELO USUÁRIO: O usuário selecionou "Arte Limpa Sem Balões". Portanto, no "imagePromptEn" NÃO crie balões de fala nem texto na imagem (use 'Clean cinematic illustration without any speech bubbles, text or words'). As falas geradas serão usadas para inserção externa no Canva/CapCut.` : ''}
         
-        REGRA SOBRE NOMES NOS DIÁLOGOS:
-        - Os textos dos balões de fala (textInBubblesPt/En/Es) NUNCA devem conter o nome do personagem como prefixo (ex: NÃO faça "Coração: Você precisa..." ou "Cérebro: Pense bem...").
-        - O balão deve conter APENAS a frase dita, sem identificação de quem fala (ex: "Você precisa se permitir sentir.").
-        - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt" e dentro das instruções em inglês do "imagePromptEn".`;
+        REGRA CRÍTICA PARA DIÁLOGOS E BALÕES DE CONVERSA (MÁXIMA HUMANIZAÇÃO E NATURALIDADE):
+        1. PROIBIÇÃO ABSOLUTA DE CLICHÊS DE COACH E PALESTRAS DE LIVRO:
+           - NUNCA use frases que parecem cartilha de psicologia ou autoajuda pronta:
+             * ❌ NÃO USE: "Você precisa se permitir sentir suas emoções para evoluir."
+             * ❌ NÃO USE: "Lembre-se de respirar fundo e focar no agora."
+             * ❌ NÃO USE: "Abrace a sua vulnerabilidade, ela é sua força."
+           - PESSOAS REAIS NÃO FALAM ASSIM.
+        2. COMO DEVE SER (FALA VIVA, NATURAL, ORALIDADE BRASILEIRA PT-BR):
+           - Diálogos curtos, viscerais, empáticos e coloquiais (1 a 2 linhas, de 6 a 16 palavras por balão).
+           - Use contrações e pausas naturais da fala oral brasileira ("tô", "tá", "pra", "né?", "sabe?", "é que...", reticências que expressam respiração ou hesitação sincera).
+           - O CÉREBRO expressa cansaço de pensar demais, medo de errar e excesso de controle ("Minha cabeça não para faz três dias...").
+           - O CORAÇÃO expressa acolhimento, descompressão e afeto desarmado ("Deita aqui um pouco. Deixa eu cuidar de você hoje.").
+           - EXEMPLOS DE COMO ESCREVER:
+             * ✅ "É que hoje tá pesado demais, sabe?"
+             * ✅ "Eu sei. Mas você não precisa carregar tudo isso sozinho agora."
+             * ✅ "A gente sempre se cobra tanto..."
+             * ✅ "Pode chorar. Eu fico aqui com você."
+        3. CASO SEJA UM INFOGRÁFICO TÉCNICO / DIAGRAMA (Soluções para o Dia a Dia):
+           - Se for o nicho "Soluções para o Dia a Dia" ou infográfico sem balões de quadrinhos, o campo "textInBubblesPt" deve conter a legenda principal de chamada do slide ou a fala de impacto do mascote/especialista (ex: "SE ESSA PEÇA FALHAR, O QUE PARA DE FUNCIONAR?", "A FALTA DISSO CAUSA ISSO", "Nunca ignore esse sinal no painel!").
+        4. REGRA SOBRE NOMES NOS DIÁLOGOS:
+           - Os textos dos balões de fala (textInBubblesPt/En/Es) NUNCA devem conter o nome do personagem como prefixo (ex: NÃO faça "Coração: Você precisa..." ou "Cérebro: Pense bem...").
+           - O balão deve conter APENAS a frase dita, sem identificação de quem fala.
+           - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt" e dentro das instruções em inglês do "imagePromptEn".`;
 
         const selectedLangInfoCarousel = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
         const langNameCarousel = selectedLangInfoCarousel.name;
