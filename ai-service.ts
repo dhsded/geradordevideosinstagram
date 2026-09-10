@@ -14,7 +14,7 @@ export interface AIContentPart {
 
 export interface AIGenerateOptions {
   prompt?: string;
-  parts: AIContentPart[];
+  parts?: AIContentPart[];
   responseSchema?: any;
   provider?: 'gemini' | 'openrouter' | 'groq';
   model?: string;
@@ -202,8 +202,13 @@ export class AIService {
       });
     };
 
-    // 1. Processar PDFs e extrair texto completo de contexto
-    const { processedParts, extractedPdfContext } = await this.processInputParts(options.parts || []);
+    // 1. Garantir que parts nunca seja vazio se options.prompt estiver preenchido
+    const rawParts = (options.parts && options.parts.length > 0)
+      ? options.parts
+      : (options.prompt ? [{ text: options.prompt }] : []);
+
+    // Processar PDFs e extrair texto completo de contexto
+    const { processedParts, extractedPdfContext } = await this.processInputParts(rawParts);
 
     // 2. Se houver texto extraído de PDF, injetar nas instruções de prompt
     const partsWithPdf: AIContentPart[] = [...processedParts];
@@ -295,7 +300,7 @@ export class AIService {
           const openrouterOptions: AIGenerateOptions = {
             ...execOptions,
             provider: 'openrouter',
-            model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+            model: providersManager.getOpenRouterModel() || 'google/gemma-4-31b-it:free'
           };
           const orResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
           const totalElapsed = Date.now() - tStart;
@@ -335,7 +340,7 @@ export class AIService {
             const groqOptions: AIGenerateOptions = {
               ...execOptions,
               provider: 'groq',
-              model: providersManager.getGroqModel() || 'qwen/qwen3.8-27b'
+              model: providersManager.getGroqModel() || 'openai/gpt-oss-20b'
             };
             addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
             const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -402,7 +407,7 @@ export class AIService {
           const groqOptions: AIGenerateOptions = {
             ...execOptions,
             provider: 'groq',
-            model: providersManager.getGroqModel() || 'qwen/qwen3.8-27b'
+            model: providersManager.getGroqModel() || 'openai/gpt-oss-20b'
           };
           addLocalLog('ai', 'GROQ', `Tentando failover com Groq Cloud (${groqOptions.model})...`);
           const groqResult = await this.generateWithGroq(groqOptions, addLocalLog);
@@ -426,7 +431,7 @@ export class AIService {
         const openrouterOptions: AIGenerateOptions = {
           ...execOptions,
           provider: 'openrouter',
-          model: providersManager.getOpenRouterModel() || 'minimax/minimax-m3:free'
+          model: providersManager.getOpenRouterModel() || 'google/gemma-4-31b-it:free'
         };
         const openrouterResult = await this.generateWithOpenRouter(openrouterOptions, addLocalLog);
         const totalElapsed = Date.now() - tStart;
@@ -537,7 +542,7 @@ export class AIService {
         const groqResult = await this.generateWithGroq({
           prompt: options.prompt,
           parts: [{ text: options.prompt }],
-          model: providersManager.getGroqModel() || "qwen/qwen3.8-27b"
+          model: providersManager.getGroqModel() || "openai/gpt-oss-20b"
         });
         return {
           ...groqResult,
@@ -552,7 +557,7 @@ export class AIService {
         const openrouterResult = await this.generateWithOpenRouter({
           prompt: options.prompt,
           parts: [{ text: options.prompt }],
-          model: providersManager.getOpenRouterModel() || "minimax/minimax-m3:free"
+          model: providersManager.getOpenRouterModel() || "google/gemma-4-31b-it:free"
         });
         return {
           ...openrouterResult,
@@ -572,14 +577,17 @@ export class AIService {
     options: AIGenerateOptions,
     logger?: (level: 'info' | 'success' | 'warning' | 'error' | 'ai', category: string, message: string) => void
   ): Promise<AIGenerateResult> {
-    const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-2.5-flash";
-    const modelsToTry = [preferredModel];
-    if (!modelsToTry.includes("gemini-2.5-flash")) modelsToTry.push("gemini-2.5-flash");
-    if (!modelsToTry.includes("gemini-1.5-flash")) modelsToTry.push("gemini-1.5-flash");
-    if (!modelsToTry.includes("gemini-2.0-flash")) modelsToTry.push("gemini-2.0-flash");
+    const preferredModel = options.model || providersManager.getConfig().gemini.preferredModel || "gemini-3.6-flash";
+    const modelsToTry = [
+      preferredModel,
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-flash-latest"
+    ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-    let currentModelIndex = 0;
     const triedKeys = new Set<string>();
+    let currentModelIndex = 0;
 
     while (true) {
       let activeKey = keysManager.getActiveKey();
@@ -617,22 +625,31 @@ export class AIService {
         config.responseSchema = options.responseSchema;
       }
 
-      const contents = options.parts.map(p => {
+      const partsToUse = (options.parts && options.parts.length > 0)
+        ? options.parts
+        : (options.prompt ? [{ text: options.prompt }] : [{ text: "" }]);
+
+      const contents = partsToUse.map(p => {
         if (p.text) return { text: p.text };
         if (p.inlineData) return { inlineData: p.inlineData };
         return { text: "" };
       });
 
+      let lastError: any = null;
       try {
-        const response = await ai.models.generateContent({
-          model: currentModel,
-          contents: contents,
-          config: config
-        });
+        const timeoutMs = 35000;
+        const response: any = await Promise.race([
+          ai.models.generateContent({
+            model: currentModel,
+            contents: contents,
+            config: config
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout de ${timeoutMs / 1000}s aguardando o Google Gemini (${currentModel})`)), timeoutMs))
+        ]);
 
         const text = response.text || "";
         if (!text) {
-          throw new Error("Gemini retornou resposta vazia.");
+          throw new Error("Resposta vazia da API do Gemini.");
         }
 
         if (logger) logger('success', 'GEMINI', `Modelo ${currentModel} gerou conteúdo com sucesso!`);
@@ -644,34 +661,58 @@ export class AIService {
           model: currentModel
         };
       } catch (err: any) {
+        lastError = err;
         const errorMessage = err.message || "";
         const isQuotaError = 
           errorMessage.includes("429") || 
           errorMessage.includes("RESOURCE_EXHAUSTED") || 
           errorMessage.includes("quota") ||
-          errorMessage.includes("rate limit") ||
-          errorMessage.includes("limit exceeded");
+          errorMessage.includes("Rate limit");
 
         const isInvalidKey = 
           errorMessage.includes("API_KEY_INVALID") || 
-          errorMessage.includes("invalid API key") ||
           errorMessage.includes("API key not valid");
 
         const isModelNotFoundError = 
-          errorMessage.includes("404") || 
-          errorMessage.includes("NOT_FOUND") || 
-          errorMessage.includes("models/");
+          (errorMessage.includes("404") && (errorMessage.includes("not found") || errorMessage.includes("NOT_FOUND") || errorMessage.includes("no longer available"))) ||
+          errorMessage.includes("is not found") ||
+          errorMessage.includes("is no longer available") ||
+          errorMessage.includes("not found for API version");
+
+        const isServerOverload = 
+          errorMessage.includes("503") || 
+          errorMessage.includes("UNAVAILABLE") || 
+          errorMessage.includes("high demand") || 
+          errorMessage.includes("overloaded") ||
+          errorMessage.includes("Timeout");
 
         console.warn(`[Gemini] Erro na chave ${maskedKey} (${currentModel}):`, errorMessage);
 
+        // 1. Se o modelo foi descontinuado ou não existe na conta, tenta o próximo modelo com a MESMA chave
         if (isModelNotFoundError && currentModelIndex < modelsToTry.length - 1) {
           currentModelIndex++;
           triedKeys.delete(activeKey);
-          if (logger) logger('warning', 'GEMINI', `Modelo ${currentModel} indisponível. Alternando para ${modelsToTry[currentModelIndex]}...`);
+          if (logger) logger('warning', 'GEMINI', `Modelo ${currentModel} indisponível nesta chave. Alternando para ${modelsToTry[currentModelIndex]}...`);
           continue;
         }
 
+        // 2. Se for sobrecarga temporária do servidor (503 / High Demand / Timeout)
+        if (isServerOverload) {
+          if (currentModelIndex < modelsToTry.length - 1) {
+            currentModelIndex++;
+            triedKeys.delete(activeKey);
+            if (logger) logger('warning', 'GEMINI', `Modelo ${currentModel} com alta demanda temporária (503/timeout). Alternando para ${modelsToTry[currentModelIndex]}...`);
+            continue;
+          }
+          currentModelIndex = 0;
+          keysManager.recordError(activeKey, `Alta demanda temporária (503)`);
+          if (logger) logger('warning', 'GEMINI', `Servidor com alta demanda. Alternando para próxima chave do pool...`);
+          continue;
+        }
+
+        // 3. Se for cota esgotada (429) ou chave inválida
         if (isQuotaError || isInvalidKey) {
+          currentModelIndex = 0;
           const reason = isInvalidKey ? 'Chave de API Inválida' : 'Cota Diária/Minuto Esgotada (429)';
           keysManager.markExhausted(activeKey, reason);
           if (logger) logger('warning', 'GEMINI', `Chave ${maskedKey} esgotada/inválida. Rotacionando para próxima chave do pool...`);
@@ -681,6 +722,8 @@ export class AIService {
           continue;
         }
 
+        // 4. Outros erros
+        currentModelIndex = 0;
         keysManager.recordError(activeKey, errorMessage);
         if (isFallback) {
           throw err;
@@ -700,13 +743,13 @@ export class AIService {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getGroqBaseUrl();
     const configuredModel = providersManager.getGroqModel();
-    const primaryModel = options.model || configuredModel || "qwen/qwen3.8-27b";
+    const primaryModel = options.model || configuredModel || "openai/gpt-oss-20b";
 
     const modelsToTry = [
+      "openai/gpt-oss-20b",
       primaryModel,
-      "qwen/qwen3.8-27b",
       "openai/gpt-oss-120b",
-      "openai/gpt-oss-20b"
+      "qwen/qwen3.8-27b"
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     let schemaInstruction = "";
@@ -775,7 +818,7 @@ export class AIService {
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
-              max_tokens: 32768,
+              max_tokens: 8192,
               response_format: { type: "json_object" }
             })
           });
@@ -803,6 +846,11 @@ export class AIService {
             }
 
             if (response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("quota")) {
+              if (errMsg.includes("Request too large") || errMsg.includes("output tokens per minute") || errMsg.includes("OTPM") || errMsg.includes("reduce max_tokens")) {
+                if (logger) logger('warning', 'GROQ', `Modelo ${currentModel} excedeu limite de tokens por minuto (OTPM). Tentando próximo modelo...`);
+                lastError = new Error(`Groq ${currentModel}: ${errMsg}`);
+                continue;
+              }
               if (logger) logger('warning', 'GROQ', `Chave ${maskedKey} atingiu Rate Limit no Groq (${response.status}, ${elapsed}s). Rotacionando chave...`);
               keyIsExhaustedOrInvalid = true;
               exhaustionReason = `Rate limit (429): ${errMsg}`;
@@ -848,7 +896,7 @@ export class AIService {
         } catch (err: any) {
           const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
           lastError = err;
-          if (err.message?.includes("Chave Groq inválida") || err.message?.includes("Rate limit")) {
+          if (err.message?.includes("Chave Groq inválida") || (err.message?.includes("Rate limit") && !err.message?.includes("OTPM") && !err.message?.includes("Request too large"))) {
             keyIsExhaustedOrInvalid = true;
             exhaustionReason = err.message;
             break;
@@ -893,23 +941,22 @@ export class AIService {
     const triedKeys = new Set<string>();
     const baseUrl = providersManager.getOpenRouterBaseUrl();
     const configuredModel = providersManager.getOpenRouterModel();
-    const primaryModel = options.model || configuredModel || "minimax/minimax-m3:free";
+    const primaryModel = options.model || configuredModel || "google/gemma-4-31b-it:free";
 
     const hasImages = (options.parts || []).some(p => p.inlineData?.mimeType?.startsWith('image/'));
 
     const visionModels = [
+      "nvidia/nemotron-3-super-120b-a12b:free",
       "google/gemma-4-26b-a4b-it:free",
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "deepseek/deepseek-r1:free",
-      "minimax/minimax-m3:free"
+      "google/gemma-4-31b-it:free"
     ];
 
     const textModels = [
+      "nvidia/nemotron-3-super-120b-a12b:free",
       primaryModel,
-      "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "minimax/minimax-m3:free",
+      "google/gemma-4-31b-it:free",
       "google/gemma-4-26b-a4b-it:free",
-      "deepseek/deepseek-r1:free"
+      "nex-agi/nex-n2.5-pro:free"
     ];
 
     const modelsToTry = (hasImages
@@ -1004,7 +1051,7 @@ export class AIService {
               model: currentModel,
               messages: [systemMessage, userMessage],
               temperature: 0.7,
-              max_tokens: 32768,
+              max_tokens: 8192,
             })
           });
 

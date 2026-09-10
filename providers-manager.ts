@@ -59,15 +59,15 @@ export class ProvidersManager {
     openrouter: {
       apiKey: process.env.OPENROUTER_API_KEY || '',
       baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-      model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free',
+      model: process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
     },
     groq: {
       apiKey: process.env.GROQ_API_KEY || '',
       baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-      model: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
+      model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
     },
     gemini: {
-      preferredModel: 'gemini-2.5-flash',
+      preferredModel: 'gemini-3.6-flash',
     }
   };
 
@@ -85,15 +85,15 @@ export class ProvidersManager {
           openrouter: {
             apiKey: parsed.openrouter?.apiKey || process.env.OPENROUTER_API_KEY || '',
             baseUrl: parsed.openrouter?.baseUrl || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-            model: parsed.openrouter?.model || process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free',
+            model: parsed.openrouter?.model || process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
           },
           groq: {
             apiKey: parsed.groq?.apiKey || process.env.GROQ_API_KEY || '',
             baseUrl: parsed.groq?.baseUrl || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-            model: parsed.groq?.model || process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
+            model: parsed.groq?.model || process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
           },
           gemini: {
-            preferredModel: parsed.gemini?.preferredModel || 'gemini-2.5-flash',
+            preferredModel: parsed.gemini?.preferredModel || 'gemini-3.6-flash',
           }
         };
       }
@@ -148,7 +148,7 @@ export class ProvidersManager {
   }
 
   public getOpenRouterModel(): string {
-    return this.config.openrouter.model.trim() || (process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free').trim();
+    return this.config.openrouter.model.trim() || (process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free').trim();
   }
 
   public getGroqKey(): string {
@@ -170,7 +170,7 @@ export class ProvidersManager {
   }
 
   public getGroqModel(): string {
-    return this.config.groq.model.trim() || (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b').trim();
+    return this.config.groq.model.trim() || (process.env.GROQ_MODEL || 'openai/gpt-oss-20b').trim();
   }
 
   public updateConfig(partial: Partial<ProvidersConfig> & { openrouter?: Partial<OpenRouterConfig>; groq?: Partial<GroqConfig>; gemini?: Partial<GeminiConfig> }) {

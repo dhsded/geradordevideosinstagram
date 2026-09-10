@@ -849,61 +849,55 @@ export default function App() {
   // Constantes de Modelos de I.A
   const POPULAR_OPENROUTER_MODELS = [
     {
-      id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-      name: 'NVIDIA Nemotron 3 Ultra (Free)',
-      tag: '550B Parâmetros • Gratuito',
-      desc: 'Ultra alta capacidade para narrativas complexas e adaptações profundas'
+      id: 'google/gemma-4-31b-it:free',
+      name: 'Google Gemma 4 31B Instruct (Free)',
+      tag: 'Mais Recente • Alta Precisão',
+      desc: 'Modelo avançado do Google com raciocínio e síntese rápidos e alta aderência a JSON'
     },
     {
       id: 'google/gemma-4-26b-a4b-it:free',
       name: 'Google Gemma 4 26B Instruct (Free)',
-      tag: 'Alta Precisão • Gratuito',
-      desc: 'Modelo avançado do Google com raciocínio e síntese rápidos'
+      tag: 'Ultraleve • Gratuito',
+      desc: 'Modelo ágil do Google com suporte multimodal e respostas dinâmicas'
     },
     {
-      id: 'deepseek/deepseek-r1:free',
-      name: 'DeepSeek R1 (Free)',
-      tag: 'Raciocínio Lógico • Gratuito',
-      desc: 'Excelente para análises e estruturação de carrosséis educativos'
+      id: 'nvidia/nemotron-3-super-120b-a12b:free',
+      name: 'NVIDIA Nemotron 3 Super 120B (Free)',
+      tag: '120B Parâmetros • Gratuito',
+      desc: 'Alta capacidade para narrativas complexas, diagnósticos e carrosséis educativos'
     },
     {
-      id: 'minimax/minimax-m3:free',
-      name: 'MiniMax M3 (Free)',
-      tag: 'Criatividade & Roteiros • Gratuito',
+      id: 'nex-agi/nex-n2.5-pro:free',
+      name: 'Nex AGI Nex N2.5 Pro (Free)',
+      tag: 'Raciocínio & Roteiros • Gratuito',
       desc: 'Excelente capacidade para escrita criativa e ganchos em português'
     },
     {
-      id: 'google/gemini-2.0-flash-exp:free',
-      name: 'Google Gemini 2.0 Flash Exp (Free)',
-      tag: 'Experimental • Gratuito',
-      desc: 'Modelo ágil do Google via gateway OpenRouter'
+      id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+      name: 'NVIDIA Nemotron 3 Ultra (Free)',
+      tag: '550B Parâmetros • Gratuito',
+      desc: 'Ultra alta capacidade para narrativas profundas e análises ricas'
     }
   ];
 
   const POPULAR_GROQ_MODELS = [
     {
-      id: 'qwen/qwen3.8-27b',
-      name: 'Qwen 3.8 27B (Recomendado)',
-      tag: '131k Contexto • Alibaba Cloud',
-      desc: 'Modelo mais recente e potente do Qwen, ideal para roteiros e carrosséis em português com 131k de contexto'
-    },
-    {
-      id: 'qwen/qwen3.6-27b',
-      name: 'Qwen 3.6 27B',
-      tag: '131k Contexto • Alta Qualidade',
-      desc: 'Excelente para geração de textos longos e coerentes com alto contexto'
+      id: 'openai/gpt-oss-20b',
+      name: 'GPT OSS 20B (Recomendado - Ultra Rápido)',
+      tag: '131k Contexto • ~8s Resposta',
+      desc: 'Mais estável e rápido no Groq. Excelente precisão para JSON e carrosséis em português'
     },
     {
       id: 'openai/gpt-oss-120b',
       name: 'GPT OSS 120B (Máxima Qualidade)',
       tag: '131k Contexto • OpenAI Open Source',
-      desc: 'Modelo open-source de 120B parâmetros da OpenAI, qualidade comparável ao GPT-4'
+      desc: 'Modelo open-source de 120B parâmetros da OpenAI, profundidade superior'
     },
     {
-      id: 'openai/gpt-oss-20b',
-      name: 'GPT OSS 20B (Ultra Rápido)',
-      tag: '131k Contexto • Velocidade Extrema',
-      desc: 'Versão compacta e ultra-rápida do GPT OSS, perfeito para legendas e prompts'
+      id: 'qwen/qwen3.8-27b',
+      name: 'Qwen 3.8 27B (Alibaba Cloud)',
+      tag: '131k Contexto • Alta Capacidade',
+      desc: 'Potente modelo da Alibaba Cloud com 131k de contexto e riqueza semântica'
     },
     {
       id: 'groq/compound-mini',
@@ -914,16 +908,17 @@ export default function App() {
   ];
 
   const GEMINI_AVAILABLE_MODELS = [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Padrão Recomendado - Ultra Rápido)' },
-    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Mais Recente)' },
-    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Ultraleve)' },
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Padrão Recomendado - Mais Recente)' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Ultra Rápido)' },
+    { id: 'gemini-flash-latest', name: 'Gemini Flash Latest (Versão Estável)' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Ultraleve)' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Alta Capacidade / Raciocínio)' },
   ];
 
   // Estados da Central de I.As e Provedores
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openrouter' | 'groq'>('gemini');
   const [selectedProviderTab, setSelectedProviderTab] = useState<'gemini' | 'openrouter' | 'groq'>('gemini');
-  const [geminiModel, setGeminiModel] = useState<string>('gemini-2.5-flash');
+  const [geminiModel, setGeminiModel] = useState<string>('gemini-3.6-flash');
   const [openrouterConfig, setOpenrouterConfig] = useState<{
     hasKey: boolean;
     apiKeyMasked: string;
@@ -933,11 +928,11 @@ export default function App() {
     hasKey: false,
     apiKeyMasked: '',
     baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'nvidia/nemotron-3-ultra-550b-a55b:free'
+    model: 'google/gemma-4-31b-it:free'
   });
   const [openrouterKeyInput, setOpenrouterKeyInput] = useState('');
   const [openrouterBaseUrlInput, setOpenrouterBaseUrlInput] = useState('https://openrouter.ai/api/v1');
-  const [openrouterModelInput, setOpenrouterModelInput] = useState('nvidia/nemotron-3-ultra-550b-a55b:free');
+  const [openrouterModelInput, setOpenrouterModelInput] = useState('google/gemma-4-31b-it:free');
   const [isCustomOpenRouterModel, setIsCustomOpenRouterModel] = useState(false);
 
   const [groqConfig, setGroqConfig] = useState<{
@@ -949,11 +944,11 @@ export default function App() {
     hasKey: false,
     apiKeyMasked: '',
     baseUrl: 'https://api.groq.com/openai/v1',
-    model: 'qwen/qwen3.8-27b'
+    model: 'openai/gpt-oss-20b'
   });
   const [groqKeyInput, setGroqKeyInput] = useState('');
   const [groqBaseUrlInput, setGroqBaseUrlInput] = useState('https://api.groq.com/openai/v1');
-  const [groqModelInput, setGroqModelInput] = useState('qwen/qwen3.8-27b');
+  const [groqModelInput, setGroqModelInput] = useState('openai/gpt-oss-20b');
   const [isCustomGroqModel, setIsCustomGroqModel] = useState(false);
 
   // Estados de Múltiplas Chaves Groq com Pool Rotativo
@@ -2584,13 +2579,17 @@ export default function App() {
   };
 
   // 1. Puxar Carrosséis Gerados do PostForge com 1 Clique
-  const handlePullCarouselsToMacro = () => {
-    const sourceCarousels = (batchCarouselResults && batchCarouselResults.length > 0)
-      ? batchCarouselResults
-      : (carouselResult ? [carouselResult] : []);
+  const handlePullCarouselsToMacro = (sourceOverride?: any[], silent?: boolean) => {
+    const sourceCarousels = (sourceOverride && sourceOverride.length > 0)
+      ? sourceOverride
+      : ((batchCarouselResults && batchCarouselResults.length > 0)
+        ? batchCarouselResults
+        : (carouselResult ? [carouselResult] : []));
 
     if (sourceCarousels.length === 0) {
-      alert('Nenhum carrossel gerado ou carregado no PostForge ainda! Crie ou gere um carrossel na aba "Carrossel" primeiro.');
+      if (!silent) {
+        alert('Nenhum carrossel gerado ou carregado no PostForge ainda! Crie ou gere um carrossel na aba "Carrossel" primeiro.');
+      }
       return;
     }
 
@@ -6776,10 +6775,12 @@ export default function App() {
           setBatchCarouselResults(list);
           setCarouselResult(list[0]);
           setActiveCarouselIndex(0);
+          handlePullCarouselsToMacro(list, true);
           if (carouselQuantity > 1 && list.length < carouselQuantity) {
             addLog('warning', 'GERADOR', `⚠️ Foram solicitados ${carouselQuantity} carrosséis, mas a IA retornou apenas ${list.length}. Isso pode ocorrer por limite de tokens do modelo. Tente gerar novamente ou reduza a quantidade de slides por carrossel.`);
           }
           addLog('success', 'GERADOR', `✅ Lote de ${list.length} carrosséis gerado em ${totalSeconds}s via ${data.provider.toUpperCase()} (${data.model})!`);
+          addLog('info', 'ROBÔ FLOW', `🤖 ${list.reduce((acc: number, c: any) => acc + (c.slides?.length || 0), 0)} prompts sincronizados automaticamente com o Robô FLOW Studio!`);
         } else if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
           jsonResult.title = jsonResult.title || topic || 'Carrossel';
           jsonResult.language = dialogueLanguage;
@@ -6795,7 +6796,9 @@ export default function App() {
           setBatchCarouselResults([jsonResult]);
           setCarouselResult(jsonResult);
           setActiveCarouselIndex(0);
+          handlePullCarouselsToMacro([jsonResult], true);
           addLog('success', 'GERADOR', `✅ Carrossel gerado em ${totalSeconds}s (${jsonResult.slides?.length || 0} slides) via ${data.provider.toUpperCase()} (${data.model})!`);
+          addLog('info', 'ROBÔ FLOW', `🤖 ${jsonResult.slides?.length || 0} prompts sincronizados automaticamente com o Robô FLOW Studio!`);
         }
       }
     } catch (err: any) {
