@@ -115,6 +115,34 @@ interface ReferencePdfFile {
   docType?: 'pdf' | 'docx' | 'txt' | 'doc';
 }
 
+export const normalizeImageDataUrl = (dataUrl: string, filename = ''): string => {
+  if (!dataUrl) return dataUrl;
+  
+  const isWebp = dataUrl.includes(';base64,UklGR') || 
+                 /\.webp$/i.test(filename) || 
+                 dataUrl.startsWith('data:image/webp');
+
+  if (isWebp) {
+    if (dataUrl.startsWith('data:image/webp;base64,')) {
+      return dataUrl;
+    }
+    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    return `data:image/webp;base64,${b64}`;
+  }
+
+  if (dataUrl.startsWith('data:;') || dataUrl.startsWith('data:application/octet-stream;')) {
+    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    const ext = filename.split('.').pop()?.toLowerCase();
+    if (ext === 'png' || b64.startsWith('iVBORw0KGgo')) return `data:image/png;base64,${b64}`;
+    if (ext === 'jpg' || ext === 'jpeg' || b64.startsWith('/9j/')) return `data:image/jpeg;base64,${b64}`;
+    if (ext === 'webp' || b64.startsWith('UklGR')) return `data:image/webp;base64,${b64}`;
+    if (ext === 'gif' || b64.startsWith('R0lGOD')) return `data:image/gif;base64,${b64}`;
+    return `data:image/jpeg;base64,${b64}`;
+  }
+
+  return dataUrl;
+};
+
 const optimizeImageForAi = async (
   file: File,
   maxDim = 1024,
@@ -123,7 +151,9 @@ const optimizeImageForAi = async (
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const rawDataUrl = e.target?.result as string;
+      let rawDataUrl = (e.target?.result as string) || '';
+      rawDataUrl = normalizeImageDataUrl(rawDataUrl, file.name);
+
       const img = new Image();
       img.onload = () => {
         let width = img.width;
@@ -155,26 +185,33 @@ const optimizeImageForAi = async (
           return;
         }
         const base64 = rawDataUrl.includes('base64,') ? rawDataUrl.split('base64,')[1] : rawDataUrl;
+        const mimeType = file.type && file.type !== 'application/octet-stream' 
+          ? file.type 
+          : (file.name.toLowerCase().endsWith('.webp') ? 'image/webp' : 'image/jpeg');
         resolve({
           dataUrl: rawDataUrl,
           base64,
           size: file.size,
-          mimeType: file.type || 'image/png'
+          mimeType
         });
       };
       img.onerror = () => {
         const base64 = rawDataUrl.includes('base64,') ? rawDataUrl.split('base64,')[1] : rawDataUrl;
+        const mimeType = file.type && file.type !== 'application/octet-stream' 
+          ? file.type 
+          : (file.name.toLowerCase().endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+        const safeDataUrl = rawDataUrl.startsWith('data:image/') ? rawDataUrl : `data:${mimeType};base64,${base64}`;
         resolve({
-          dataUrl: rawDataUrl,
+          dataUrl: safeDataUrl,
           base64,
           size: file.size,
-          mimeType: file.type || 'image/png'
+          mimeType
         });
       };
       img.src = rawDataUrl;
     };
     reader.onerror = () => {
-      resolve({ dataUrl: '', base64: '', size: 0, mimeType: 'image/png' });
+      resolve({ dataUrl: '', base64: '', size: 0, mimeType: 'image/jpeg' });
     };
     reader.readAsDataURL(file);
   });
@@ -4007,8 +4044,10 @@ export default function App() {
 
     // Limpeza de cabeçalhos / paginação de PDFs
     const cleanText = text
-      .replace(/Página\s+\d+\s+de\s+\d+\s+•\s+PostForge[^\n]*/gi, '')
+      .replace(/Página\s+\d+\s+de\s+\d+\s*(?:•|-)?\s*PostForge[^\n\r]*/gi, '')
       .replace(/POSTFORGE\s+•\s+GERADOR\s+ESTRUTURADO\s+DE\s+CONTEÚDO/gi, '')
+      .replace(/POSTFORGE\s+LOTE\s+DE\s+\d+\s+CARROSSÉIS/gi, '')
+      .replace(/Slide\s+Completo/gi, '')
       .trim();
 
     // 1. Tentar parse como JSON estruturado
@@ -4032,15 +4071,19 @@ export default function App() {
         let title = `Carrossel ${cIdx + 1}`;
 
         if (lines.length > 0) {
-          const first = lines[0].replace(/^(?:CARROSSEL\s*\d*:\s*)/i, '').replace(/Nicho:.*$/i, '').replace(/•.*$/i, '').trim();
+          const first = lines[0]
+            .replace(/^(?:CARROSSEL\s*\d*:\s*)/i, '')
+            .replace(/Nicho:.*$/i, '')
+            .replace(/•.*$/i, '')
+            .trim();
           if (first && !first.toUpperCase().startsWith('SLIDE')) {
             title = first;
           }
         }
 
-        const nicheMatch = chunk.match(/Nicho:\s*([^•|\n]+)/i);
-        const styleMatch = chunk.match(/Estilo:\s*([^•|\n]+)/i);
-        const langMatch = chunk.match(/Idioma:\s*([^•|\n]+)/i);
+        const nicheMatch = chunk.match(/Nicho:\s*(.*?)(?=\s*(?:Estilo|Idioma|\d+\s*Slides|•|\||\n|$))/i);
+        const styleMatch = chunk.match(/Estilo:\s*(.*?)(?=\s*(?:Idioma|\d+\s*Slides|•|\||\n|$))/i);
+        const langMatch = chunk.match(/Idioma:\s*(.*?)(?=\s*(?:\d+\s*Slides|•|\||\n|$))/i);
 
         const slideChunks = chunk.split(/(?:^|\n)\s*SLIDE\s*(\d+)[\s:]*/i);
         const slides: any[] = [];
@@ -4052,17 +4095,17 @@ export default function App() {
 
             // Descrição Visual
             let desc = '';
-            const descMatch = sBody.match(/(?:CONTEÚDO DO SLIDE(?:\s*\(DESCRIÇÃO VISUAL\))?|Descrição Visual)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:FALA NO BALÃO|Texto nos Balões|PROMPT DE IMAGEM|Prompt de Imagem|SLIDE|LEGENDA|---|\Z))/i);
+            const descMatch = sBody.match(/(?:CONTEÚDO DO SLIDE(?:\s*\(DESCRIÇÃO VISUAL\))?|Descrição Visual)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:FALA NO BALÃO|Texto nos Balões|PROMPT DE IMAGEM|Prompt de Imagem|SLIDE|LEGENDA|---|(?:\r?\n)*$))/i);
             if (descMatch) {
               desc = descMatch[1].trim();
             }
 
             // Balões de Diálogo
             let textPt = '', textEn = '', textEs = '', textGeneral = '';
-            const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
-            const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
-            const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
-            const bubbleMatch = sBody.match(/(?:FALA NO BALÃO DE DIÁLOGO|Texto nos Balões)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+            const ptMatch = sBody.match(/PT:\s*"([^"]*)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
+            const enMatch = sBody.match(/EN:\s*"([^"]*)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
+            const esMatch = sBody.match(/ES:\s*"([^"]*)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
+            const bubbleMatch = sBody.match(/(?:FALA NO BALÃO DE DIÁLOGO|Texto nos Balões)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^"\n]*)"?/i);
 
             if (ptMatch) textPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
             if (enMatch) textEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -4071,7 +4114,7 @@ export default function App() {
 
             // Prompt de Imagem
             let prompt = '';
-            const promptMatch = sBody.match(/(?:PROMPT DE IMAGEM|Prompt de Imagem)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|SLIDE|LEGENDA|\Z))/i);
+            const promptMatch = sBody.match(/(?:PROMPT DE IMAGEM(?:\s*\(FLOW\s*\/\s*I\.A\))?|Prompt de Imagem)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|SLIDE|LEGENDA|(?:\r?\n)*$))/i);
             if (promptMatch) {
               prompt = promptMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
             }
@@ -4090,7 +4133,7 @@ export default function App() {
 
         // Legenda do Instagram
         let igPost = '';
-        const igMatch = chunk.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=(?:CARROSSEL|\Z))/i);
+        const igMatch = chunk.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=(?:CARROSSEL|(?:\r?\n)*$))/i);
         if (igMatch) {
           igPost = igMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
         }
@@ -4126,14 +4169,14 @@ export default function App() {
 
           let duration = parseInt(durationStr.replace(/\D/g, ''), 10) || 5;
           let ctx = '';
-          const ctxMatch = sBody.match(/(?:CONTEXTO VISUAL DA CENA|Contexto)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:NARRAÇÃO|Narração|Falas|Diálogo|PROMPT DE VÍDEO|Prompt de Vídeo|CENA|LEGENDA|---|\Z))/i);
+          const ctxMatch = sBody.match(/(?:CONTEXTO VISUAL DA CENA|Contexto)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:NARRAÇÃO|Narração|Falas|Diálogo|PROMPT DE VÍDEO|Prompt de Vídeo|CENA|LEGENDA|---|(?:\r?\n)*$))/i);
           if (ctxMatch) ctx = ctxMatch[1].trim();
 
           let dialPt = '', dialEn = '', dialEs = '', dialGeneral = '';
-          const ptMatch = sBody.match(/PT:\s*"([^"]+)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
-          const enMatch = sBody.match(/EN:\s*"([^"]+)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
-          const esMatch = sBody.match(/ES:\s*"([^"]+)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
-          const dialMatch = sBody.match(/(?:NARRAÇÃO\s*\/\s*DIÁLOGO|Narração|Falas|Diálogo)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^\n"]+)"?/i);
+          const ptMatch = sBody.match(/PT:\s*"([^"]*)"/i) || sBody.match(/PT:\s*([^\n]+)/i);
+          const enMatch = sBody.match(/EN:\s*"([^"]*)"/i) || sBody.match(/EN:\s*([^\n]+)/i);
+          const esMatch = sBody.match(/ES:\s*"([^"]*)"/i) || sBody.match(/ES:\s*([^\n]+)/i);
+          const dialMatch = sBody.match(/(?:NARRAÇÃO\s*\/\s*DIÁLOGO|Narração|Falas|Diálogo)(?:[^\n:]*)[:\n]?\s*(?:(?:PT|EN|ES):\s*)?"?([^"\n]*)"?/i);
 
           if (ptMatch) dialPt = ptMatch[1].trim().replace(/^["']|["']$/g, '');
           if (enMatch) dialEn = enMatch[1].trim().replace(/^["']|["']$/g, '');
@@ -4141,7 +4184,7 @@ export default function App() {
           if (dialMatch && !dialPt && !dialEn && !dialEs) dialGeneral = dialMatch[1].trim().replace(/^["']|["']$/g, '');
 
           let videoPrompt = '';
-          const vpMatch = sBody.match(/(?:PROMPT DE VÍDEO|Prompt de Vídeo)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|CENA|LEGENDA|\Z))/i);
+          const vpMatch = sBody.match(/(?:PROMPT DE VÍDEO|Prompt de Vídeo)(?:[^\n:]*)[:\n]?\s*([\s\S]*?)(?=(?:---|___|\n\n\n|CENA|LEGENDA|(?:\r?\n)*$))/i);
           if (vpMatch) videoPrompt = vpMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
 
           scenes.push({
@@ -4158,11 +4201,11 @@ export default function App() {
       }
 
       let coverPrompt = '';
-      const cpMatch = cleanText.match(/PROMPT DA IMAGEM DE CAPA[^\n]*\n([\s\S]*?)(?=(?:CENA\s*1|CENA\s*\d+|\Z))/i);
+      const cpMatch = cleanText.match(/PROMPT DA IMAGEM DE CAPA[^\n]*\n([\s\S]*?)(?=(?:CENA\s*1|CENA\s*\d+|(?:\r?\n)*$))/i);
       if (cpMatch) coverPrompt = cpMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
 
       let igPost = '';
-      const igMatch = cleanText.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=\Z)/i);
+      const igMatch = cleanText.match(/LEGENDA DO INSTAGRAM\s*([\s\S]*?)(?=(?:\r?\n)*$)/i);
       if (igMatch) igPost = igMatch[1].trim().replace(/^[-_\s]+/, '').replace(/[-_\s]+$/, '');
 
       if (scenes.length > 0) {
@@ -4178,6 +4221,117 @@ export default function App() {
     }
 
     return { type: 'text' as const, text: cleanText };
+  };
+
+  const formatParsedContentForAudit = (parsed: { type: 'json' | 'carousel' | 'script' | 'text'; data?: any; carousels?: any[]; scenes?: any[]; result?: any; text?: string }): { formattedText: string; characterNotes?: string } => {
+    let carouselsToFormat: any[] = [];
+    let scriptScenesToFormat: any[] = [];
+    let detectedStyle = '';
+    let detectedNiche = '';
+    let detectedCharacterDesc = '';
+
+    if (parsed.type === 'json' && parsed.data) {
+      const d = parsed.data;
+      if (Array.isArray(d.batchCarouselResults) && d.batchCarouselResults.length > 0) {
+        carouselsToFormat = d.batchCarouselResults;
+      } else if (d.carouselResult) {
+        carouselsToFormat = [d.carouselResult];
+      } else if (Array.isArray(d.carousels) && d.carousels.length > 0) {
+        carouselsToFormat = d.carousels;
+      } else if (Array.isArray(d.projects) && d.projects.length > 0) {
+        carouselsToFormat = d.projects;
+      } else if (d.result && Array.isArray(d.result.scenes) && d.result.scenes.length > 0) {
+        scriptScenesToFormat = d.result.scenes;
+      } else if (Array.isArray(d.scenes) && d.scenes.length > 0) {
+        scriptScenesToFormat = d.scenes;
+      }
+
+      if (d.artStyle) detectedStyle = d.artStyle;
+      if (d.niche) detectedNiche = d.niche;
+      if (d.characterDescription) detectedCharacterDesc = d.characterDescription;
+    } else if (parsed.type === 'carousel' && Array.isArray(parsed.carousels)) {
+      carouselsToFormat = parsed.carousels;
+    } else if (parsed.type === 'script' && (Array.isArray(parsed.scenes) || (parsed.result && Array.isArray(parsed.result.scenes)))) {
+      scriptScenesToFormat = parsed.scenes || parsed.result.scenes;
+    }
+
+    if (carouselsToFormat.length > 0) {
+      let scriptText = '';
+      carouselsToFormat.forEach((car, cIdx) => {
+        const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+        scriptText += `=== PROJETO ${cIdx + 1}: ${cTitle.toUpperCase()} ===\n`;
+        
+        const metaParts: string[] = [];
+        if (car.niche || detectedNiche) metaParts.push(`Nicho: ${car.niche || detectedNiche}`);
+        if (car.artStyle || detectedStyle) metaParts.push(`Estilo: ${car.artStyle || detectedStyle}`);
+        if (metaParts.length > 0) {
+          scriptText += `${metaParts.join(' • ')}\n`;
+        }
+
+        if (car.instagramPost) {
+          scriptText += `Contexto/Legenda: ${car.instagramPost.substring(0, 160)}...\n`;
+        }
+        scriptText += `\n`;
+
+        const slides = car.slides || [];
+        slides.forEach((s: any, sIdx: number) => {
+          const slideNum = s.slideNumber || sIdx + 1;
+          const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
+          const desc = s.descriptionPt || s.description || '';
+          const prompt = s.imagePromptEn || s.prompt || '';
+
+          scriptText += `[SLIDE ${slideNum}]\n`;
+          if (desc) scriptText += `• Descrição da Cena: ${desc}\n`;
+          if (prompt) scriptText += `• Prompt de Imagem (FLOW / I.A): ${prompt}\n`;
+          if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+          scriptText += `\n`;
+        });
+        scriptText += `----------------------------------------------------\n\n`;
+      });
+
+      const firstCar = carouselsToFormat[0];
+      const styleToUse = detectedStyle || firstCar.artStyle || '';
+      const nicheToUse = detectedNiche || firstCar.niche || '';
+      const notesArr = [
+        styleToUse ? `Estilo Visual: ${styleToUse}` : '',
+        nicheToUse ? `Nicho de Conteúdo: ${nicheToUse}` : '',
+        detectedCharacterDesc ? `Personagens: ${detectedCharacterDesc}` : 'Personagens principais com consistência de traço, iluminação e cores'
+      ].filter(Boolean);
+
+      return {
+        formattedText: scriptText.trim(),
+        characterNotes: notesArr.join('\n')
+      };
+    }
+
+    if (scriptScenesToFormat.length > 0) {
+      let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${scriptScenesToFormat.length} CENAS) ===\n\n`;
+      scriptScenesToFormat.forEach((s: any, sIdx: number) => {
+        const sceneNum = s.sceneNumber || sIdx + 1;
+        const duration = s.duration ? ` (${s.duration}s)` : '';
+        const dialogueText = s.dialoguePt || s.dialogueEn || s.dialogueEs || s.dialogue || '';
+        scriptText += `[CENA / SLIDE ${sceneNum}]${duration}\n`;
+        if (s.contextPt) scriptText += `• Contexto da Cena: ${s.contextPt}\n`;
+        if (s.videoPromptEn) scriptText += `• Prompt Visual de Geração: ${s.videoPromptEn}\n`;
+        if (dialogueText) scriptText += `• Diálogo / Narração: "${dialogueText}"\n`;
+        scriptText += `\n`;
+      });
+
+      return {
+        formattedText: scriptText.trim(),
+        characterNotes: detectedCharacterDesc || 'Continuidade de figurino, traço e paleta cinematográfica'
+      };
+    }
+
+    const cleanFallback = (parsed.text || '')
+      .replace(/Página\s+\d+\s+de\s+\d+\s*(?:•|-)?\s*PostForge[^\n\r]*/gi, '')
+      .replace(/POSTFORGE\s+•\s+GERADOR\s+ESTRUTURADO\s+DE\s+CONTEÚDO/gi, '')
+      .replace(/POSTFORGE\s+LOTE\s+DE\s+\d+\s+CARROSSÉIS/gi, '')
+      .replace(/Slide\s+Completo/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    return { formattedText: cleanFallback };
   };
 
   const handleImportProjectFile = async (file: File) => {
@@ -4389,22 +4543,15 @@ export default function App() {
 
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      let rawContent = '';
       
       // Para arquivos de texto direto (.txt, .md, .json, .csv, .srt, .vtt, .log, .text, .rtf)
       if (['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log', 'text', 'rtf'].includes(ext) || file.type.startsWith('text/')) {
         const text = await file.text();
-        const clean = text.trim();
-        if (!clean) {
+        rawContent = text.trim();
+        if (!rawContent) {
           throw new Error('O arquivo de texto selecionado está vazio.');
         }
-        const words = clean.split(/\s+/).filter(Boolean).length;
-        setAuditScriptInput(clean);
-        setAuditDocumentInfo({
-          filename: file.name,
-          size: file.size,
-          wordCount: words
-        });
-        addLog('success', 'DOCUMENTO', `Arquivo de texto "${file.name}" lido instantaneamente (${words} palavras).`);
       } else {
         // Para PDF, Word (.docx, .doc), etc. enviamos para o backend de extração
         addLog('doc', 'DOCUMENTO', `Enviando "${file.name}" para extração via PDFParse/Mammoth no backend...`);
@@ -4421,7 +4568,7 @@ export default function App() {
 
         const base64Data = await base64Promise;
         const controller = new AbortController();
-        const fetchTimeout = setTimeout(() => controller.abort(), 20000);
+        const fetchTimeout = setTimeout(() => controller.abort(), 25000);
 
         try {
           const res = await fetch(getApiUrl('/api/extract-document-text'), {
@@ -4451,21 +4598,37 @@ export default function App() {
             throw new Error('Nenhum texto legível pôde ser extraído deste documento.');
           }
 
-          setAuditScriptInput(data.text);
-          setAuditDocumentInfo({
-            filename: file.name,
-            size: file.size,
-            wordCount: data.wordCount
-          });
-          addLog('success', 'DOCUMENTO', `Texto extraído com sucesso de "${file.name}": ${data.wordCount || 0} palavras.`);
+          rawContent = data.text;
         } catch (fetchErr: any) {
           clearTimeout(fetchTimeout);
           if (fetchErr.name === 'AbortError') {
-            throw new Error('Tempo limite excedido ao processar o documento (timeout de 20s).');
+            throw new Error('Tempo limite excedido ao processar o documento (timeout de 25s).');
           }
           throw fetchErr;
         }
       }
+
+      // Processar e Estruturar Automaticamente para a Auditoria
+      const parsed = parsePostForgeDocument(rawContent);
+      const { formattedText, characterNotes } = formatParsedContentForAudit(parsed);
+
+      const finalScriptText = formattedText || rawContent;
+      setAuditScriptInput(finalScriptText);
+
+      if (characterNotes) {
+        setAuditCharacterNotes(prev => {
+          if (!prev.trim()) return characterNotes;
+          return `${prev}\n\n${characterNotes}`;
+        });
+      }
+
+      const words = finalScriptText.split(/\s+/).filter(Boolean).length;
+      setAuditDocumentInfo({
+        filename: file.name,
+        size: file.size,
+        wordCount: words
+      });
+      addLog('success', 'DOCUMENTO', `Texto do documento "${file.name}" extraído e estruturado para auditoria (${words} palavras).`);
     } catch (err: any) {
       console.error('Erro ao processar documento de roteiro:', err);
       setAuditError(`Erro ao carregar documento "${file.name}": ${err.message}`);
@@ -5757,6 +5920,7 @@ export default function App() {
 
   const compressImageForVision = (dataUrl: string, maxDim = 512): Promise<{ data: string; mimeType: string }> => {
     return new Promise((resolve) => {
+      const safeDataUrl = normalizeImageDataUrl(dataUrl);
       const img = new Image();
       img.onload = () => {
         let { width, height } = img;
@@ -5777,18 +5941,20 @@ export default function App() {
           ctx.drawImage(img, 0, 0, width, height);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
           const [h, b64] = compressedDataUrl.split(',');
-          const mime = h.split(':')[1].split(';')[0];
+          const mime = h.includes(':') ? h.split(':')[1].split(';')[0] : 'image/jpeg';
           resolve({ data: b64, mimeType: mime });
           return;
         }
-        const [h, b64] = dataUrl.split(',');
-        resolve({ data: b64, mimeType: h.split(':')[1].split(';')[0] });
+        const [h, b64] = safeDataUrl.split(',');
+        const mime = h.includes(':') ? h.split(':')[1].split(';')[0] : 'image/jpeg';
+        resolve({ data: b64 || safeDataUrl, mimeType: mime || 'image/jpeg' });
       };
       img.onerror = () => {
-        const [h, b64] = dataUrl.split(',');
-        resolve({ data: b64, mimeType: h.split(':')[1].split(';')[0] });
+        const [h, b64] = safeDataUrl.split(',');
+        const mime = h.includes(':') ? h.split(':')[1].split(';')[0] : 'image/jpeg';
+        resolve({ data: b64 || safeDataUrl, mimeType: mime || 'image/jpeg' });
       };
-      img.src = dataUrl;
+      img.src = safeDataUrl;
     });
   };
 
@@ -5798,13 +5964,15 @@ export default function App() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      const [header, base64] = dataUrl.split(',');
-      const mimeType = header.split(':')[1].split(';')[0];
+      const rawDataUrl = (event.target?.result as string) || '';
+      const dataUrl = normalizeImageDataUrl(rawDataUrl, file.name);
+      const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const header = dataUrl.includes(',') ? dataUrl.split(',')[0] : '';
+      const mimeType = header.includes(':') ? header.split(':')[1].split(';')[0] : (file.type || 'image/jpeg');
       
       setCharacterImages(prev => {
         const newImages = [...prev];
-        newImages[index] = { data: base64, mimeType };
+        newImages[index] = { data: b64, mimeType: mimeType || 'image/jpeg' };
         return newImages;
       });
 
@@ -5879,11 +6047,13 @@ export default function App() {
     Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        const [header, base64] = dataUrl.split(',');
-        const mimeType = header.split(':')[1].split(';')[0];
+        const rawDataUrl = (event.target?.result as string) || '';
+        const dataUrl = normalizeImageDataUrl(rawDataUrl, file.name);
+        const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+        const header = dataUrl.includes(',') ? dataUrl.split(',')[0] : '';
+        const mimeType = header.includes(':') ? header.split(':')[1].split(';')[0] : (file.type || 'image/jpeg');
         
-        setContextImages(prev => [...prev, { data: base64, mimeType }]);
+        setContextImages(prev => [...prev, { data: b64, mimeType: mimeType || 'image/jpeg' }]);
       };
       reader.readAsDataURL(file);
     });
@@ -6088,18 +6258,20 @@ export default function App() {
     const newImages: { data: string; mimeType: string; name: string; preview: string }[] = [];
     for (const file of fileArray) {
       try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
+        const rawDataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
+          reader.onload = () => resolve((reader.result as string) || '');
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
+        const dataUrl = normalizeImageDataUrl(rawDataUrl, file.name);
         const compressed = await compressImageForVision(dataUrl, 768);
+        const previewUrl = `data:${compressed.mimeType};base64,${compressed.data}`;
         newImages.push({
           data: compressed.data,
           mimeType: compressed.mimeType,
           name: file.name,
-          preview: dataUrl
+          preview: previewUrl || dataUrl
         });
       } catch (err) {
         console.error("Erro ao carregar imagem para clonagem:", file.name, err);
@@ -6123,17 +6295,19 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
+      const rawDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
+        reader.onload = () => resolve((reader.result as string) || '');
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
+      const dataUrl = normalizeImageDataUrl(rawDataUrl, file.name);
       const compressed = await compressImageForVision(dataUrl, 512);
+      const previewUrl = `data:${compressed.mimeType};base64,${compressed.data}`;
       setCustomCloneCharImg({
         data: compressed.data,
         mimeType: compressed.mimeType,
-        preview: dataUrl
+        preview: previewUrl || dataUrl
       });
       addLog('info', 'CLONADOR', `Foto do personagem personalizada carregada com sucesso.`);
     } catch (err) {
@@ -8252,14 +8426,16 @@ export default function App() {
                             </label>
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/*,.webp,image/webp"
                               onChange={(e) => {
                                 if (e.target.files && e.target.files[0]) {
+                                  const f = e.target.files[0];
                                   const r = new FileReader();
                                   r.onload = () => {
-                                    setMacroNewCharAvatar(r.result as string);
+                                    const raw = (r.result as string) || '';
+                                    setMacroNewCharAvatar(normalizeImageDataUrl(raw, f.name));
                                   };
-                                  r.readAsDataURL(e.target.files[0]);
+                                  r.readAsDataURL(f);
                                 }
                               }}
                               className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer"
@@ -8385,7 +8561,7 @@ export default function App() {
                     <input 
                       type="file" 
                       multiple 
-                      accept="image/*" 
+                      accept="image/*,.webp,image/webp" 
                       onChange={(e) => e.target.files && handleAuditImagesSelect(e.target.files)}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
                     />
@@ -8573,7 +8749,7 @@ export default function App() {
                         <input 
                           type="file" 
                           multiple 
-                          accept="image/*"
+                          accept="image/*,.webp,image/webp"
                           onChange={(e) => {
                             if (e.target.files) {
                               handleAuditReferenceImagesSelect(e.target.files);
@@ -9291,7 +9467,7 @@ export default function App() {
                     <input
                       type="file"
                       multiple
-                      accept="image/*"
+                      accept="image/*,.webp,image/webp"
                       className="hidden"
                       onChange={handleUploadClonerImages}
                     />
@@ -9419,7 +9595,7 @@ export default function App() {
                             <span>Carregar Personagem Principal</span>
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/*,.webp,image/webp"
                               className="hidden"
                               onChange={(e) => handleImageUpload(0, e)}
                             />
@@ -9458,7 +9634,7 @@ export default function App() {
                         <span>{customCloneCharImg ? 'Foto do Personagem Carregada ✓' : 'Carregar Foto do Personagem (Opcional)'}</span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/*,.webp,image/webp"
                           className="hidden"
                           onChange={handleUploadCustomCloneCharImg}
                         />
@@ -9759,7 +9935,7 @@ export default function App() {
                           </span>
                           <input 
                             type="file" 
-                            accept="image/*" 
+                            accept="image/*,.webp,image/webp" 
                             className="hidden" 
                             onChange={(e) => handleImageUpload(i, e)}
                           />
@@ -9949,7 +10125,7 @@ export default function App() {
                     <input 
                       type="file" 
                       multiple 
-                      accept="image/*" 
+                      accept="image/*,.webp,image/webp" 
                       className="hidden" 
                       onChange={handleContextImageUpload}
                     />
