@@ -51,6 +51,16 @@ export async function startServer(port = 3000) {
     }
   });
 
+  app.get("/api/flow-preload-path", (req, res) => {
+    try {
+      const preloadPath = path.join(process.cwd(), 'flow_macro', 'preload_flow.cjs');
+      const fileUrl = `file:///${preloadPath.replace(/\\/g, '/')}`;
+      res.json({ path: fileUrl });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/keys", (req, res) => {
     try {
       res.json(keysManager.getStats());

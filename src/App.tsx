@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle, Users } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -524,13 +524,91 @@ const VISUAL_DYNAMISM = [
   'Dinâmico (Movimentos Rápidos)'
 ];
 
+export interface MacroPromptItem {
+  id: string;
+  title: string;
+  prompt: string;
+  dialoguePt?: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'skipped';
+  checked: boolean;
+  carouselId?: string;
+  carouselTitle?: string;
+  slideNumber?: number;
+  repeatCount?: number;
+  completedRepeats?: number;
+}
+
+export interface MacroCarouselItem {
+  id: string;
+  title: string;
+  count: number;
+}
+
+export interface MacroCharacterItem {
+  id: string;
+  name: string;
+  color?: string;
+  features?: string;
+  avatar?: string;
+  enabled: boolean;
+  promptTag?: string;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'script' | 'analysis' | 'carousel' | 'spy' | 'audit'>('script');
   
-  // Browser Spy states
+  // Browser FLOW / Robô States
   const webviewRef = React.useRef<any>(null);
-  const [spyUrl, setSpyUrl] = useState('https://midjourney.com'); // default to a popular AI generator interface or google
-  const [inputUrl, setInputUrl] = useState('https://midjourney.com');
+  const [spyUrl, setSpyUrl] = useState('https://labs.google/fx/pt/tools/flow');
+  const [inputUrl, setInputUrl] = useState('https://labs.google/fx/pt/tools/flow');
+  const [flowPreloadPath, setFlowPreloadPath] = useState<string>('');
+  const [isFlowConnected, setIsFlowConnected] = useState<boolean>(false);
+
+  // Estados do FLOW Macro Studio (vindo da extensão Baixador)
+  const [macroActiveTab, setMacroActiveTab] = useState<'prompts' | 'characters' | 'format' | 'telegram' | 'execution'>('prompts');
+  const [macroPrompts, setMacroPrompts] = useState<MacroPromptItem[]>([]);
+  const [macroCarousels, setMacroCarousels] = useState<MacroCarouselItem[]>([]);
+  const [macroSelectedCarousel, setMacroSelectedCarousel] = useState<string>('all');
+  const [macroCharacters, setMacroCharacters] = useState<MacroCharacterItem[]>([]);
+  const [macroState, setMacroState] = useState<'idle' | 'running' | 'paused' | 'stopped'>('idle');
+  const [macroCurrentAction, setMacroCurrentAction] = useState<string>('');
+  const [macroCountdown, setMacroCountdown] = useState<{ remaining: number; total: number; label: string }>({ remaining: 0, total: 0, label: '' });
+  const [macroElapsedSeconds, setMacroElapsedSeconds] = useState<number>(0);
+  const [macroCurrentSlideIndex, setMacroCurrentSlideIndex] = useState<number>(-1);
+  const [macroLogs, setMacroLogs] = useState<{ message: string; type: 'info' | 'success' | 'warning' | 'error'; time: string }[]>([]);
+
+  const [macroConfig, setMacroConfig] = useState({
+    mediaType: 'image' as 'image' | 'video',
+    aspectRatio: '9:16' as '9:16' | '16:9' | '1:1' | '3:4' | '4:3',
+    quantity: 4 as 1 | 2 | 3 | 4,
+    model: 'Nano Banana Pro',
+    delaySeconds: 15,
+    carouselDelaySeconds: 25,
+    repeatPerPrompt: 1,
+    reusePreviousCommand: true,
+    autoCreateNewProject: false,
+    autoDownload: false,
+    telegramEnabled: true,
+    telegramBotToken: '8680557957:AAGsOQ9pC49uWXktu4ZCJfnI1IRsNC9sbyk',
+    telegramChatId: '6969102297',
+    telegramSendCover: true,
+    telegramSendDetailed: true
+  });
+
+  // Estados de Modais Auxiliares do FLOW Macro Studio
+  const [isMacroPasteModalOpen, setIsMacroPasteModalOpen] = useState(false);
+  const [macroPasteText, setMacroPasteText] = useState('');
+  const [isMacroAddPromptModalOpen, setIsMacroAddPromptModalOpen] = useState(false);
+  const [macroNewPromptTitle, setMacroNewPromptTitle] = useState('');
+  const [macroNewPromptText, setMacroNewPromptText] = useState('');
+  const [macroNewPromptDialogue, setMacroNewPromptDialogue] = useState('');
+  const [isMacroAddCharModalOpen, setIsMacroAddCharModalOpen] = useState(false);
+  const [macroNewCharName, setMacroNewCharName] = useState('');
+  const [macroNewCharColor, setMacroNewCharColor] = useState('');
+  const [macroNewCharFeatures, setMacroNewCharFeatures] = useState('');
+  const [macroNewCharAvatar, setMacroNewCharAvatar] = useState('');
+  const [expandedPromptIds, setExpandedPromptIds] = useState<Record<string, boolean>>({});
+
   const [isInspectMode, setIsInspectMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [hoveredElement, setHoveredElement] = useState<any>(null);
@@ -1717,7 +1795,7 @@ export default function App() {
     }
   }, [isKeyManagerOpen, selectedProviderTab]);
 
-  // Buscar caminho do preload do espião
+  // Buscar caminhos dos preloads do espião e do robô FLOW
   React.useEffect(() => {
     const getPreload = async () => {
       try {
@@ -1730,7 +1808,19 @@ export default function App() {
         console.error('Erro ao obter preload do espião:', err);
       }
     };
+    const getFlowPreload = async () => {
+      try {
+        const res = await fetch(getApiUrl('/api/flow-preload-path'));
+        if (res.ok) {
+          const data = await res.json();
+          setFlowPreloadPath(data.path);
+        }
+      } catch (err) {
+        console.error('Erro ao obter flow preload do robô:', err);
+      }
+    };
     getPreload();
+    getFlowPreload();
   }, []);
 
   // Helper para capturar snapshot visual do Webview
@@ -1757,7 +1847,42 @@ export default function App() {
       const { channel, args } = event;
       const data = args[0];
 
-      if (channel === 'spy-hover') {
+      // Eventos do FLOW Macro Studio (Motor do Robô)
+      if (channel === 'flow-macro-ready') {
+        setIsFlowConnected(true);
+        if (webview && typeof webview.send === 'function') {
+          webview.send('flow-macro-cmd', {
+            cmd: 'SYNC_DATA',
+            payload: {
+              prompts: macroPrompts,
+              carousels: macroCarousels,
+              characters: macroCharacters,
+              config: macroConfig
+            }
+          });
+        }
+      } else if (channel === 'flow-macro-state') {
+        const s = data;
+        if (s) {
+          if (s.state) setMacroState(s.state);
+          if (s.currentAction !== undefined) setMacroCurrentAction(s.currentAction);
+          if (s.countdown) setMacroCountdown(s.countdown);
+          if (s.elapsedSeconds !== undefined) setMacroElapsedSeconds(s.elapsedSeconds);
+          if (s.currentIndex !== undefined) setMacroCurrentSlideIndex(s.currentIndex);
+          if (s.prompts && Array.isArray(s.prompts)) {
+            setMacroPrompts(prev => {
+              return prev.map(p => {
+                const updated = s.prompts.find((up: any) => up.id === p.id || up.title === p.title);
+                return updated ? { ...p, status: updated.status || p.status, completedRepeats: updated.completedRepeats || p.completedRepeats } : p;
+              });
+            });
+          }
+        }
+      } else if (channel === 'flow-macro-log') {
+        if (data) {
+          setMacroLogs(prev => [data, ...prev.slice(0, 199)]);
+        }
+      } else if (channel === 'spy-hover') {
         setHoveredElement(data);
       } else if (channel === 'spy-click') {
         if (data.type === 'inspect') {
@@ -2446,6 +2571,587 @@ export default function App() {
     } catch (err: any) {
       console.error('Erro ao gerar DOCX:', err);
       alert('Erro ao exportar DOCX.');
+    }
+  };
+
+  // =========================================================================
+  // FUNÇÕES DE AÇÃO DO ROBÔ FLOW (FLOW Macro Studio Pro Integrado)
+  // =========================================================================
+  const sendMacroCommand = (cmd: string, payload?: any) => {
+    if (webviewRef.current && typeof webviewRef.current.send === 'function') {
+      webviewRef.current.send('flow-macro-cmd', { cmd, payload });
+    }
+  };
+
+  // 1. Puxar Carrosséis Gerados do PostForge com 1 Clique
+  const handlePullCarouselsToMacro = () => {
+    const sourceCarousels = (batchCarouselResults && batchCarouselResults.length > 0)
+      ? batchCarouselResults
+      : (carouselResult ? [carouselResult] : []);
+
+    if (sourceCarousels.length === 0) {
+      alert('Nenhum carrossel gerado ou carregado no PostForge ainda! Crie ou gere um carrossel na aba "Carrossel" primeiro.');
+      return;
+    }
+
+    const newCarousels: MacroCarouselItem[] = [];
+    const newPrompts: MacroPromptItem[] = [];
+
+    sourceCarousels.forEach((car, cIdx) => {
+      const cId = `carousel_${cIdx + 1}`;
+      const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+      newCarousels.push({
+        id: cId,
+        title: cTitle,
+        count: car.slides?.length || 0
+      });
+
+      if (car.slides && Array.isArray(car.slides)) {
+        car.slides.forEach((s, sIdx) => {
+          const dialogue = s.textInBubblesPt || s.textInBubbles || '';
+          newPrompts.push({
+            id: `p_${cIdx + 1}_${s.slideNumber || sIdx + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            title: `${cTitle} • Slide ${s.slideNumber || sIdx + 1}`,
+            prompt: s.imagePromptEn || '',
+            dialoguePt: dialogue,
+            status: 'pending',
+            checked: true,
+            carouselId: cId,
+            carouselTitle: cTitle,
+            slideNumber: s.slideNumber || sIdx + 1,
+            repeatCount: macroConfig.repeatPerPrompt || 1,
+            completedRepeats: 0
+          });
+        });
+      }
+    });
+
+    setMacroCarousels(newCarousels);
+    setMacroPrompts(newPrompts);
+    setMacroSelectedCarousel('all');
+
+    sendMacroCommand('SYNC_DATA', {
+      prompts: newPrompts,
+      carousels: newCarousels,
+      characters: macroCharacters,
+      config: macroConfig
+    });
+
+    setMacroLogs(prev => [{
+      message: `⚡ ${newPrompts.length} prompt(s) de ${newCarousels.length} carrossel(is) importados do PostForge com sucesso!`,
+      type: 'success',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  // 2. Sincronizar Personagens do PostForge com 1 Clique
+  const handleSyncCharactersToMacro = () => {
+    const validChars = characterImages
+      .map((img, idx) => ({ img, idx, detail: detectedCharacterDetails[idx] }))
+      .filter(item => !!item.img && !!item.img.data);
+
+    if (validChars.length === 0) {
+      alert('Nenhum personagem cadastrado com imagem no PostForge! Cadastre personagens na aba "Carrossel" primeiro.');
+      return;
+    }
+
+    const newChars: MacroCharacterItem[] = validChars.map((item, i) => {
+      const name = item.detail?.name || `Personagem ${i + 1}`;
+      const avatar = `data:${item.img!.mimeType};base64,${item.img!.data}`;
+      return {
+        id: `char_${item.idx}_${Date.now()}`,
+        name,
+        color: item.detail?.color || '',
+        features: item.detail?.features || '',
+        avatar,
+        enabled: true,
+        promptTag: name
+      };
+    });
+
+    setMacroCharacters(newChars);
+
+    sendMacroCommand('SYNC_DATA', {
+      prompts: macroPrompts,
+      carousels: macroCarousels,
+      characters: newChars,
+      config: macroConfig
+    });
+
+    setMacroLogs(prev => [{
+      message: `🎭 ${newChars.length} personagem(ns) sincronizado(s) do PostForge com sucesso!`,
+      type: 'success',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  // 3. Upload e Leitura de Arquivo (PDF, TXT, JSON, CSV, MD)
+  const handleMacroUploadFile = async (file: File) => {
+    if (!file) return;
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      let rawText = '';
+
+      if (ext === 'txt' || ext === 'md' || ext === 'json' || ext === 'csv') {
+        rawText = await file.text();
+      } else {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            resolve(b64);
+          };
+          reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+        });
+        reader.readAsDataURL(file);
+        const base64 = await base64Promise;
+
+        const mimeType = ext === 'pdf' ? 'application/pdf' : (file.type || 'application/octet-stream');
+        const res = await fetch(getApiUrl('/api/extract-document-text'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: base64, filename: file.name, mimeType })
+        });
+        if (res.ok) {
+          const d = await res.json();
+          rawText = d.text || '';
+        }
+      }
+
+      if (!rawText.trim()) {
+        alert(`Não foi possível extrair texto legível de "${file.name}".`);
+        return;
+      }
+
+      const parsed = parsePostForgeDocument(rawText);
+      let carouselsToLoad: GeneratedCarousel[] = [];
+
+      if (parsed.type === 'carousel' && parsed.carousels) {
+        carouselsToLoad = parsed.carousels;
+      } else if (parsed.type === 'json' && parsed.data) {
+        if (parsed.data.batchCarouselResults) carouselsToLoad = parsed.data.batchCarouselResults;
+        else if (parsed.data.carouselResult) carouselsToLoad = [parsed.data.carouselResult];
+      }
+
+      if (carouselsToLoad.length > 0) {
+        const newCarousels: MacroCarouselItem[] = [];
+        const newPrompts: MacroPromptItem[] = [];
+
+        carouselsToLoad.forEach((car, cIdx) => {
+          const cId = `carousel_${cIdx + 1}`;
+          const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+          newCarousels.push({ id: cId, title: cTitle, count: car.slides?.length || 0 });
+
+          (car.slides || []).forEach((s, sIdx) => {
+            newPrompts.push({
+              id: `p_file_${cIdx + 1}_${s.slideNumber || sIdx + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              title: `${cTitle} • Slide ${s.slideNumber || sIdx + 1}`,
+              prompt: s.imagePromptEn || '',
+              dialoguePt: s.textInBubblesPt || s.textInBubbles || '',
+              status: 'pending',
+              checked: true,
+              carouselId: cId,
+              carouselTitle: cTitle,
+              slideNumber: s.slideNumber || sIdx + 1,
+              repeatCount: macroConfig.repeatPerPrompt || 1,
+              completedRepeats: 0
+            });
+          });
+        });
+
+        setMacroCarousels(newCarousels);
+        setMacroPrompts(newPrompts);
+        setMacroSelectedCarousel('all');
+
+        sendMacroCommand('SYNC_DATA', {
+          prompts: newPrompts,
+          carousels: newCarousels,
+          characters: macroCharacters,
+          config: macroConfig
+        });
+
+        setMacroLogs(prev => [{
+          message: `📄 Arquivo "${file.name}" carregado: ${newPrompts.length} prompts em ${newCarousels.length} carrosséis!`,
+          type: 'success',
+          time: new Date().toLocaleTimeString('pt-BR')
+        }, ...prev]);
+      } else {
+        const newPrompt: MacroPromptItem = {
+          id: `p_raw_${Date.now()}`,
+          title: `Prompt de ${file.name}`,
+          prompt: rawText.substring(0, 1500),
+          status: 'pending',
+          checked: true,
+          repeatCount: macroConfig.repeatPerPrompt || 1,
+          completedRepeats: 0
+        };
+        const updated = [...macroPrompts, newPrompt];
+        setMacroPrompts(updated);
+        sendMacroCommand('SYNC_DATA', {
+          prompts: updated,
+          carousels: macroCarousels,
+          characters: macroCharacters,
+          config: macroConfig
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro ao ler arquivo para Macro:', err);
+      alert('Erro ao ler arquivo: ' + err.message);
+    }
+  };
+
+  // 4. Colar Roteiro
+  const handlePasteScriptConfirm = () => {
+    if (!macroPasteText.trim()) return;
+    const parsed = parsePostForgeDocument(macroPasteText);
+    let carouselsToLoad: GeneratedCarousel[] = [];
+
+    if (parsed.type === 'carousel' && parsed.carousels) {
+      carouselsToLoad = parsed.carousels;
+    } else if (parsed.type === 'json' && parsed.data) {
+      if (parsed.data.batchCarouselResults) carouselsToLoad = parsed.data.batchCarouselResults;
+      else if (parsed.data.carouselResult) carouselsToLoad = [parsed.data.carouselResult];
+    }
+
+    if (carouselsToLoad.length > 0) {
+      const newCarousels: MacroCarouselItem[] = [];
+      const newPrompts: MacroPromptItem[] = [];
+
+      carouselsToLoad.forEach((car, cIdx) => {
+        const cId = `carousel_${cIdx + 1}`;
+        const cTitle = car.title || car.theme || `Carrossel ${cIdx + 1}`;
+        newCarousels.push({ id: cId, title: cTitle, count: car.slides?.length || 0 });
+
+        (car.slides || []).forEach((s, sIdx) => {
+          newPrompts.push({
+            id: `p_paste_${cIdx + 1}_${s.slideNumber || sIdx + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            title: `${cTitle} • Slide ${s.slideNumber || sIdx + 1}`,
+            prompt: s.imagePromptEn || '',
+            dialoguePt: s.textInBubblesPt || s.textInBubbles || '',
+            status: 'pending',
+            checked: true,
+            carouselId: cId,
+            carouselTitle: cTitle,
+            slideNumber: s.slideNumber || sIdx + 1,
+            repeatCount: macroConfig.repeatPerPrompt || 1,
+            completedRepeats: 0
+          });
+        });
+      });
+
+      setMacroCarousels(newCarousels);
+      setMacroPrompts(newPrompts);
+      setMacroSelectedCarousel('all');
+
+      sendMacroCommand('SYNC_DATA', {
+        prompts: newPrompts,
+        carousels: newCarousels,
+        characters: macroCharacters,
+        config: macroConfig
+      });
+
+      setMacroLogs(prev => [{
+        message: `📋 Roteiro colado processado: ${newPrompts.length} prompts em ${newCarousels.length} carrosséis!`,
+        type: 'success',
+        time: new Date().toLocaleTimeString('pt-BR')
+      }, ...prev]);
+    } else {
+      const blocks = macroPasteText.split(/\n\s*\n/).filter(b => b.trim().length > 5);
+      const newPrompts: MacroPromptItem[] = blocks.map((b, idx) => ({
+        id: `p_pasted_${Date.now()}_${idx}`,
+        title: `Prompt ${idx + 1}`,
+        prompt: b.trim(),
+        status: 'pending',
+        checked: true,
+        repeatCount: macroConfig.repeatPerPrompt || 1,
+        completedRepeats: 0
+      }));
+
+      const merged = [...macroPrompts, ...newPrompts];
+      setMacroPrompts(merged);
+      sendMacroCommand('SYNC_DATA', {
+        prompts: merged,
+        carousels: macroCarousels,
+        characters: macroCharacters,
+        config: macroConfig
+      });
+      setMacroLogs(prev => [{
+        message: `📋 ${newPrompts.length} prompt(s) adicionados a partir do texto colado.`,
+        type: 'success',
+        time: new Date().toLocaleTimeString('pt-BR')
+      }, ...prev]);
+    }
+
+    setMacroPasteText('');
+    setIsMacroPasteModalOpen(false);
+  };
+
+  // 5. Execução do Macro
+  const handleStartMacro = () => {
+    const activePrompts = macroPrompts.filter(p => p.checked);
+    if (activePrompts.length === 0) {
+      alert('Nenhum prompt marcado para execução! Marque a caixinha de ao menos um prompt.');
+      return;
+    }
+    setMacroState('running');
+    setMacroCurrentAction('Iniciando automação no FLOW...');
+    sendMacroCommand('START', {
+      prompts: macroPrompts.map(p => ({
+        id: p.id,
+        title: p.title,
+        prompt: p.prompt,
+        imagePrompt: p.prompt,
+        fullText: p.dialoguePt ? `Texto nos balões:\nPT-BR: "${p.dialoguePt}"\n\nPrompt de Imagem (Midjourney / Dall-E):\n${p.prompt}` : p.prompt,
+        ptDialogue: p.dialoguePt,
+        enabled: p.checked,
+        repeatCount: p.repeatCount || macroConfig.repeatPerPrompt || 1,
+        completedRepeats: p.completedRepeats || 0,
+        status: p.status || 'pending'
+      })),
+      carousels: macroCarousels,
+      characters: macroCharacters.map(c => ({
+        id: c.id,
+        name: c.name,
+        avatarUrl: c.avatar,
+        avatar: c.avatar,
+        promptTag: c.promptTag || c.name,
+        enabled: c.enabled
+      })),
+      config: macroConfig
+    });
+    setMacroLogs(prev => [{
+      message: `🚀 Macro iniciado com ${activePrompts.length} prompt(s) selecionado(s)...`,
+      type: 'info',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handlePauseMacro = () => {
+    setMacroState('paused');
+    sendMacroCommand('PAUSE');
+    setMacroLogs(prev => [{
+      message: `⏸ Macro pausado pelo usuário.`,
+      type: 'warning',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handleResumeMacro = () => {
+    setMacroState('running');
+    sendMacroCommand('RESUME');
+    setMacroLogs(prev => [{
+      message: `▶ Macro retomado.`,
+      type: 'info',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handleStopMacro = () => {
+    setMacroState('stopped');
+    setMacroCurrentAction('Parado pelo usuário');
+    setMacroCountdown({ remaining: 0, total: 0, label: '' });
+    sendMacroCommand('STOP');
+    setMacroLogs(prev => [{
+      message: `⏹ Macro interrompido pelo usuário.`,
+      type: 'error',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handleRunSingleMacroPrompt = (id: string) => {
+    setMacroState('running');
+    sendMacroCommand('RUN_SINGLE', { id });
+    setMacroLogs(prev => [{
+      message: `🎯 Executando prompt individual (${id})...`,
+      type: 'info',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handleTogglePromptCheck = (id: string) => {
+    setMacroPrompts(prev => prev.map(p => p.id === id ? { ...p, checked: !p.checked } : p));
+  };
+
+  const handleDeleteMacroPrompt = (id: string) => {
+    setMacroPrompts(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleResetMacroStatus = () => {
+    setMacroPrompts(prev => prev.map(p => ({ ...p, status: 'pending', completedRepeats: 0 })));
+    setMacroState('idle');
+    setMacroCurrentAction('Pronto');
+    setMacroCountdown({ remaining: 0, total: 0, label: '' });
+    setMacroLogs(prev => [{
+      message: `🔄 Status de todos os prompts redefinidos para Pendente.`,
+      type: 'info',
+      time: new Date().toLocaleTimeString('pt-BR')
+    }, ...prev]);
+  };
+
+  const handleClearMacroPrompts = () => {
+    if (confirm('Tem certeza de que deseja limpar todos os prompts da lista?')) {
+      setMacroPrompts([]);
+      setMacroCarousels([]);
+      setMacroSelectedCarousel('all');
+      setMacroLogs(prev => [{
+        message: `🗑️ Lista de prompts limpa.`,
+        type: 'warning',
+        time: new Date().toLocaleTimeString('pt-BR')
+      }, ...prev]);
+    }
+  };
+
+  const handleToggleAllMacroPrompts = () => {
+    const allChecked = macroPrompts.every(p => p.checked);
+    setMacroPrompts(prev => prev.map(p => ({ ...p, checked: !allChecked })));
+  };
+
+  const handleAddManualPrompt = () => {
+    if (!macroNewPromptText.trim()) {
+      alert('Informe o texto do prompt!');
+      return;
+    }
+    const newPrompt: MacroPromptItem = {
+      id: `p_manual_${Date.now()}`,
+      title: macroNewPromptTitle.trim() || `Prompt ${macroPrompts.length + 1}`,
+      prompt: macroNewPromptText.trim(),
+      dialoguePt: macroNewPromptDialogue.trim() || undefined,
+      status: 'pending',
+      checked: true,
+      repeatCount: macroConfig.repeatPerPrompt || 1,
+      completedRepeats: 0
+    };
+    const updated = [...macroPrompts, newPrompt];
+    setMacroPrompts(updated);
+    sendMacroCommand('SYNC_DATA', {
+      prompts: updated,
+      carousels: macroCarousels,
+      characters: macroCharacters,
+      config: macroConfig
+    });
+    setMacroNewPromptTitle('');
+    setMacroNewPromptText('');
+    setMacroNewPromptDialogue('');
+    setIsMacroAddPromptModalOpen(false);
+  };
+
+  const handleAddMacroCharacter = () => {
+    if (!macroNewCharName.trim()) {
+      alert('Informe o nome do personagem!');
+      return;
+    }
+    const newChar: MacroCharacterItem = {
+      id: `char_manual_${Date.now()}`,
+      name: macroNewCharName.trim(),
+      color: macroNewCharColor.trim(),
+      features: macroNewCharFeatures.trim(),
+      avatar: macroNewCharAvatar,
+      enabled: true,
+      promptTag: macroNewCharName.trim()
+    };
+    const updated = [...macroCharacters, newChar];
+    setMacroCharacters(updated);
+    sendMacroCommand('SYNC_DATA', {
+      prompts: macroPrompts,
+      carousels: macroCarousels,
+      characters: updated,
+      config: macroConfig
+    });
+    setMacroNewCharName('');
+    setMacroNewCharColor('');
+    setMacroNewCharFeatures('');
+    setMacroNewCharAvatar('');
+    setIsMacroAddCharModalOpen(false);
+  };
+
+  const handleDeleteMacroCharacter = (id: string) => {
+    const updated = macroCharacters.filter(c => c.id !== id);
+    setMacroCharacters(updated);
+    sendMacroCommand('SYNC_DATA', {
+      prompts: macroPrompts,
+      carousels: macroCarousels,
+      characters: updated,
+      config: macroConfig
+    });
+  };
+
+  const handleExportMacroCharsJson = () => {
+    if (macroCharacters.length === 0) {
+      alert('Nenhum personagem para exportar!');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(macroCharacters, null, 2)], { type: 'application/json' });
+    saveAs(blob, `personagens_flow_macro_${Date.now()}.json`);
+  };
+
+  const handleImportMacroCharsJson = async (file: File) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        setMacroCharacters(parsed);
+        sendMacroCommand('SYNC_DATA', {
+          prompts: macroPrompts,
+          carousels: macroCarousels,
+          characters: parsed,
+          config: macroConfig
+        });
+        alert(`✅ ${parsed.length} personagem(ns) importado(s) com sucesso!`);
+      }
+    } catch (e: any) {
+      alert('Erro ao importar JSON de personagens: ' + e.message);
+    }
+  };
+
+  const handleDetectTelegramChatId = async () => {
+    if (!macroConfig.telegramBotToken) {
+      alert('Preencha o Token do Bot antes de detectar o Chat ID!');
+      return;
+    }
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${macroConfig.telegramBotToken}/getUpdates`);
+      const data = await res.json();
+      if (data.ok && data.result && data.result.length > 0) {
+        const lastMsg = data.result[data.result.length - 1];
+        const chatId = (lastMsg.message || lastMsg.channel_post)?.chat?.id;
+        if (chatId) {
+          setMacroConfig(prev => ({ ...prev, telegramChatId: String(chatId) }));
+          alert(`✅ Chat ID detectado com sucesso: ${chatId}`);
+          return;
+        }
+      }
+      alert('Nenhuma mensagem recente encontrada! Envie qualquer mensagem para o seu bot no Telegram (@Gerador_posts_bot) e tente novamente.');
+    } catch (err: any) {
+      alert('Erro ao detectar Chat ID: ' + err.message);
+    }
+  };
+
+  const handleTestTelegramNotification = async () => {
+    if (!macroConfig.telegramBotToken || !macroConfig.telegramChatId) {
+      alert('Preencha o Bot Token e o Chat ID para testar!');
+      return;
+    }
+    try {
+      const text = `🤖 *PostForge Robô FLOW*\n\nConexão estabelecida com sucesso com o seu bot do Telegram!\nVocê receberá o progresso e as imagens de capa dos carrosséis aqui ao vivo.`;
+      const res = await fetch(`https://api.telegram.org/bot${macroConfig.telegramBotToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: macroConfig.telegramChatId,
+          text,
+          parse_mode: 'Markdown'
+        })
+      });
+      const d = await res.json();
+      if (d.ok) {
+        alert('📲 Mensagem de teste enviada com sucesso para o seu Telegram!');
+      } else {
+        alert('Erro retornado pelo Telegram: ' + (d.description || JSON.stringify(d)));
+      }
+    } catch (err: any) {
+      alert('Falha ao enviar mensagem de teste: ' + err.message);
     }
   };
 
@@ -6155,9 +6861,10 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('spy')}
-              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition ${activeTab === 'spy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${activeTab === 'spy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Espião Flow
+              <Zap className="w-3.5 h-3.5 text-amber-500" />
+              <span>🤖 Robô FLOW</span>
             </button>
           </nav>
 
@@ -6264,11 +6971,11 @@ export default function App() {
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  <Eye className="w-4 h-4 text-indigo-300" />
-                  <span>1. Gravador & Navegador</span>
-                  {recordedSteps.length > 0 && (
+                  <Zap className="w-4 h-4 text-amber-400" />
+                  <span>1. 🤖 Robô FLOW Studio</span>
+                  {macroPrompts.length > 0 && (
                     <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/40 text-indigo-200 text-[10px]">
-                      {recordedSteps.length}
+                      {macroPrompts.length}
                     </span>
                   )}
                 </button>
@@ -6359,14 +7066,14 @@ export default function App() {
             {/* CONTEÚDO DAS SUB-ABAS DO ESPIÃO */}
             <div className="flex-1 overflow-hidden">
               
-              {/* SUB-ABA 1: GRAVADOR & NAVEGADOR */}
+              {/* SUB-ABA 1: ROBÔ FLOW STUDIO */}
               {spySubTab === 'recorder' && (
-                <div className="w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
-                  {/* Coluna do Navegador (Esquerda) */}
-                  <div className="lg:col-span-8 flex flex-col h-full bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-                    {/* Barra de Navegação */}
-                    <div className="p-3.5 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/50">
-                      <div className="flex items-center gap-1.5">
+                <div className="w-full h-full grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
+                  {/* Coluna do Navegador FLOW (Esquerda - 7 colunas) */}
+                  <div className="lg:col-span-7 flex flex-col h-full bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+                    {/* Barra de Navegação Superior do FLOW */}
+                    <div className="p-3 border-b border-slate-100 flex flex-wrap items-center gap-2 bg-slate-50/80">
+                      <div className="flex items-center gap-1">
                         <button 
                           onClick={handleSpyGoBack} 
                           disabled={!webviewCanGoBack} 
@@ -6386,271 +7093,1273 @@ export default function App() {
                         <button 
                           onClick={handleSpyReload} 
                           className="p-2 hover:bg-slate-200/80 rounded-xl text-slate-600 transition cursor-pointer"
-                          title="Atualizar"
+                          title="Atualizar Página"
                         >
                           <RotateCw className={`w-4 h-4 ${isWebviewLoading ? 'animate-spin text-indigo-500' : ''}`} />
                         </button>
                       </div>
 
-                      <form onSubmit={handleSpyNavigate} className="flex-grow flex items-center gap-2">
+                      {/* Atalho FLOW Hub */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpyUrl('https://labs.google/fx/pt/tools/flow');
+                          setInputUrl('https://labs.google/fx/pt/tools/flow');
+                          if (webviewRef.current) webviewRef.current.loadURL('https://labs.google/fx/pt/tools/flow');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded-xl text-xs font-bold transition border border-slate-200 cursor-pointer shadow-2xs"
+                        title="Ir para a Página Inicial do Google FLOW"
+                      >
+                        <span>🏠 FLOW Hub</span>
+                      </button>
+
+                      {/* Campo de URL */}
+                      <form onSubmit={handleSpyNavigate} className="flex-grow flex items-center gap-2 min-w-[200px]">
                         <div className="flex-grow relative flex items-center">
-                          <div className="absolute left-3.5 text-slate-400">
-                            <Compass className="w-4 h-4" />
+                          <div className="absolute left-3 text-slate-400">
+                            <Compass className="w-3.5 h-3.5" />
                           </div>
                           <input 
                             type="text" 
                             value={inputUrl}
                             onChange={(e) => setInputUrl(e.target.value)}
-                            placeholder="Digite a URL para navegar (ex: midjourney.com, leonardo.ai, canva.com)"
-                            className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-inner font-mono text-xs"
+                            placeholder="URL do Google FLOW (ex: labs.google/fx/pt/tools/flow)"
+                            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-inner font-mono"
                           />
                         </div>
                         <button 
                           type="submit" 
-                          className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-sm transition cursor-pointer"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
                         >
                           Ir
                         </button>
                       </form>
 
-                      {/* Botão de Inspecionar */}
-                      <button 
-                        onClick={handleToggleInspect}
-                        className={`flex items-center gap-2 px-3.5 py-2 text-xs font-extrabold rounded-2xl shadow-sm transition cursor-pointer select-none border border-slate-200 ${
-                          isInspectMode ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-100 hover:bg-indigo-700' : 'bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300'
-                        }`}
-                        title="Modo Inspetor de Elementos e Seletores"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span>{isInspectMode ? 'Inspecionando...' : 'Inspecionar'}</span>
-                      </button>
-
-                      {/* Botão de Tirar Snapshot */}
-                      <button 
-                        type="button"
-                        onClick={async () => {
-                          const snap = await captureWebviewSnapshot();
-                          if (snap) {
-                            setRecordedSteps(prev => [...prev, {
-                              id: Date.now(),
-                              type: 'screenshot',
-                              selector: 'body',
-                              description: 'Captura manual de tela',
-                              screenshot: snap,
-                              timestamp: new Date().toLocaleTimeString('pt-BR')
-                            }]);
-                            addLog('image', 'ESPIÃO', 'Snapshot de tela capturado e anexado ao fluxo.');
-                          }
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-2xl transition cursor-pointer"
-                        title="Tirar foto snapshot da tela atual e anexar aos passos"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Snapshot</span>
-                      </button>
+                      {/* Status de Conexão com o Motor do Robô */}
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition shrink-0 bg-white">
+                        {isFlowConnected ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-emerald-700">Robô Conectado</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            <span className="text-amber-700">Aguardando FLOW...</span>
+                          </>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Área do WebView */}
+                    {/* Área do WebView Embutido com Sessão Persistente */}
                     <div className="flex-grow relative bg-slate-100/50">
-                      {preloadPath ? (
+                      {flowPreloadPath || preloadPath ? (
                         // @ts-ignore
                         <webview
                           ref={webviewRef}
                           src={spyUrl}
-                          preload={preloadPath}
+                          partition="persist:flow_session"
+                          preload={flowPreloadPath || preloadPath}
                           className="absolute inset-0 w-full h-full bg-white"
                           style={{ border: 'none' }}
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
                           <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                          <p className="text-sm font-semibold">Carregando espião...</p>
+                          <p className="text-sm font-semibold">Iniciando motor do Robô FLOW...</p>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Painel do Espião (Direita) */}
-                  <div className="lg:col-span-4 flex flex-col h-full bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden text-slate-300">
+                  {/* Coluna do Painel de Configurações do Macro Studio (Direita - 5 colunas) */}
+                  <div className="lg:col-span-5 flex flex-col h-full bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden text-slate-300">
                     {/* Header do Painel */}
-                    <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
-                        <h3 className="font-bold text-xs uppercase tracking-wider text-white">Gravador de Ações</h3>
-                      </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => setIsRecording(!isRecording)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-xl transition cursor-pointer ${
-                            isRecording ? 'bg-rose-500 text-white hover:bg-rose-600 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md'
-                          }`}
-                        >
-                          {isRecording ? (
-                            <>
-                              <Square className="w-3 h-3 fill-current" />
-                              <span>Parar</span>
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-3 h-3 fill-current" />
-                              <span>Gravar</span>
-                            </>
-                          )}
-                        </button>
-                        <button 
-                          onClick={handleClearSteps}
-                          disabled={recordedSteps.length === 0}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 disabled:opacity-40 rounded-xl transition border border-slate-700 cursor-pointer"
-                          title="Limpar Fluxo Gravado"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Status de Sincronização / Análise */}
-                    {syncStatus.message && (
-                      <div className={`px-4 py-2 text-xs font-bold border-b transition-all flex items-center gap-2 ${
-                        syncStatus.type === 'success' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50' : 
-                        syncStatus.type === 'error' ? 'bg-rose-950/40 text-rose-400 border-rose-900/50' : 
-                        'bg-slate-950 text-indigo-400 border-slate-800'
-                      }`}>
-                        <Database className="w-3.5 h-3.5 animate-pulse shrink-0" />
-                        <span className="truncate">{syncStatus.message}</span>
-                      </div>
-                    )}
-
-                    {/* Timeline de Ações & Inspetor */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                      
-                      {/* Inspetor de Elementos */}
-                      {selectedElement && (
-                        <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-indigo-500/30 text-xs space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-md font-mono text-[10px]">
-                              {selectedElement.tagName}
+                    <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white shadow-sm font-bold text-sm">
+                          🤖
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-xs uppercase tracking-wider text-white">FLOW Macro Studio Pro</h3>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              MOTOR FLOW
                             </span>
-                            <span className="text-[10px] text-slate-400">Elemento Inspecionado</span>
                           </div>
-                          <code className="block p-1.5 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-[10px] break-all">
-                            {selectedElement.selector}
-                          </code>
+                          <p className="text-[10px] text-slate-400">Automação de Prompts por PDF & Personagens</p>
                         </div>
-                      )}
-
-                      {/* Campo Opcional: Objetivo do Processo */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          🎯 Objetivo do Processo (Opcional):
-                        </label>
-                        <input
-                          type="text"
-                          value={userProcessGoalInput}
-                          onChange={(e) => setUserProcessGoalInput(e.target.value)}
-                          placeholder="Ex: Gerar imagem no Midjourney e baixar"
-                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
                       </div>
 
-                      {/* Linha do Tempo dos Passos */}
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          <span>Linha do Tempo ({recordedSteps.length} passos)</span>
-                          {recordedSteps.length > 0 && <span>Com Screenshots 📸</span>}
-                        </div>
-
-                        {recordedSteps.length === 0 ? (
-                          <div className="py-8 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
-                            <div className="p-2.5 rounded-full mb-2 bg-slate-800 text-slate-500">
-                              <Play className="w-4 h-4" />
-                            </div>
-                            <p className="text-xs font-bold text-slate-400">Nenhum passo gravado</p>
-                            <p className="text-[10px] text-slate-500 mt-1">Clique em "Gravar" e use o navegador à esquerda.</p>
-                          </div>
+                      <div className="flex items-center gap-2">
+                        {macroState === 'running' ? (
+                          <span className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded-xl text-[10px] font-bold animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            <span>Executando</span>
+                          </span>
+                        ) : macroState === 'paused' ? (
+                          <span className="flex items-center gap-1 px-2.5 py-1 bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 rounded-xl text-[10px] font-bold">
+                            <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                            <span>Pausado</span>
+                          </span>
                         ) : (
-                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                            {recordedSteps.map((step, idx) => (
-                              <div 
-                                key={step.id} 
-                                className="p-2.5 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition text-left text-xs flex gap-2.5 items-start group"
-                              >
-                                {/* Thumbnail do Snapshot */}
-                                {step.screenshot ? (
-                                  <div 
-                                    onClick={() => openSingleImageInLightbox(step.screenshot!, `Passo ${idx + 1}: ${step.description}`, step.description)}
-                                    className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:border-indigo-500 transition group/img relative"
-                                    title="Ver captura de tela em tela cheia"
-                                  >
-                                    <img src={step.screenshot} alt="Step" className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white">
-                                      <ZoomIn className="w-3 h-3" />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0">
-                                    {step.type === 'click' ? <MousePointer className="w-4 h-4 text-indigo-400" /> : <Keyboard className="w-4 h-4 text-emerald-400" />}
-                                  </div>
-                                )}
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="font-bold text-[10px] px-1 py-0.5 bg-slate-800 text-indigo-300 rounded font-mono">
-                                      #{idx + 1}
-                                    </span>
-                                    <span className="font-bold text-white text-[11px] truncate">
-                                      {step.type === 'click' ? 'CLIQUE' : step.type === 'input' ? 'DIGITAÇÃO' : step.type.toUpperCase()}
-                                    </span>
-                                    {step.timestamp && (
-                                      <span className="text-[9px] text-slate-500 ml-auto font-mono">{step.timestamp}</span>
-                                    )}
-                                  </div>
-                                  <p className="text-[11px] text-slate-300 line-clamp-1">{step.description}</p>
-                                  {step.value && (
-                                    <p className="text-[10px] font-mono text-emerald-400 truncate bg-slate-900/60 px-1.5 py-0.5 rounded mt-1">
-                                      📝 "{step.value}"
-                                    </p>
-                                  )}
-                                </div>
-
-                                <button 
-                                  onClick={() => handleRemoveStep(step.id)}
-                                  className="p-1 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-lg transition cursor-pointer"
-                                  title="Remover este passo"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
+                          <span className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-xl text-[10px] font-bold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <span>Pronto</span>
+                          </span>
                         )}
                       </div>
+                    </div>
 
-                      {/* Botão de Análise com IA */}
-                      {recordedSteps.length > 0 && (
-                        <div className="pt-2 border-t border-slate-800">
-                          <button
-                            type="button"
-                            onClick={handleUnderstandProcessWithAi}
-                            disabled={isAnalyzingProcess}
-                            className="w-full py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                          >
-                            {isAnalyzingProcess ? (
+                    {/* Barra de Abas do Macro Studio */}
+                    <div className="flex border-b border-slate-800 bg-slate-950/40 p-1.5 gap-1 overflow-x-auto shrink-0 scrollbar-none">
+                      <button
+                        type="button"
+                        onClick={() => setMacroActiveTab('prompts')}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                          macroActiveTab === 'prompts'
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>1. Prompts</span>
+                        {macroPrompts.length > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-indigo-400/30 text-white text-[10px]">
+                            {macroPrompts.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMacroActiveTab('characters')}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                          macroActiveTab === 'characters'
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>2. Personagens</span>
+                        {macroCharacters.length > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-pink-400/30 text-white text-[10px]">
+                            {macroCharacters.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMacroActiveTab('format')}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                          macroActiveTab === 'format'
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        <span>3. Formato</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMacroActiveTab('telegram')}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                          macroActiveTab === 'telegram'
+                            ? 'bg-sky-600 text-white shadow-md'
+                            : 'text-sky-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>4. Telegram</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMacroActiveTab('execution')}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                          macroActiveTab === 'execution'
+                            ? 'bg-emerald-600 text-white shadow-md'
+                            : 'text-emerald-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>5. Execução</span>
+                        {macroState === 'running' && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* CONTEÚDO DAS ABAS DO PAINEL */}
+                    <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+                      
+                      {/* ========================================================= */}
+                      {/* ABA 1: PROMPTS & ROTEIRO */}
+                      {/* ========================================================= */}
+                      {macroActiveTab === 'prompts' && (
+                        <div className="space-y-3">
+                          {/* Banner de Ação Rápida: Puxar do Carrossel Ativo */}
+                          <div className="p-3 bg-gradient-to-r from-indigo-950/70 via-purple-950/50 to-slate-900 border border-indigo-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <Zap className="w-5 h-5 text-amber-400 shrink-0" />
+                              <div>
+                                <h4 className="text-xs font-bold text-white">Carrossel do PostForge</h4>
+                                <p className="text-[10px] text-slate-400">Puxe o carrossel gerado direto para a fila do FLOW</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handlePullCarouselsToMacro}
+                              className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs font-black rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer"
+                              title="Puxar todos os slides e prompts do carrossel ativo do PostForge"
+                            >
+                              <Zap className="w-3.5 h-3.5 text-amber-300" />
+                              <span>⚡ Puxar do Carrossel Ativo</span>
+                            </button>
+                          </div>
+
+                          {/* Barra de Ações Secundárias */}
+                          <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setIsMacroAddPromptModalOpen(true)}
+                                className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>+ Prompt</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setIsMacroPasteModalOpen(true)}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer border border-slate-700"
+                              >
+                                <FileCode className="w-3.5 h-3.5" />
+                                <span>📋 Colar</span>
+                              </button>
+
+                              <label
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer border border-slate-700"
+                                title="Carregar PDF, TXT, JSON ou Roteiro"
+                              >
+                                <input
+                                  type="file"
+                                  accept=".pdf,.txt,.json,.csv,.md"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleMacroUploadFile(e.target.files[0]);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                />
+                                <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>📁 Arquivo</span>
+                              </label>
+
+                              <div className="flex items-center gap-1 px-2 py-1 bg-slate-950 rounded-xl border border-slate-800" title="Repetir cada prompt X vezes">
+                                <span className="text-[10px] text-slate-400">🔁 Repetir:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={50}
+                                  value={macroConfig.repeatPerPrompt}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                    setMacroConfig(prev => ({ ...prev, repeatPerPrompt: val }));
+                                  }}
+                                  className="w-8 text-center bg-slate-900 border border-slate-700 rounded text-amber-300 font-bold text-xs py-0.5"
+                                />
+                                <span className="text-[10px] text-slate-400">x</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleToggleAllMacroPrompts}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition cursor-pointer"
+                                title="Marcar / Desmarcar todos"
+                              >
+                                <CheckSquare className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleResetMacroStatus}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition cursor-pointer"
+                                title="Redefinir status para Pendente"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleClearMacroPrompts}
+                                disabled={macroPrompts.length === 0}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 disabled:opacity-40 rounded-lg transition border border-slate-700 cursor-pointer"
+                                title="Limpar lista de prompts"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Filtro de Carrosséis Detectados */}
+                          {macroCarousels.length > 0 && (
+                            <div className="p-2.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-slate-300">📚 Carrosséis ({macroCarousels.length}):</span>
+                                <span className="text-[10px] text-slate-500">Filtre por carrossel ou escolha Todos</span>
+                              </div>
+                              <div className="flex gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setMacroSelectedCarousel('all')}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                    macroSelectedCarousel === 'all'
+                                      ? 'bg-indigo-600 text-white shadow-sm'
+                                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  Todos ({macroPrompts.length})
+                                </button>
+                                {macroCarousels.map((car, idx) => (
+                                  <button
+                                    key={car.id}
+                                    type="button"
+                                    onClick={() => setMacroSelectedCarousel(car.id)}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                      macroSelectedCarousel === car.id
+                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                                    }`}
+                                  >
+                                    C{idx + 1} ({car.count})
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Lista de Prompts da Fila */}
+                          <div className="space-y-2 max-h-[calc(100vh-380px)] overflow-y-auto pr-1">
+                            {macroPrompts.length === 0 ? (
+                              <div className="py-12 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
+                                <div className="p-3 rounded-full mb-2 bg-slate-800 text-slate-500">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <p className="text-xs font-bold text-slate-300">Nenhum prompt carregado no Robô</p>
+                                <p className="text-[10px] text-slate-500 mt-1 max-w-xs">
+                                  Clique em <strong>"⚡ Puxar do Carrossel Ativo"</strong> acima ou importe um arquivo PDF / TXT para iniciar.
+                                </p>
+                              </div>
+                            ) : (
+                              macroPrompts
+                                .filter(p => macroSelectedCarousel === 'all' || p.carouselId === macroSelectedCarousel)
+                                .map((prompt, idx) => {
+                                  const isExpanded = !!expandedPromptIds[prompt.id];
+                                  return (
+                                    <div
+                                      key={prompt.id}
+                                      className={`p-2.5 rounded-xl border transition text-xs space-y-1.5 ${
+                                        prompt.status === 'running'
+                                          ? 'bg-amber-950/20 border-amber-500/50 shadow-sm'
+                                          : prompt.status === 'completed'
+                                          ? 'bg-emerald-950/20 border-emerald-500/30'
+                                          : prompt.status === 'error'
+                                          ? 'bg-rose-950/20 border-rose-500/40'
+                                          : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                                      }`}
+                                    >
+                                      {/* Header da linha do prompt */}
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <input
+                                            type="checkbox"
+                                            checked={prompt.checked}
+                                            onChange={() => handleTogglePromptCheck(prompt.id)}
+                                            className="w-3.5 h-3.5 accent-indigo-600 rounded cursor-pointer shrink-0"
+                                          />
+                                          <span className="px-1.5 py-0.2 rounded bg-slate-800 text-indigo-300 font-mono text-[10px] font-bold shrink-0">
+                                            #{prompt.slideNumber || idx + 1}
+                                          </span>
+                                          <span className="font-bold text-white text-[11px] truncate">
+                                            {prompt.title}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {/* Status Badge */}
+                                          {prompt.status === 'running' && (
+                                            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black rounded-md flex items-center gap-1 animate-pulse">
+                                              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                              <span>No FLOW</span>
+                                            </span>
+                                          )}
+                                          {prompt.status === 'completed' && (
+                                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-black rounded-md">
+                                              ✓ Concluído
+                                            </span>
+                                          )}
+                                          {prompt.status === 'error' && (
+                                            <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[9px] font-black rounded-md">
+                                              ✕ Erro
+                                            </span>
+                                          )}
+                                          {prompt.status === 'pending' && (
+                                            <span className="px-1.5 py-0.5 bg-slate-800 text-slate-400 text-[9px] font-bold rounded-md">
+                                              Pendente
+                                            </span>
+                                          )}
+
+                                          {/* Botão de Rodar Individual */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRunSingleMacroPrompt(prompt.id)}
+                                            className="p-1 hover:bg-slate-800 text-emerald-400 rounded-lg transition cursor-pointer"
+                                            title="Executar este prompt individualmente no FLOW"
+                                          >
+                                            <Play className="w-3 h-3 fill-current" />
+                                          </button>
+
+                                          {/* Botão de Excluir */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteMacroPrompt(prompt.id)}
+                                            className="p-1 hover:bg-slate-800 text-slate-500 hover:text-rose-400 rounded-lg transition cursor-pointer"
+                                            title="Remover prompt da fila"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Diálogo PT (se houver) */}
+                                      {prompt.dialoguePt && (
+                                        <div className="px-2 py-1 bg-slate-900/90 rounded-lg border border-slate-800/80 text-[10px] text-amber-300 font-medium">
+                                          💬 Fala: "{prompt.dialoguePt}"
+                                        </div>
+                                      )}
+
+                                      {/* Texto do Prompt de Imagem */}
+                                      <div 
+                                        onClick={() => setExpandedPromptIds(prev => ({ ...prev, [prompt.id]: !prev[prompt.id] }))}
+                                        className="cursor-pointer group/prompt"
+                                        title="Clique para expandir/recolher texto completo"
+                                      >
+                                        <p className={`text-[11px] text-slate-400 font-mono group-hover/prompt:text-slate-200 transition ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                          {prompt.prompt}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ========================================================= */}
+                      {/* ABA 2: PERSONAGENS */}
+                      {/* ========================================================= */}
+                      {macroActiveTab === 'characters' && (
+                        <div className="space-y-3">
+                          {/* Banner de Ação Rápida: Sincronizar Personagens do PostForge */}
+                          <div className="p-3 bg-gradient-to-r from-pink-950/70 via-purple-950/50 to-slate-900 border border-pink-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <Users className="w-5 h-5 text-pink-400 shrink-0" />
+                              <div>
+                                <h4 className="text-xs font-bold text-white">Personagens do PostForge</h4>
+                                <p className="text-[10px] text-slate-400">Sincronize os avatares já cadastrados no carrossel</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSyncCharactersToMacro}
+                              className="px-3 py-1.5 bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-xs font-black rounded-xl shadow-lg shadow-pink-600/30 transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>🎭 Sincronizar Personagens</span>
+                            </button>
+                          </div>
+
+                          {/* Ações Secundárias de Personagens */}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setIsMacroAddCharModalOpen(true)}
+                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>+ Novo Personagem</span>
+                            </button>
+
+                            <div className="flex items-center gap-1.5">
+                              <label
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer border border-slate-700"
+                                title="Importar arquivo JSON de personagens"
+                              >
+                                <input
+                                  type="file"
+                                  accept=".json"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleImportMacroCharsJson(e.target.files[0]);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                />
+                                <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>Importar</span>
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={handleExportMacroCharsJson}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer border border-slate-700"
+                                title="Exportar backup dos personagens em JSON"
+                              >
+                                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Exportar</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Grid de Personagens Cadastrados */}
+                          <div className="space-y-2 max-h-[calc(100vh-360px)] overflow-y-auto pr-1">
+                            {macroCharacters.length === 0 ? (
+                              <div className="py-12 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-4">
+                                <div className="p-3 rounded-full mb-2 bg-slate-800 text-slate-500">
+                                  <Users className="w-5 h-5" />
+                                </div>
+                                <p className="text-xs font-bold text-slate-300">Nenhum personagem cadastrado</p>
+                                <p className="text-[10px] text-slate-500 mt-1 max-w-xs">
+                                  Clique em <strong>"🎭 Sincronizar Personagens"</strong> acima para carregar automaticamente as fotos dos personagens definidos no PostForge.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {macroCharacters.map((char) => (
+                                  <div
+                                    key={char.id}
+                                    className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-start gap-2.5 relative group/char hover:border-slate-700 transition"
+                                  >
+                                    {/* Thumbnail do Avatar */}
+                                    <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+                                      {char.avatar ? (
+                                        <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <Users className="w-5 h-5 text-slate-600" />
+                                      )}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0 pr-5">
+                                      <h5 className="font-bold text-white text-xs truncate">{char.name}</h5>
+                                      {char.color && (
+                                        <p className="text-[10px] text-indigo-400 font-semibold truncate">
+                                          Cor: {char.color}
+                                        </p>
+                                      )}
+                                      {char.features && (
+                                        <p className="text-[10px] text-slate-400 line-clamp-1">
+                                          {char.features}
+                                        </p>
+                                      )}
+                                      <label className="mt-1 flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-400">
+                                        <input
+                                          type="checkbox"
+                                          checked={char.enabled}
+                                          onChange={() => {
+                                            const updated = macroCharacters.map(c => c.id === char.id ? { ...c, enabled: !c.enabled } : c);
+                                            setMacroCharacters(updated);
+                                            sendMacroCommand('SYNC_DATA', {
+                                              prompts: macroPrompts,
+                                              carousels: macroCarousels,
+                                              characters: updated,
+                                              config: macroConfig
+                                            });
+                                          }}
+                                          className="w-3 h-3 accent-indigo-600 rounded"
+                                        />
+                                        <span>{char.enabled ? 'Ativo no FLOW' : 'Inativo'}</span>
+                                      </label>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMacroCharacter(char.id)}
+                                      className="absolute top-2 right-2 p-1 text-slate-500 hover:text-rose-400 rounded-lg transition"
+                                      title="Remover personagem"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ========================================================= */}
+                      {/* ABA 3: FORMATO & GERAÇÃO */}
+                      {/* ========================================================= */}
+                      {macroActiveTab === 'format' && (
+                        <div className="space-y-3.5 text-xs">
+                          {/* Tipo de Mídia (Imagem / Vídeo) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Mídia de Geração no FLOW:
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setMacroConfig(prev => ({ ...prev, mediaType: 'image' }))}
+                                className={`py-2 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                                  macroConfig.mediaType === 'image'
+                                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                <ImageIcon className="w-3.5 h-3.5" />
+                                <span>Imagem</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMacroConfig(prev => ({ ...prev, mediaType: 'video' }))}
+                                className={`py-2 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                                  macroConfig.mediaType === 'video'
+                                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                                <span>Vídeo</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Proporção (Aspect Ratio) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Proporção da Imagem:
+                            </label>
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {(['16:9', '4:3', '1:1', '3:4', '9:16'] as const).map((ratio) => (
+                                <button
+                                  key={ratio}
+                                  type="button"
+                                  onClick={() => setMacroConfig(prev => ({ ...prev, aspectRatio: ratio }))}
+                                  className={`py-2 rounded-xl font-bold text-xs transition cursor-pointer border flex flex-col items-center justify-center gap-1 ${
+                                    macroConfig.aspectRatio === ratio
+                                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                  }`}
+                                >
+                                  <span className="text-[11px] font-black">{ratio}</span>
+                                  <span className="text-[9px] opacity-70">
+                                    {ratio === '9:16' ? 'Reels' : ratio === '1:1' ? 'Feed' : ratio === '3:4' ? 'Carrossel' : 'Wide'}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Quantidade por Prompt */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Variações Geradas por Prompt:
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                              {([1, 2, 3, 4] as const).map((qty) => (
+                                <button
+                                  key={qty}
+                                  type="button"
+                                  onClick={() => setMacroConfig(prev => ({ ...prev, quantity: qty }))}
+                                  className={`py-1.5 rounded-xl font-black text-xs transition cursor-pointer border ${
+                                    macroConfig.quantity === qty
+                                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                  }`}
+                                >
+                                  x{qty}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Modelo no FLOW */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Modelo de I.A do FLOW:
+                            </label>
+                            <select
+                              value={macroConfig.model}
+                              onChange={(e) => setMacroConfig(prev => ({ ...prev, model: e.target.value }))}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs"
+                            >
+                              <option value="Nano Banana Pro">⚡ Nano Banana Pro (Mais Rápido & Consistente)</option>
+                              <option value="Imagen 3">🎨 Imagen 3 (Fidelidade Artística Alta)</option>
+                            </select>
+                          </div>
+
+                          {/* Temporizadores e Delays */}
+                          <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2.5">
+                            <h5 className="font-bold text-slate-200 text-xs">⏳ Intervalos & Delays (FLOW)</h5>
+                            
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Pausa entre Prompts / Slides:</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={5}
+                                  max={300}
+                                  value={macroConfig.delaySeconds}
+                                  onChange={(e) => setMacroConfig(prev => ({ ...prev, delaySeconds: parseInt(e.target.value) || 15 }))}
+                                  className="w-14 text-center bg-slate-900 border border-slate-700 rounded-lg text-amber-300 font-bold py-1"
+                                />
+                                <span className="text-slate-500">seg</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Pausa entre Carrosséis:</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={5}
+                                  max={600}
+                                  value={macroConfig.carouselDelaySeconds}
+                                  onChange={(e) => setMacroConfig(prev => ({ ...prev, carouselDelaySeconds: parseInt(e.target.value) || 25 }))}
+                                  className="w-14 text-center bg-slate-900 border border-slate-700 rounded-lg text-amber-300 font-bold py-1"
+                                />
+                                <span className="text-slate-500">seg</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Toggles de Automação */}
+                          <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2.5">
+                            <h5 className="font-bold text-slate-200 text-xs">⚙️ Ajustes do Motor FLOW</h5>
+
+                            <label className="flex items-center justify-between cursor-pointer">
+                              <div>
+                                <span className="font-semibold text-white block">Reutilizar Comando (Passo 7)</span>
+                                <span className="text-[10px] text-slate-400">Clica em ↪ no FLOW para manter os personagens e só trocar o texto</span>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={macroConfig.reusePreviousCommand}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, reusePreviousCommand: e.target.checked }))}
+                                className="w-4 h-4 accent-indigo-600 rounded"
+                              />
+                            </label>
+
+                            <label className="flex items-center justify-between cursor-pointer">
+                              <div>
+                                <span className="font-semibold text-white block">Novo Projeto a Cada Carrossel</span>
+                                <span className="text-[10px] text-slate-400">Cria projeto novo no FLOW ao concluir os slides de um carrossel</span>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={macroConfig.autoCreateNewProject}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, autoCreateNewProject: e.target.checked }))}
+                                className="w-4 h-4 accent-indigo-600 rounded"
+                              />
+                            </label>
+
+                            <label className="flex items-center justify-between cursor-pointer">
+                              <div>
+                                <span className="font-semibold text-white block">Download Automático</span>
+                                <span className="text-[10px] text-slate-400">Baixa as imagens geradas diretamente para Downloads/</span>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={macroConfig.autoDownload}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, autoDownload: e.target.checked }))}
+                                className="w-4 h-4 accent-indigo-600 rounded"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ========================================================= */}
+                      {/* ABA 4: TELEGRAM BOT */}
+                      {/* ========================================================= */}
+                      {macroActiveTab === 'telegram' && (
+                        <div className="space-y-3.5 text-xs">
+                          {/* Card Ativar Telegram */}
+                          <div className="p-3 bg-sky-950/40 border border-sky-500/30 rounded-2xl flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Send className="w-5 h-5 text-sky-400 shrink-0" />
+                              <div>
+                                <h4 className="font-bold text-white text-xs">Notificações ao Vivo no Celular</h4>
+                                <p className="text-[10px] text-slate-400">Receba fotos de capa e alertas de cada carrossel gerado</p>
+                              </div>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={macroConfig.telegramEnabled}
+                              onChange={(e) => setMacroConfig(prev => ({ ...prev, telegramEnabled: e.target.checked }))}
+                              className="w-4 h-4 accent-sky-500 rounded cursor-pointer"
+                            />
+                          </div>
+
+                          {/* Campos de Configuração do Telegram */}
+                          <div className="space-y-2.5">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                🤖 Bot Token (@BotFather):
+                              </label>
+                              <input
+                                type="password"
+                                value={macroConfig.telegramBotToken}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, telegramBotToken: e.target.value }))}
+                                placeholder="8680557957:AAGsOQ9pC49uWXktu4ZCJfnI1IRsNC9sbyk"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                💬 Chat ID do seu Telegram:
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={macroConfig.telegramChatId}
+                                  onChange={(e) => setMacroConfig(prev => ({ ...prev, telegramChatId: e.target.value }))}
+                                  placeholder="Ex: 6969102297"
+                                  className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleDetectTelegramChatId}
+                                  className="px-3 py-2 bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap"
+                                  title="Detectar Chat ID automaticamente via última mensagem enviada ao bot"
+                                >
+                                  🔍 Auto
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleTestTelegramNotification}
+                                  className="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap"
+                                  title="Enviar mensagem de teste para o celular"
+                                >
+                                  📲 Testar
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-1.5">
+                                💡 <strong>Dica:</strong> Abra o bot <strong>@Gerador_posts_bot</strong> no Telegram, clique em <strong>Começar</strong> e depois clique no botão <strong>🔍 Auto</strong> acima!
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Opções de Envio ao Vivo */}
+                          <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2">
+                            <h5 className="font-bold text-sky-400 text-xs">Opções de Relatório no Telegram</h5>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs">
+                              <input
+                                type="checkbox"
+                                checked={macroConfig.telegramSendCover}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, telegramSendCover: e.target.checked }))}
+                                className="w-3.5 h-3.5 accent-sky-500 rounded"
+                              />
+                              <span className="text-white">📸 Enviar Foto de Capa do Carrossel (Recomendado)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs">
+                              <input
+                                type="checkbox"
+                                checked={macroConfig.telegramSendDetailed}
+                                onChange={(e) => setMacroConfig(prev => ({ ...prev, telegramSendDetailed: e.target.checked }))}
+                                className="w-3.5 h-3.5 accent-sky-500 rounded"
+                              />
+                              <span className="text-white">📝 Relatório Detalhado por Prompt Gerado</span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ========================================================= */}
+                      {/* ABA 5: EXECUÇÃO & LOGS */}
+                      {/* ========================================================= */}
+                      {macroActiveTab === 'execution' && (
+                        <div className="space-y-3.5 text-xs">
+                          {/* Barra Principal de Controle: Iniciar / Pausar / Parar */}
+                          <div className="flex items-center gap-2">
+                            {macroState === 'running' ? (
                               <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>IA Analisando Processo e Visão...</span>
+                                <button
+                                  type="button"
+                                  onClick={handlePauseMacro}
+                                  className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-2xl shadow-lg shadow-amber-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  <Pause className="w-4 h-4 fill-current" />
+                                  <span>Pausar Robô</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleStopMacro}
+                                  className="px-4 py-3 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-2xl shadow-lg shadow-rose-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  <Square className="w-4 h-4 fill-current" />
+                                  <span>Parar</span>
+                                </button>
+                              </>
+                            ) : macroState === 'paused' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={handleResumeMacro}
+                                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-2xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  <Play className="w-4 h-4 fill-current" />
+                                  <span>Retomar Robô</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleStopMacro}
+                                  className="px-4 py-3 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-2xl shadow-lg shadow-rose-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  <Square className="w-4 h-4 fill-current" />
+                                  <span>Parar</span>
+                                </button>
                               </>
                             ) : (
-                              <>
-                                <Sparkles className="w-4 h-4" />
-                                <span>🧠 Analisar Processo & Criar Macro com IA</span>
-                              </>
+                              <button
+                                type="button"
+                                onClick={handleStartMacro}
+                                disabled={macroPrompts.length === 0}
+                                className="w-full py-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-extrabold rounded-2xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+                              >
+                                <Play className="w-4 h-4 fill-current" />
+                                <span>Iniciar Execução no FLOW</span>
+                              </button>
                             )}
-                          </button>
+                          </div>
+
+                          {/* Card de Telemetria e Progresso ao Vivo */}
+                          <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ação Atual no FLOW:</span>
+                              {macroElapsedSeconds > 0 && (
+                                <span className="font-mono text-[11px] text-amber-400 font-bold">
+                                  ⏱ {Math.floor(macroElapsedSeconds / 60).toString().padStart(2, '0')}:{(macroElapsedSeconds % 60).toString().padStart(2, '0')}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="font-bold text-white text-xs flex items-center gap-2">
+                              {macroState === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />}
+                              <span>{macroCurrentAction || 'Aguardando início...'}</span>
+                            </p>
+
+                            {/* Contador Regressivo */}
+                            {macroCountdown.remaining > 0 && (
+                              <div className="p-2 bg-amber-950/30 border border-amber-500/30 rounded-xl text-amber-300 font-bold flex items-center justify-between text-[11px]">
+                                <span>⏳ {macroCountdown.label || 'Aguardando geração'}:</span>
+                                <span className="font-mono text-xs">{macroCountdown.remaining}s restantes</span>
+                              </div>
+                            )}
+
+                            {/* Barra de Progresso */}
+                            {macroPrompts.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                  <span>Progresso dos Prompts</span>
+                                  <span>
+                                    {macroPrompts.filter(p => p.status === 'completed').length} / {macroPrompts.filter(p => p.checked).length} concluídos
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 transition-all duration-300"
+                                    style={{
+                                      width: `${
+                                        macroPrompts.filter(p => p.checked).length > 0
+                                          ? Math.round((macroPrompts.filter(p => p.status === 'completed').length / macroPrompts.filter(p => p.checked).length) * 100)
+                                          : 0
+                                      }%`
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Terminal de Logs ao Vivo */}
+                          <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-2">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <div className="flex items-center gap-1.5">
+                                <Terminal className="w-3 h-3 text-indigo-400" />
+                                <span>Terminal de Execução do Robô</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setMacroLogs([])}
+                                className="text-slate-500 hover:text-slate-300 transition"
+                              >
+                                Limpar
+                              </button>
+                            </div>
+
+                            <div className="h-44 overflow-y-auto font-mono text-[10.5px] space-y-1 pr-1">
+                              {macroLogs.length === 0 ? (
+                                <p className="text-slate-600 italic">Nenhum evento registrado ainda.</p>
+                              ) : (
+                                macroLogs.map((log, idx) => (
+                                  <div key={idx} className="flex items-start gap-1.5 leading-relaxed">
+                                    <span className="text-slate-600 text-[9px] shrink-0 font-mono mt-0.5">{log.time}</span>
+                                    <span
+                                      className={`break-all ${
+                                        log.type === 'success'
+                                          ? 'text-emerald-400 font-semibold'
+                                          : log.type === 'error'
+                                          ? 'text-rose-400 font-semibold'
+                                          : log.type === 'warning'
+                                          ? 'text-amber-300'
+                                          : 'text-slate-300'
+                                      }`}
+                                    >
+                                      {log.message}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
 
                     </div>
                   </div>
+
+                  {/* MODAL 1: Colar Roteiro */}
+                  {isMacroPasteModalOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-4 text-slate-200 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-extrabold text-white text-sm flex items-center gap-2">
+                            <span>📋 Colar Roteiro ou Prompts</span>
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroPasteModalOpen(false)}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          Cole seu texto de roteiro contendo carrosséis, slides, diálogos e prompts de imagem. O sistema detectará automaticamente a estrutura.
+                        </p>
+                        <textarea
+                          rows={10}
+                          value={macroPasteText}
+                          onChange={(e) => setMacroPasteText(e.target.value)}
+                          placeholder="Cole aqui seu roteiro ou lista de prompts..."
+                          className="w-full p-3 bg-slate-950 border border-slate-800 rounded-2xl text-xs font-mono text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroPasteModalOpen(false)}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handlePasteScriptConfirm}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition"
+                          >
+                            Processar e Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODAL 2: Adicionar Prompt Manual */}
+                  {isMacroAddPromptModalOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full space-y-4 text-slate-200 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-extrabold text-white text-sm">
+                            <span>+ Adicionar Prompt Manual</span>
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroAddPromptModalOpen(false)}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Título do Slide / Cena:
+                            </label>
+                            <input
+                              type="text"
+                              value={macroNewPromptTitle}
+                              onChange={(e) => setMacroNewPromptTitle(e.target.value)}
+                              placeholder="Ex: Slide 1 - O Segredo Revelado"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Texto de Fala nos Balões (Opcional):
+                            </label>
+                            <input
+                              type="text"
+                              value={macroNewPromptDialogue}
+                              onChange={(e) => setMacroNewPromptDialogue(e.target.value)}
+                              placeholder="Ex: Você não vai acreditar no que aconteceu..."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Prompt de Imagem (Inglês ou Português):
+                            </label>
+                            <textarea
+                              rows={4}
+                              value={macroNewPromptText}
+                              onChange={(e) => setMacroNewPromptText(e.target.value)}
+                              placeholder="Descreva a cena visual em detalhes..."
+                              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroAddPromptModalOpen(false)}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAddManualPrompt}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition"
+                          >
+                            Adicionar Prompt
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODAL 3: Adicionar Personagem Manual */}
+                  {isMacroAddCharModalOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full space-y-4 text-slate-200 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-extrabold text-white text-sm">
+                            <span>+ Novo Personagem</span>
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroAddCharModalOpen(false)}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Nome do Personagem:
+                            </label>
+                            <input
+                              type="text"
+                              value={macroNewCharName}
+                              onChange={(e) => setMacroNewCharName(e.target.value)}
+                              placeholder="Ex: Sara, Carlos, Doutor..."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Cor Predominante:
+                            </label>
+                            <input
+                              type="text"
+                              value={macroNewCharColor}
+                              onChange={(e) => setMacroNewCharColor(e.target.value)}
+                              placeholder="Ex: Camiseta Azul, Jaqueta Vermelha..."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Traços Físicos / Descrição:
+                            </label>
+                            <input
+                              type="text"
+                              value={macroNewCharFeatures}
+                              onChange={(e) => setMacroNewCharFeatures(e.target.value)}
+                              placeholder="Ex: Cabelo castanho cacheado, olhos castanhos..."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Foto / Avatar de Referência:
+                            </label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  const r = new FileReader();
+                                  r.onload = () => {
+                                    setMacroNewCharAvatar(r.result as string);
+                                  };
+                                  r.readAsDataURL(e.target.files[0]);
+                                }
+                              }}
+                              className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer"
+                            />
+                            {macroNewCharAvatar && (
+                              <div className="w-14 h-14 mt-2 rounded-xl overflow-hidden border border-slate-700">
+                                <img src={macroNewCharAvatar} alt="Avatar" className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsMacroAddCharModalOpen(false)}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAddMacroCharacter}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition"
+                          >
+                            Salvar Personagem
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               )}
 

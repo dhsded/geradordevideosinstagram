@@ -183,6 +183,20 @@ function createMainWindow() {
     console.warn('[Instagram Session] Aviso ao configurar partição:', igSessErr.message);
   }
 
+  // Configuração da Sessão Persistente do Google FLOW (Labs)
+  try {
+    const flowSession = session.fromPartition('persist:flow_session');
+    flowSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+    flowSession.on('will-download', (event, item) => {
+      const downloadsFolder = path.join(os.homedir(), 'Downloads');
+      const targetFile = path.join(downloadsFolder, item.getFilename());
+      item.setSavePath(targetFile);
+      console.log(`[Electron Download FLOW] Salvando arquivo para: ${targetFile}`);
+    });
+  } catch (flowSessErr) {
+    console.warn('[FLOW Session] Aviso ao configurar partição:', flowSessErr.message);
+  }
+
   // Exibir tela de Splash instantânea enquanto o backend compila/inicia
   const splashHtml = `
     <!DOCTYPE html>

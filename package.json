@@ -31,6 +31,7 @@
       "build/**/*",
       "main.cjs",
       "preload.js",
+      "flow_macro/**/*",
       "keys.json",
       "metadata.json",
       "package.json"
