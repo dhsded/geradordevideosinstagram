@@ -58,6 +58,29 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}): Promise<Re
 };
 
 export type DialogueLanguage = 'pt' | 'en' | 'es' | 'all';
+export type CarouselLayoutMode = 'deep_phrases' | 'dialogue_bubbles';
+export type TopTypographyStyle = 'sans_bold' | 'serif_editorial' | 'minimalist_clean';
+
+export const TOP_TYPOGRAPHY_STYLES: Record<TopTypographyStyle, { name: string; fontName: string; description: string; sample: string }> = {
+  sans_bold: {
+    name: 'Caixa Alta Moderna (Sans-Serif Bold)',
+    fontName: 'Montserrat / Inter Bold - All Caps',
+    description: 'Texto em maiúsculas, negrito marcante, centralizado no topo com respiro limpo. O estilo viral mais compartilhado do Instagram.',
+    sample: 'NINGUÉM TE ENSINOU A SE PERDOAR'
+  },
+  serif_editorial: {
+    name: 'Serifada Editorial & Poética',
+    fontName: 'Playfair / Merriweather Semibold',
+    description: 'Tipografia clássica, elegante e intimista. Ideal para poesia existencial, reflexões profundas e psicologia refinada.',
+    sample: 'O silêncio também é uma forma de resposta'
+  },
+  minimalist_clean: {
+    name: 'Minimalista Clean & Espaçada',
+    fontName: 'Helvetica / Roboto Light - Tracking Aberto',
+    description: 'Linhas finas, elegantes e com respiro visual equilibrado. Para uma estética sofisticada e contemplativa.',
+    sample: 'VOCÊ NÃO PRECISA CARREGAR TUDO SOZINHO'
+  }
+};
 
 export const LANGUAGES = [
   { id: 'pt' as const, label: 'Português', flag: '🇧🇷', code: 'PT', name: 'Português (Brasil)' },
@@ -87,6 +110,8 @@ interface GeneratedCarousel {
   title?: string;
   theme?: string;
   language?: DialogueLanguage | string;
+  layoutMode?: CarouselLayoutMode;
+  typographyStyle?: TopTypographyStyle | string;
   coverImagePrompt?: string;
   slides: {
     slideNumber: number;
@@ -95,6 +120,12 @@ interface GeneratedCarousel {
     textInBubblesEn?: string;
     textInBubblesEs?: string;
     textInBubbles?: string;
+    topPhrasePt?: string;
+    topPhraseEn?: string;
+    topPhraseEs?: string;
+    topPhrase?: string;
+    typographyStyle?: string;
+    layoutMode?: CarouselLayoutMode;
     descriptionPt: string;
     imageUrl?: string;
     originalImagePreview?: string;
@@ -493,6 +524,8 @@ export interface LightboxGalleryItem {
   prompt?: string;
   consistencyScore?: string;
   consistencyFeedback?: string;
+  layoutMode?: CarouselLayoutMode;
+  typographyStyle?: string;
 }
 
 export interface ExecutionLogItem {
@@ -727,6 +760,8 @@ export default function App() {
   const [characterDescription, setCharacterDescription] = useState('');
   const [dialogueLanguage, setDialogueLanguage] = useState<DialogueLanguage>('pt');
   const [speechBubbleMode, setSpeechBubbleMode] = useState<'bubbles-ai-safe' | 'clean-art'>('bubbles-ai-safe');
+  const [carouselLayoutMode, setCarouselLayoutMode] = useState<CarouselLayoutMode>('deep_phrases');
+  const [topTypographyStyle, setTopTypographyStyle] = useState<TopTypographyStyle>('sans_bold');
   const [analyzingCharacterIndex, setAnalyzingCharacterIndex] = useState<{ [key: number]: boolean }>({});
   const [detectedCharacterDetails, setDetectedCharacterDetails] = useState<({ name: string; color: string; secondaryColors: string[]; features: string; englishDesc: string } | undefined)[]>([]);
   
@@ -3983,7 +4018,9 @@ export default function App() {
         totalSlides: carouselResult.slides.length,
         description: s.descriptionPt || '',
         dialogue: dialogue,
-        prompt: s.imagePromptEn || ''
+        prompt: s.imagePromptEn || '',
+        layoutMode: s.layoutMode || carouselResult.layoutMode || carouselLayoutMode,
+        typographyStyle: s.typographyStyle || carouselResult.typographyStyle || topTypographyStyle
       };
     });
 
@@ -4797,10 +4834,19 @@ export default function App() {
         }
         car.slides?.forEach((s) => {
           const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
+          const isDeep = s.layoutMode === 'deep_phrases' || car.layoutMode === 'deep_phrases';
           scriptText += `[SLIDE ${s.slideNumber}]\n`;
           scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
           scriptText += `• Prompt de Imagem (FLOW / I.A): ${s.imagePromptEn}\n`;
-          if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+          if (bubbleText) {
+            if (isDeep) {
+              const typoKey = s.typographyStyle || car.typographyStyle || 'sans_bold';
+              const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
+              scriptText += `• Frase no Topo [Fonte Fixa: ${fontName}]: "${bubbleText}"\n`;
+            } else {
+              scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+            }
+          }
           scriptText += `\n`;
         });
         scriptText += `----------------------------------------------------\n\n`;
@@ -4830,10 +4876,19 @@ export default function App() {
       let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${carouselResult.slides.length} SLIDES): ${carouselResult.title || topic || 'Carrossel Sem Título'} ===\n\n`;
       carouselResult.slides.forEach((s) => {
         const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
+        const isDeep = s.layoutMode === 'deep_phrases' || carouselResult.layoutMode === 'deep_phrases';
         scriptText += `[SLIDE ${s.slideNumber}]\n`;
         scriptText += `• Descrição da Cena: ${s.descriptionPt}\n`;
         scriptText += `• Prompt de Imagem (FLOW / I.A): ${s.imagePromptEn}\n`;
-        if (bubbleText) scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+        if (bubbleText) {
+          if (isDeep) {
+            const typoKey = s.typographyStyle || carouselResult.typographyStyle || 'sans_bold';
+            const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
+            scriptText += `• Frase no Topo [Fonte Fixa: ${fontName}]: "${bubbleText}"\n`;
+          } else {
+            scriptText += `• Texto no Balão: "${bubbleText}"\n`;
+          }
+        }
         scriptText += `\n`;
       });
       setAuditScriptInput(scriptText.trim());
@@ -5442,18 +5497,23 @@ export default function App() {
           content += `####################################################\n\n`;
 
           car.slides?.forEach((slide) => {
+            const isDeep = slide.layoutMode === 'deep_phrases' || car.layoutMode === 'deep_phrases';
+            const typoKey = slide.typographyStyle || car.typographyStyle || 'sans_bold';
+            const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
+            const textHeader = isDeep ? `Frase no Topo [Fonte: ${fontName}]` : `Texto no Balão`;
+
             content += `--- SLIDE ${slide.slideNumber} ---\n`;
             content += `Descrição da Cena: ${slide.descriptionPt}\n`;
             if (isEn) {
-              content += `Texto no Balão (EN): "${slide.textInBubblesEn || slide.textInBubbles || ''}"\n`;
+              content += `${textHeader} (EN): "${slide.textInBubblesEn || slide.textInBubbles || ''}"\n`;
             } else if (isEs) {
-              content += `Texto no Balão (ES): "${slide.textInBubblesEs || slide.textInBubbles || ''}"\n`;
+              content += `${textHeader} (ES): "${slide.textInBubblesEs || slide.textInBubbles || ''}"\n`;
             } else if (isAll) {
-              content += `Texto no Balão (PT): "${slide.textInBubblesPt || ''}"\n`;
-              content += `Texto no Balão (EN): "${slide.textInBubblesEn || ''}"\n`;
-              content += `Texto no Balão (ES): "${slide.textInBubblesEs || ''}"\n`;
+              content += `${textHeader} (PT): "${slide.textInBubblesPt || ''}"\n`;
+              content += `${textHeader} (EN): "${slide.textInBubblesEn || ''}"\n`;
+              content += `${textHeader} (ES): "${slide.textInBubblesEs || ''}"\n`;
             } else {
-              content += `Texto no Balão (PT): "${slide.textInBubblesPt || slide.textInBubbles || ''}"\n`;
+              content += `${textHeader} (PT): "${slide.textInBubblesPt || slide.textInBubbles || ''}"\n`;
             }
             content += `[PROMPT DE IMAGEM (FLOW / I.A)]:\n${slide.imagePromptEn || ''}\n\n`;
           });
@@ -5481,18 +5541,23 @@ export default function App() {
         let content = `--- CARROSSEL INSTAGRAM: ${carouselResult.title || 'POSTFORGE'} ---\n\n`;
         
         carouselResult.slides?.forEach((slide) => {
+          const isDeep = slide.layoutMode === 'deep_phrases' || carouselResult.layoutMode === 'deep_phrases';
+          const typoKey = slide.typographyStyle || carouselResult.typographyStyle || 'sans_bold';
+          const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
+          const textHeader = isDeep ? `Frase no Topo [Fonte Fixa: ${fontName}]` : `Texto nos Balões`;
+
           content += `SLIDE ${slide.slideNumber}\n`;
           content += `Descrição: ${slide.descriptionPt || ''}\n`;
           if (isEn) {
-            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || slide.textInBubbles || ''}\n\n`;
+            content += `${textHeader} (EN): ${slide.textInBubblesEn || slide.textInBubbles || ''}\n\n`;
           } else if (isEs) {
-            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || slide.textInBubbles || ''}\n\n`;
+            content += `${textHeader} (ES): ${slide.textInBubblesEs || slide.textInBubbles || ''}\n\n`;
           } else if (isAll) {
-            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || ''}\n`;
-            content += `Texto nos Balões (EN): ${slide.textInBubblesEn || ''}\n`;
-            content += `Texto nos Balões (ES): ${slide.textInBubblesEs || ''}\n\n`;
+            content += `${textHeader} (PT): ${slide.textInBubblesPt || ''}\n`;
+            content += `${textHeader} (EN): ${slide.textInBubblesEn || ''}\n`;
+            content += `${textHeader} (ES): ${slide.textInBubblesEs || ''}\n\n`;
           } else {
-            content += `Texto nos Balões (PT): ${slide.textInBubblesPt || slide.textInBubbles || ''}\n\n`;
+            content += `${textHeader} (PT): ${slide.textInBubblesPt || slide.textInBubbles || ''}\n\n`;
           }
           content += `[PROMPT DE IMAGEM - INGLÊS]\n`;
           content += `${slide.imagePromptEn || ''}\n\n`;
@@ -5904,24 +5969,48 @@ export default function App() {
               curY += descHeight + 2.5;
             }
 
-            // Sub-box 2: Speech Bubble / Dialogue
+            // Sub-box 2: Speech Bubble / Dialogue OR Deep Phrase at Top
             if (dialHeight > 0) {
-              doc.setFillColor(239, 246, 255); // blue-50
-              doc.setDrawColor(191, 219, 254); // blue-200
-              doc.roundedRect(margin + 5, curY, boxWidth, dialHeight, 1.5, 1.5, 'FD');
+              const isDeep = slide.layoutMode === 'deep_phrases' || car.layoutMode === 'deep_phrases';
+              const typoKey = slide.typographyStyle || car.typographyStyle || 'sans_bold';
+              const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
 
-              doc.setFontSize(6.5);
-              doc.setFont("helvetica", "bold");
-              doc.setTextColor(29, 78, 216); // blue-700
-              doc.text("FALA NO BALÃO DE DIÁLOGO", margin + 7, curY + 3.8);
+              if (isDeep) {
+                doc.setFillColor(254, 243, 199); // amber-100
+                doc.setDrawColor(251, 191, 36); // amber-400
+                doc.roundedRect(margin + 5, curY, boxWidth, dialHeight, 1.5, 1.5, 'FD');
 
-              doc.setFontSize(7.5);
-              doc.setFont("helvetica", "bold");
-              doc.setTextColor(30, 58, 138); // blue-900
-              let lineY = curY + 7.5;
-              for (const l of dialLines) {
-                doc.text(l, margin + 7, lineY);
-                lineY += 3.8;
+                doc.setFontSize(6.5);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(180, 83, 9); // amber-700
+                doc.text(`FRASE DE IMPACTO NO TOPO [FONTE FIXA: ${cleanPdfText(fontName).toUpperCase()}]`, margin + 7, curY + 3.8);
+
+                doc.setFontSize(7.5);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(120, 53, 15); // amber-900
+                let lineY = curY + 7.5;
+                for (const l of dialLines) {
+                  doc.text(l, margin + 7, lineY);
+                  lineY += 3.8;
+                }
+              } else {
+                doc.setFillColor(239, 246, 255); // blue-50
+                doc.setDrawColor(191, 219, 254); // blue-200
+                doc.roundedRect(margin + 5, curY, boxWidth, dialHeight, 1.5, 1.5, 'FD');
+
+                doc.setFontSize(6.5);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(29, 78, 216); // blue-700
+                doc.text("FALA NO BALÃO DE DIÁLOGO", margin + 7, curY + 3.8);
+
+                doc.setFontSize(7.5);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(30, 58, 138); // blue-900
+                let lineY = curY + 7.5;
+                for (const l of dialLines) {
+                  doc.text(l, margin + 7, lineY);
+                  lineY += 3.8;
+                }
               }
               curY += dialHeight + 2.5;
             }
@@ -6100,17 +6189,23 @@ export default function App() {
           car.slides?.forEach((slide) => {
             children.push(new Paragraph({ text: "" }));
             children.push(new Paragraph({ text: `SLIDE ${slide.slideNumber}`, heading: HeadingLevel.HEADING_3 }));
+            const isDeep = slide.layoutMode === 'deep_phrases' || car.layoutMode === 'deep_phrases';
+            const typoKey = slide.typographyStyle || car.typographyStyle || 'sans_bold';
+            const fontName = TOP_TYPOGRAPHY_STYLES[typoKey as TopTypographyStyle]?.fontName || typoKey;
+            const textLabel = isDeep ? `Frase no Topo [Fonte: ${fontName}]` : `Diálogos`;
+            const labelColor = isDeep ? "B45309" : "2563EB";
+
             children.push(new Paragraph({ children: [new TextRun({ text: "Descrição Visual: ", bold: true }), new TextRun({ text: slide.descriptionPt || '' })] }));
             if (isEn) {
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEn || slide.textInBubbles || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (EN): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesEn || slide.textInBubbles || '' })] }));
             } else if (isEs) {
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEs || slide.textInBubbles || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (ES): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesEs || slide.textInBubbles || '' })] }));
             } else if (isAll) {
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (EN): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (ES): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (PT): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesPt || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (EN): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesEn || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (ES): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesEs || '' })] }));
             } else {
-              children.push(new Paragraph({ children: [new TextRun({ text: "Diálogos (PT): ", bold: true, color: "2563EB" }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: `${textLabel} (PT): `, bold: true, color: labelColor }), new TextRun({ text: slide.textInBubblesPt || slide.textInBubbles || '' })] }));
             }
             children.push(new Paragraph({ children: [new TextRun({ text: "Prompt de Imagem (FLOW / I.A): ", bold: true, color: "059669" }), new TextRun({ text: slide.imagePromptEn || '' })] }));
           });
@@ -6424,12 +6519,20 @@ export default function App() {
   };
 
   const handleShieldPromptAgainstBlankBubbles = (slideIdx: number) => {
-    const shieldSnippet = ` | CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. Only the speaking character has a speech bubble with the written text. The listening character MUST NOT have any speech bubble, thought bubble, or text above it. Exactly one bubble in the entire frame, with no unfilled bubbles anywhere.`;
+    const isTargetDeep = carouselResult?.slides?.[slideIdx]?.layoutMode === 'deep_phrases' 
+      || carouselResult?.layoutMode === 'deep_phrases'
+      || batchCarouselResults[activeCarouselIndex]?.slides?.[slideIdx]?.layoutMode === 'deep_phrases'
+      || batchCarouselResults[activeCarouselIndex]?.layoutMode === 'deep_phrases'
+      || carouselLayoutMode === 'deep_phrases';
+
+    const shieldSnippet = isTargetDeep
+      ? ` | STRICT COMPOSITION RULE: ABSOLUTELY NO SPEECH BUBBLES, NO DIALOGUE CLOUDS, NO FLOATING TEXT. The top 25-30% of the image MUST remain clean, uncluttered, and open with negative space for typography overlay. Characters interact through expressive gestures, authentic glances and meaningful cinematic silence.`
+      : ` | CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. Only the speaking character has a speech bubble with the written text. The listening character MUST NOT have any speech bubble, thought bubble, or text above it. Exactly one bubble in the entire frame, with no unfilled bubbles anywhere.`;
 
     if (carouselResult && carouselResult.slides && carouselResult.slides[slideIdx]) {
       const currentPrompt = carouselResult.slides[slideIdx].imagePromptEn || '';
-      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE')) {
-        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui a blindagem anti-balão vazio.`);
+      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE') || currentPrompt.includes('STRICT COMPOSITION RULE')) {
+        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui as diretrizes de blindagem aplicadas.`);
         return;
       }
       const updatedSlides = [...carouselResult.slides];
@@ -6438,15 +6541,15 @@ export default function App() {
         imagePromptEn: currentPrompt + shieldSnippet
       };
       setCarouselResult({ ...carouselResult, slides: updatedSlides });
-      addLog('success', 'PROMPT', `🛡️ Slide ${slideIdx + 1} blindado contra balões vazios (FLOW / I.A)!`);
+      addLog('success', 'PROMPT', isTargetDeep ? `🛡️ Slide ${slideIdx + 1} blindado com respiro de 25% no topo e zero balões!` : `🛡️ Slide ${slideIdx + 1} blindado contra balões vazios (FLOW / I.A)!`);
       return;
     }
 
     if (batchCarouselResults.length > 0 && batchCarouselResults[activeCarouselIndex]?.slides?.[slideIdx]) {
       const targetCar = batchCarouselResults[activeCarouselIndex];
       const currentPrompt = targetCar.slides[slideIdx].imagePromptEn || '';
-      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE')) {
-        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui a blindagem anti-balão vazio.`);
+      if (currentPrompt.includes('CRITICAL ANTI-ARTIFACT RULE') || currentPrompt.includes('STRICT COMPOSITION RULE')) {
+        addLog('info', 'PROMPT', `O Slide ${slideIdx + 1} já possui as diretrizes de blindagem aplicadas.`);
         return;
       }
       const updatedSlides = [...targetCar.slides];
@@ -6460,7 +6563,7 @@ export default function App() {
         slides: updatedSlides
       };
       setBatchCarouselResults(updatedBatch);
-      addLog('success', 'PROMPT', `🛡️ Slide ${slideIdx + 1} do Carrossel ${activeCarouselIndex + 1} blindado contra balões vazios!`);
+      addLog('success', 'PROMPT', isTargetDeep ? `🛡️ Slide ${slideIdx + 1} do Carrossel ${activeCarouselIndex + 1} blindado com respiro de 25% no topo e zero balões!` : `🛡️ Slide ${slideIdx + 1} do Carrossel ${activeCarouselIndex + 1} blindado contra balões vazios!`);
     }
   };
 
@@ -6782,182 +6885,134 @@ export default function App() {
         };
       } else {
         // CAROUSEL LOGIC
+        const isDeepPhrasesMode = carouselLayoutMode === 'deep_phrases';
+        const selectedTypoInfo = TOP_TYPOGRAPHY_STYLES[topTypographyStyle] || TOP_TYPOGRAPHY_STYLES.sans_bold;
+
         const topicInstruction = hasManualTopic
           ? `O tema base é: "${temaFinal}".`
           : (referencePdfs.length > 0 || contextImages.length > 0)
             ? `ATENÇÃO: O usuário NÃO forneceu um tema manual por texto, mas anexou arquivo(s) PDF de referência. Você DEVE extrair a essência, ensinamentos práticos ou reflexões centrais do PDF anexado e utilizá-los como base de todo este carrossel.`
             : `O tema base é: "${temaFinal}".`;
 
-        promptText = `Você é um engenheiro de prompts especialista em Carrosséis do Instagram e geração de imagens por IA.
-        O usuário quer um Carrossel com ${sceneCount} imagens (slides).
-        O estilo de arte DEVE ser estritamente "${artStyle}".
+        promptText = `Você é um diretor de criação e engenheiro de prompts de nível mundial, especialista em Carrosséis Virais do Instagram de altíssimo impacto emocional, retenção e compartilhamentos.
+        O usuário quer um Carrossel com ${sceneCount} slides.
+        O estilo visual de arte DEVE ser estritamente "${artStyle}".
         O nicho do canal é: "${niche}".
-        O tom do diálogo dos slides deve ser focado em: "${carouselTone}".
+        O tom narrativo/emocional dos slides deve ser focado em: "${carouselTone}".
         ${topicInstruction}\n`;
 
-        if (characterCount > 1) {
-          if (characterDescription.trim()) {
-            promptText += `A dinâmica deve ser obrigatoriamente entre os seguintes personagens descritos pelo usuário: "${characterDescription}". Eles devem conversar ou interagir de forma engajadora, profunda e coerente com o tom "${carouselTone}" e o nicho "${niche}".\n`;
+        // 1. DIRETRIZ DE PERSONAGENS (100% DINÂMICA E LIVRE DE VÍCIOS)
+        promptText += `\n=== DIRETRIZ DE PERSONAGENS & ELEMENTOS VISUAIS ===\n`;
+        if (characterDescription.trim()) {
+          promptText += `- PERSONAGEM(NS) DEFINIDO(S) PELO USUÁRIO: "${characterDescription}". Você DEVE representar fielmente e com consistência este(s) personagem(ns) ao longo de todos os slides, integrando suas características ao nicho "${niche}" e ao tom "${carouselTone}".\n`;
+        } else if (characterCount > 1) {
+          if (niche === 'Fitness') {
+            promptText += `- PERSONAGENS DO CONTEXTO FITNESS: Represente dois indivíduos do ecossistema fitness (ex: um treinador e um atleta em evolução, ou duas pessoas superando limites juntos).\n`;
+          } else if (niche === 'Top 10 Filmes e Séries') {
+            promptText += `- PERSONAGENS DE CINEMA: Represente duas pessoas apaixonadas por histórias e cinematografia debruçadas sobre filmes marcantes.\n`;
+          } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
+            promptText += `- PERSONAGENS TÉCNICOS: Um profissional/especialista experiente demonstrando soluções práticas a um aprendiz ou consumidor.\n`;
           } else {
-            if (niche === 'Fitness') {
-              promptText += `A dinâmica deve ser obrigatoriamente entre dois personagens do contexto fitness, como um treinador motivador e um aluno dedicado/desafiado, ou um indivíduo e sua voz interior consciente de esforço e superação. Eles devem conversar ou interagir de forma altamente engajadora.\n`;
-            } else if (niche === 'Top 10 Filmes e Séries') {
-              promptText += `A dinâmica deve ser obrigatoriamente entre personagens apaixonadas por cinema, como dois cinéfilos debatendo opiniões sobre produções marcantes, ou apresentadores carismáticos de um ranking especial.\n`;
-            } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
-              promptText += `A dinâmica deve ser entre um mascote/especialista técnico (ex: mecânico experiente, operário de macacão e capacete, ou mascote estilizado com ferramentas) e o espectador ou aprendiz, ensinando o diagnóstico e a solução prática com autoridade e carisma.\n`;
-            } else {
-              promptText += `A dinâmica deve ser obrigatoriamente entre dois personagens reflexivos (ex: o clássico Cérebro que representa Razão/Lógica e o Coração que representa Emoção/Sentimento, ou terapeuta e participante). Eles devem estar conversando ou debatendo de forma coerente com o tom "${carouselTone}" e o nicho "${niche}". O objetivo é criar profunda conexão com o leitor.\n`;
-            }
+            promptText += `- PERSONAGENS: Represente dois personagens que se encaixem organicamente no tema e no nicho "${niche}" (ex: duas pessoas em momento de acolhimento mútuo, mentor e discípulo, duas almas afins compartilhando silêncio e reflexão, ou arquétipos pertinentes ao tema). IMPORTANTE: NÃO force ou presuma personagens pré-definidos como coração e cérebro a menos que o usuário tenha pedido expressamente.\n`;
           }
         } else {
-          if (characterDescription.trim()) {
-            promptText += `O personagem principal é descrito como: "${characterDescription}". Ele(a) deve expressar pensamentos, reflexões ou falas de forma coerente com o tom "${carouselTone}" e o nicho "${niche}".\n`;
+          if (niche === 'Fitness') {
+            promptText += `- PERSONAGEM: Um indivíduo autêntico enfrentando a sua jornada de disciplina e superação física/mental.\n`;
+          } else if (niche === 'Top 10 Filmes e Séries') {
+            promptText += `- PERSONAGEM: Um amante de cinema ou narrador imerso na atmosfera das produções.\n`;
+          } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
+            promptText += `- PERSONAGEM: Um especialista ou praticante focado na resolução manual da tarefa com ferramentas e peças.\n`;
           } else {
-            if (niche === 'Fitness') {
-              promptText += `O personagem principal é um atleta comprometido ou alguém batalhando pela sua saúde, expressando seus pensamentos ou aprendizados em sintonia com o tom "${carouselTone}".\n`;
-            } else if (niche === 'Top 10 Filmes e Séries') {
-              promptText += `O personagem principal é um apresentador carismático de cinema ou um fã fanático contando as melhores indicações em sintonia com o tom "${carouselTone}".\n`;
-            } else if (niche === 'Soluções para o Dia a Dia (Faça Você Mesmo)') {
-              promptText += `O personagem principal é um especialista técnico ou mascote uniformizado (ex: macacão de trabalho, capacete de obra ou óculos de proteção) que apresenta com orgulho as peças, aponta as setas, defeitos e macetes práticos.\n`;
-            } else {
-              promptText += `O personagem principal deve estar sozinho "falando alto", expressando pensamentos introspectivos e emotivos em sintonia com o tom "${carouselTone}" de forma marcante.\n`;
-            }
+            promptText += `- PERSONAGEM: Uma figura humana, personagem expressivo ou silhueta poética que personifique a dor, a busca, o alívio ou o aprendizado do tema "${niche}". IMPORTANTE: Crie um personagem profundo e contextual ao tema. NÃO force personagens estereotipados.\n`;
           }
         }
 
-        if (carouselTone === 'Acolhedor / Compassivo') {
-          promptText += `Como o tom é Acolhedor / Compassivo, os diálogos nos balões devem ser suaves, focados em validação emocional, carinho e acolhimento sem cobranças ou julgamento, ideal para processos de cura interna e autocompaixão.\n`;
-        } else if (carouselTone === 'Terapêutico / ACT') {
-          promptText += `Como o tom é Terapêutico / ACT, foque em observação neutra dos pensamentos ("você não é seus pensamentos"), aceitação de emoções difíceis sem lutar contra elas e presença consciente no momento presente.\n`;
-        } else if (carouselTone === 'Vulnerável / Íntimo') {
-          promptText += `Como o tom é Vulnerável / Íntimo, foque em conversas sinceras e profundas sobre carência, medos, sensação de abandono e dor emocional crua, gerando forte identificação com o leitor.\n`;
-        } else if (carouselTone === 'Encorajador / Reparador') {
-          promptText += `Como o tom é Encorajador / Reparador, foque em restaurar a autoestima, perdoar erros passados, reconstrução do amor-próprio e firmar compromissos pessoais positivos.\n`;
-        } else if (carouselTone === 'Psicológico') {
-          promptText += `Como o tom é Psicológico, foque em comportamentos, traumas, curas internas, autoconhecimento e o funcionamento da mente humana. Use termos que evoquem introspecção científica e emocional.\n`;
-        } else if (carouselTone === 'Filosófico') {
-          promptText += `Como o tom é Filosófico, foque em grandes questões da existência, verdade, tempo, ética, moral e a natureza do ser. Cite ou aluda a correntes filosóficas de forma poética.\n`;
-        } else if (carouselTone === 'Profundidade') {
-          promptText += `Como o tom é de Profundidade, você DEVE atingir um patamar verdadeiramente existencial, visceral, poético e comovente.
-          - PROIBIÇÃO ABSOLUTA DE CLICHÊS DE AUTOAJUDA OU OTIMISMO TÓXICO: Banimento total de frases feitas como "o universo conspira", "sorria", "seja forte", "tudo passa", "permita-se sentir".
-          - FOQUE NA DOR INVISÍVEL E SILENCIOSA: O cansaço da alma de quem carrega tudo calado para não incomodar os outros; a sensação de solidão mesmo rodeado de pessoas; o medo de chegar ao fim da vida e perceber que viveu apenas para agradar aos outros; a exaustão de sustentar uma armadura pesada; a saudade da versão de si mesmo que existia antes da vida endurecer; a reconciliação dolorosa com nossas próprias cicatrizes.
-          - POÉTICA DO SILÊNCIO E NÓ NA GARGANTA: Escreva frases densas, poéticas e humanas que façam o leitor parar de rolar o feed, respirar fundo e sentir que a alma dele foi lida em voz alta.
-          - EXEMPLOS REAIS DO PADRÃO DE PROFUNDIDADE ESPERADO:
-            * "Eu não tô cansado do que faço. Tô cansado de fingir que tá tudo bem o tempo todo."
-            * "A gente passa metade da vida se escondendo pra não incomodar, e a outra metade se perguntando por que ninguém nos enxerga de verdade."
-            * "Tem dias em que o silêncio é a única resposta que sobrou pra um cansaço que nem dormindo passa."
-            * "Você não precisa ser forte agora. Pode deixar doer um pouco. Eu fico aqui com você."\n`;
-        } else if (carouselTone === 'Motivacional') {
-          promptText += `Como o tom é Motivacional, foque em acender a chama interior do leitor, motivá-lo a tomar decisões saudáveis, superar barreiras mentais e adotar hábitos vigorosos.\n`;
-        } else if (carouselTone === 'Tutorial / Passo a Passo') {
-          promptText += `Como o tom é de Tutorial / Passo a Passo, estruture cada slide de forma didática, com dicas práticas de treino, dieta ou hábitos que possam ser seguidos facilmente.\n`;
-        } else if (carouselTone === 'Curiosidades / Mitos') {
-          promptText += `Como o tom é de Curiosidades / Mitos, desminta teorias populares falsas ou traga fatos científicos incríveis que mudem a mentalidade do fitness.\n`;
-        } else if (carouselTone === 'Ranking / Top 10') {
-          promptText += `Como o tom é de Ranking / Top 10, ordene ou selecione os melhores filmes/séries em formato de ranking cativante, dando motivos e instigando à discussão nos comentários.\n`;
-        } else if (carouselTone === 'Recomendação Secreta') {
-          promptText += `Como o tom é de Recomendação Secreta, recomende uma obra-prima oculta com argumentos brilhantes, criando o desejo urgente de assistir.\n`;
-        } else if (carouselTone === 'Curiosidades / Bastidores') {
-          promptText += `Como o tom é de Curiosidades / Bastidores, revele segredos inacreditáveis ocorridos por trás das câmeras, curiosidades sobre roteiros e mistérios de produção.\n`;
-        } else if (carouselTone === 'Causa e Efeito (Se Essa Peça Falhar...)') {
-          promptText += `Como o tom é "Causa e Efeito (Se Essa Peça Falhar...)", estruture cada slide como um infográfico técnico diagramático de altíssimo engajamento:
-          - TÍTULO DE IMPACTO NO TOPO: Em caixa alta bold chamativa, ex: "SE ESSA PEÇA FALHAR, O QUE PARA DE FUNCIONAR?".
-          - FLUXO ESQUEMÁTICO DE SETAS (Cadeia Causal Implacável):
-            Cada linha/slide deve demonstrar: [ Peça 3D Renderizada / Ferramenta ] ➔ [ Falha no Sistema / Sintoma Visível ] ➔ [ Consequência Fatal / Motor Destruído / Carro Desliga / Não Liga com ícone de proibido ].
-          - EXEMPLOS CLÁSSICOS:
-            * Correia Dentada ➔ Pistões e Válvulas se chocam ➔ Motor Destruído Instantaneamente
-            * Alternador ➔ A Bateria Não Carrega ➔ O Carro Desliga em Movimento
-            * Bomba d'Água ➔ Líquido de arrefecimento não circula ➔ Superaquecimento / Junta Queima
-            * Bomba de Combustível ➔ Baixa pressão nos bicos injetores ➔ Motor não liga
-          - DIRETRIZES PARA O "imagePromptEn": Descreva um infográfico técnico educacional de alta definição com fundo sólido vibrante (ex: amarelo industrial/automotivo ou cinza técnico), peças mecânicas em render 3D hiper-detalhado com iluminação de produto, setas direcionais pretas grossas conectando as 3 etapas e etiquetas textuais legíveis sob cada imagem (Label: "[NOME DA PEÇA]" -> "[PROCESSO]" -> "[CONSEQUÊNCIA]").\n`;
-        } else if (carouselTone === 'A Falta Disso Causa Isso') {
-          promptText += `Como o tom é "A Falta Disso Causa Isso", estruture o carrossel no formato clássico de tela dividida (Split Screen horizontal) ou comparativo de causa x patologia:
-          - ESTRUTURA VISUAL DE ALTO CONTRASTE:
-            * PAINEL SUPERIOR: Texto grande em caixa alta bold "A FALTA DISSO", com uma seta amarela grossa destacando o detalhe técnico/peça essencial que as pessoas esquecem ou negligenciam (ex: a cantoneira de amarração na alvenaria, o anel o-ring de vedação, o relé protetor, o aditivo correto).
-            * PAINEL INFERIOR: Texto grande em caixa alta bold "CAUSA ISSO", com uma seta amarela apontando para o desastre/patologia estrutural resultante (ex: parede de reboco trincada de cima a baixo descolando do pilar, queima da ECU, vazamento destrutivo pelo teto, motor fundido).
-          - DIRETRIZES PARA O "imagePromptEn": Descreva a imagem em estilo fotográfico realista ou split-screen técnico de canteiro de obras / oficina, com setas amarelas chamativas apontando para os pontos exatos de causa e efeito.\n`;
-        } else if (carouselTone === 'Mito vs. Verdade (Com Mascote/Especialista)') {
-          promptText += `Como o tom é "Mito vs. Verdade (Com Mascote/Especialista)", estruture um infográfico desmistificador de alta autoridade:
-          - COLUNA DA ESQUERDA: "❌ MITO" em vermelho chamativo com o mascote/especialista em pose de dúvida ou segurando o item com a crença popular errada (ex: "O travesseiro serve para a vida toda", "Passar sabão na correia tira o barulho").
-          - COLUNA DA DIREITA: "✔️ VERDADE" em verde com o mascote apontando com lupa ou ferramenta, revelando o dado científico/técnico real (ex: "Após 2 anos, 1/3 do peso do travesseiro é formado por ácaros e suas fezes").
-          - CHECKLIST PRÁTICO: 2 a 3 tópicos com ícones gráficos de solução (ex: 🦠 perigos para saúde/motor; 📅 prazo correto de substituição; 🛡️ benefício final garantido).
-          - Se houver mascote (ex: o Touro Resolve em macacão de trabalho, capacete de obra e óculos de proteção), inclua-o ativamente nas duas colunas.\n`;
-        } else if (carouselTone === 'Macetes de Mestre / Passo a Passo DIY') {
-          promptText += `Como o tom é "Macetes de Mestre / Passo a Passo DIY", ensine soluções práticas de obra, oficina ou casa com passos numerados claros, mostrando truques de profissionais que economizam tempo e milhares de reais.\n`;
-        } else if (carouselTone === 'Diagnóstico Rápido / Como Identificar') {
-          promptText += `Como o tom é "Diagnóstico Rápido / Como Identificar", forneça um guia visual dos sintomas de falha: barulhos estranhos, fumaça, vibrações, folgas ou vazamentos, ensinando o leitor a identificar o defeito antes que vire um prejuízo gigantesco.\n`;
+        // 2. DIRETRIZ DO FORMATO DO CARROSSEL (FRASES NO TOPO VS BALÕES)
+        if (isDeepPhrasesMode) {
+          promptText += `\n=== MODO EXCLUSIVO: FRASES PROFUNDAS NO TOPO (SEM BALÕES DE DIÁLOGO) ===
+          - PROIBIÇÃO TOTAL E ABSOLUTA DE BALÕES DE DIÁLOGO / SPEECH BUBBLES:
+            * Os personagens JAMAIS devem ter balões de fala brotando da boca ou pairando na cena como quadrinhos infantis.
+            * A arte visual NÃO contém balões de quadrinhos, balões de pensamento ou texto sobreposto no meio da cena.
+            * Os personagens VIVENCIAM a cena em silêncio expressivo, com olhares tocantes, linguagem corporal rica, vulnerabilidade palpável e atmosfera cinematográfica.
+          
+          - ESTRUTURA VIRAL DE FRASES NO TOPO:
+            * Cada slide contém RIGOROSAMENTE UMA FRASE DE ALTO IMPACTO EMOCIONAL / EXISTENCIAL / FILOSÓFICO posicionada NO TOPO da imagem.
+            * O leitor lê a frase no topo e é arrebatado pela cena visual cinematográfica logo abaixo.
+            * PADRONIZAÇÃO TIPOGRÁFICA OBRIGATÓRIA: Todos os slides deste carrossel devem usar SEMPRE A MESMA FONTE e ESTILO:
+              Fonte Padronizada: "${selectedTypoInfo.fontName}" (${selectedTypoInfo.name}).
+              Estilo Visual: ${selectedTypoInfo.description}.
+            * Em cada slide, a frase deve ser projetada para ser diagramada no topo com essa exata tipografia uniforme.
+
+          - PSICOLOGIA DE CONTEÚDO VIRAL (ANTI-CLICHÊ & MÁXIMA PROFUNDIDADE HUMANA):
+            * BANIMENTO TOTAL DE AUTOAJUDA RASA E CLICHÊS DE COACH ("o universo conspira", "sorria", "seja sua melhor versão", "permita-se sentir").
+            * FOQUE EM DORES REAIS E SILENCIOSAS: O cansaço de ser forte o tempo todo; a exaustão de tentar agradar a todos e se perder no caminho; o medo da rejeição; a saudade de quem a gente era antes de tantas decepções; a solidão acompanhada; a paz difícil de impor limites; o processo lento e doloroso de se perdoar.
+            * ESTRUTURA DE RETENÇÃO DO CARROSSEL:
+              • Slide 1 (O Gancho Visceral): Uma verdade incômoda, crua e magnética no topo, que quebre o padrão do feed e faça o dedo parar de rolar instantaneamente.
+              • Slides Intermediários (O Aprofundamento): Conexão emocional íntima, metáforas cotidianas que tocam o coração do leitor e o fazem pensar "isso foi escrito para mim".
+              • Slide Penúltimo (O Ponto de Virada / Acolhimento): Um respiro de alívio, uma virada de chave honesta sem promessas fáceis.
+              • Slide Final (O Fechamento / Gancho de Compartilhamento): Uma frase de arremate memorável, daquelas que as pessoas tiram print, salvam na coleção e mandam no privado para quem amam.
+          
+          - COMPOSIÇÃO VISUAL OBRIGATÓRIA NO "imagePromptEn":
+            * Cada prompt em inglês DEVE conter explicitamente a seguinte instrução técnica de composição:
+              "Composition rule: Clean upper negative space / generous breathing room at the top 25% of the frame dedicated for typography overlay; strictly NO speech bubbles, NO comic book dialogue balloons, NO text within the illustration; cinematic lighting, evocative depth of field, authentic emotional atmosphere".\n`;
+        } else {
+          // Modo Diálogos em Balões Clássico
+          promptText += `\n=== MODO CLÁSSICO: DIÁLOGOS EM BALÕES DE FALA ===
+          - Os personagens conversam entre si através de balões de fala bem pontuados, expressando sentimentos e dinâmicas ricas.
+          - BLINDAGEM ANTI-BALÃO VAZIO: Geradores de imagem erram se colocarem balões em branco. O personagem que fala deve ter exatamente um balão com a fala completa. O ouvinte deve estar em silêncio sem balão vazio.
+          - DIÁLOGOS NATURAIS E VIVOS: Frases curtas, orais, espontâneas, sem parecer leitura de apostila.\n`;
         }
 
-        promptText += `REGRA CRÍTICA PARA IDENTIFICAÇÃO DE CORES E PERSONAGENS:
-        1. SE HOUVER IMAGENS DE PERSONAGENS ANEXADAS: Você DEVE inspecionar com MÁXIMA ATENÇÃO cada imagem de personagem fornecida.
-           - Identifique a COR EXATA, dominante e secundária de cada personagem (ex: se o Coração for Azul com costuras e veias azul-escuras, descreva-o ESTRITAMENTE como azul e com suas costuras; se o Cérebro for Cinza metálico com circuitos, descreva-o ESTRITAMENTE como cinza com circuitos; se for o Touro Resolve, descreva o touro musculoso com macacão azul de operário e capacete amarelo de segurança).
-           - NUNCA assuma cores genéricas (NUNCA presuma que um coração é vermelho ou que um cérebro é rosa se na imagem ou descrição ele for azul, cinza, verde ou metálico!). A consistência de cor da imagem de referência é 100% prioritária e obrigatória.
-        2. QUEM ESTÁ FALANDO E QUEM ESTÁ OUVINDO:
-           - Em cada cena/slide, DEVE FICAR CRISTALINO E INEQUÍVOCO quem está falando e quem está apenas ouvindo, ou a fala de cada um segundo suas características emocionais e cognitivas (ex: o Coração fala com afeto, empatia e vulnerabilidade; o Cérebro pondera com lógica, clareza e análise).
-           - Em "descriptionPt": Descreva explicitamente a ação, quem fala, quem ouve e suas cores (ex: "O Coração Azul acolhedor conforta o Cérebro Cinza, que ouve atentamente em silêncio.").
-           - Em "imagePromptEn": Descreva visualmente cada personagem mencionando explicitamente sua COR, quem está falando e sua expressão ativa, e quem está ouvindo e sua postura atenta e silenciosa.
+        // TONS ESPECÍFICOS
+        if (carouselTone === 'Profundidade' || carouselTone === 'Acolhedor / Compassivo' || carouselTone === 'Vulnerável / Íntimo') {
+          promptText += `Como o tom é "${carouselTone}", você DEVE atingir um patamar verdadeiramente existencial, visceral, poético e comovente.
+          - Exemplos do tom e nível de humanidade esperado:
+            * "A gente passa metade da vida se escondendo pra não incomodar, e a outra metade se perguntando por que ninguém nos enxerga de verdade."
+            * "Não é cansaço do corpo. É o cansaço de ter que sustentar uma armadura que já não cabe mais."
+            * "Tem dias em que o silêncio é a única resposta honesta que sobrou."
+            * "Você não precisa dar conta de tudo hoje. Só precisa continuar respirando."\n`;
+        } else if (carouselTone === 'Terapêutico / ACT' || carouselTone === 'Psicológico' || carouselTone === 'Filosófico') {
+          promptText += `Como o tom é "${carouselTone}", una precisão psicológica/filosófica com extrema sensibilidade humana, abordando a relação com os pensamentos, aceitação de cicatrizes e o peso da condição humana.\n`;
+        } else if (carouselTone === 'Motivacional') {
+          promptText += `Como o tom é Motivacional, fuja de gritos vazios; acenda a determinação real do leitor através da superação de dores e construção da disciplina.\n`;
+        } else if (carouselTone === 'Causa e Efeito (Se Essa Peça Falhar...)' || carouselTone === 'A Falta Disso Causa Isso') {
+          promptText += `Como o tom é técnico/diagramático ("${carouselTone}"), estruture os slides em formato de causa, sintoma e desastre evitado, com títulos claros em destaque no topo e diagramas explicativos.\n`;
+        } else if (carouselTone === 'Ranking / Top 10' || carouselTone === 'Recomendação Secreta' || carouselTone === 'Curiosidades / Bastidores') {
+          promptText += `Como o tom é "${carouselTone}", use ganchos de alta curiosidade no topo que despertem debate e paixão pela sétima arte.\n`;
+        }
 
-        DIRETRIZES RIGOROSAS PARA O "imagePromptEn" (PROMPTS DE IMAGEM):
-        1. IDIOMA DO PROMPT:
-           - O prompt de imagem "imagePromptEn" DEVE SER SEMPRE E INTEGRALMENTE EM INGLÊS.
-           - A ÚNICA EXCEÇÃO SÃO AS PALAVRAS DITAS DENTRO DAS ASPAS DO BALÃO DE FALA OU ETIQUETAS DO INFOGRÁFICO, que devem ser escritas exatamente no idioma determinado pelo usuário.
-           - QUANDO O IDIOMA FOR PORTUGUÊS BRASILEIRO: Você DEVE especificar expressamente a indicação "Brazilian Portuguese (PT-BR)" antes do texto literal entre aspas. Exemplo:
-             a single speech bubble with text in Brazilian Portuguese (PT-BR): "Não precisa carregar tudo isso sozinho."
-        
-        2. BLINDAGEM ANTI-ERRO DE IMAGEM (PROIBIÇÃO ABSOLUTA DE BALÕES VAZIOS / EM BRANCO NO FLOW):
-           - REGRA DE OURO CONTRA BALÕES VAZIOS NO FLOW / GERADORES DE IMAGEM: Geradores de imagem cometem o erro grave de desenhar um balão vazio ou em branco sobre o personagem que está apenas ouvindo ou em silêncio. VOCÊ DEVE IMPEDIR ESSE ERRO COM DIRETIVAS POSITIVAS E NEGATIVAS EXPLÍCITAS:
-           - SE APENAS UM PERSONAGEM ESTÁ FALANDO NO SLIDE:
-             * Ordene EXATAMENTE UM balão de fala na cena inteira: "There is EXACTLY ONE single speech bubble in the entire image, originating exclusively from the speaking [cor e tipo do personagem falante]."
-             * Proíba expressamente balões no ouvinte: "The listening [cor e tipo do personagem ouvinte] is silently listening and MUST NOT have any speech bubble, thought bubble, or text above it."
-             * Adicione restrição negativa obrigatória: "CRITICAL ANTI-ARTIFACT RULE: STRICTLY FORBID EMPTY OR BLANK SPEECH BUBBLES. DO NOT generate any unfilled speech bubbles, placeholder bubbles, or duplicate bubbles. Only the speaking character has a speech bubble, containing the exact specified text."
-           - SE AMBOS OS PERSONAGENS FALAM NO MESMO SLIDE:
-             * Ambos os balões devem ter seus textos completos especificados entre aspas, ancorados aos seus respectivos personagens por cor: "Two speech bubbles in the scene: one from the [cor falante 1] with text in [idioma]: \"[fala 1]\", and one from the [cor falante 2] with text in [idioma]: \"[fala 2]\". Both bubbles MUST contain their full written text. STRICTLY NO empty or blank bubbles."
-           - SE NENHUM PERSONAGEM FALA OU FOR UM INFOGRÁFICO ESQUEMÁTICO:
-             * "NO speech bubbles, NO dialogue bubbles. Clean infographic technical layout with labels and diagram arrows."
-        ${speechBubbleMode === 'clean-art' ? `\n- MODO ARTE LIMPA ATIVADO PELO USUÁRIO: O usuário selecionou "Arte Limpa Sem Balões". Portanto, no "imagePromptEn" NÃO crie balões de fala nem texto na imagem (use 'Clean cinematic illustration without any speech bubbles, text or words'). As falas geradas serão usadas para inserção externa no Canva/CapCut.` : ''}
-        
-        REGRA CRÍTICA PARA DIÁLOGOS E BALÕES DE CONVERSA (MÁXIMA HUMANIZAÇÃO E NATURALIDADE):
-        1. PROIBIÇÃO ABSOLUTA DE CLICHÊS DE COACH E PALESTRAS DE LIVRO:
-           - NUNCA use frases que parecem cartilha de psicologia ou autoajuda pronta:
-             * ❌ NÃO USE: "Você precisa se permitir sentir suas emoções para evoluir."
-             * ❌ NÃO USE: "Lembre-se de respirar fundo e focar no agora."
-             * ❌ NÃO USE: "Abrace a sua vulnerabilidade, ela é sua força."
-           - PESSOAS REAIS NÃO FALAM ASSIM.
-        2. COMO DEVE SER (FALA VIVA, NATURAL, ORALIDADE BRASILEIRA PT-BR):
-           - Diálogos curtos, viscerais, empáticos e coloquiais (1 a 2 linhas, de 6 a 16 palavras por balão).
-           - Use contrações e pausas naturais da fala oral brasileira ("tô", "tá", "pra", "né?", "sabe?", "é que...", reticências que expressam respiração ou hesitação sincera).
-           - O CÉREBRO expressa cansaço de pensar demais, medo de errar e excesso de controle ("Minha cabeça não para faz três dias...").
-           - O CORAÇÃO expressa acolhimento, descompressão e afeto desarmado ("Deita aqui um pouco. Deixa eu cuidar de você hoje.").
-           - EXEMPLOS DE COMO ESCREVER:
-             * ✅ "É que hoje tá pesado demais, sabe?"
-             * ✅ "Eu sei. Mas você não precisa carregar tudo isso sozinho agora."
-             * ✅ "A gente sempre se cobra tanto..."
-             * ✅ "Pode chorar. Eu fico aqui com você."
-        3. CASO SEJA UM INFOGRÁFICO TÉCNICO / DIAGRAMA (Soluções para o Dia a Dia):
-           - Se for o nicho "Soluções para o Dia a Dia" ou infográfico sem balões de quadrinhos, o campo "textInBubblesPt" deve conter a legenda principal de chamada do slide ou a fala de impacto do mascote/especialista (ex: "SE ESSA PEÇA FALHAR, O QUE PARA DE FUNCIONAR?", "A FALTA DISSO CAUSA ISSO", "Nunca ignore esse sinal no painel!").
-        4. REGRA SOBRE NOMES NOS DIÁLOGOS:
-           - Os textos dos balões de fala (textInBubblesPt/En/Es) NUNCA devem conter o nome do personagem como prefixo (ex: NÃO faça "Coração: Você precisa..." ou "Cérebro: Pense bem...").
-           - O balão deve conter APENAS a frase dita, sem identificação de quem fala.
-           - A identificação de qual personagem está falando deve ir APENAS no campo "descriptionPt" e dentro das instruções em inglês do "imagePromptEn".`;
+        promptText += `\nREGRA CRÍTICA PARA IDENTIFICAÇÃO DE CORES E PERSONAGENS:
+        1. SE HOUVER IMAGENS DE PERSONAGENS ANEXADAS: Inspecione com MÁXIMA ATENÇÃO cada imagem fornecida e descreva suas cores, figurino e traços com total fidelidade em cada prompt.
+        2. QUEM ESTÁ FALANDO E QUEM ESTÁ OUVINDO (se for modo balões):
+           - Deixe claro quem fala e quem ouve. NUNCA coloque balões vazios no ouvinte.\n`;
+
+        if (!isDeepPhrasesMode) {
+          promptText += `DIRETRIZES RIGOROSAS PARA O "imagePromptEn" (PROMPTS DE IMAGEM NO MODO BALÕES):
+          1. IDIOMA: O prompt de imagem DEVE ser em Inglês, exceto as palavras do balão de fala que devem vir entre aspas com a indicação do idioma (ex: Brazilian Portuguese (PT-BR): "texto").
+          2. BLINDAGEM ANTI-BALÃO VAZIO: Strictly forbid empty or blank speech bubbles.\n`;
+          if (speechBubbleMode === 'clean-art') {
+            promptText += `- MODO ARTE LIMPA: Não desenhe balões de fala na imagem.\n`;
+          }
+        }
 
         const selectedLangInfoCarousel = LANGUAGES.find(l => l.id === dialogueLanguage) || LANGUAGES[0];
         const langNameCarousel = selectedLangInfoCarousel.name;
 
-        promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA PARA OS BALÕES DE DIÁLOGO:
+        promptText += `\nREGRA OBRIGATÓRIA DE IDIOMA:
         O usuário selecionou o idioma: "${langNameCarousel}".
-        ${dialogueLanguage === 'pt' ? 'Gere todos os textos dos balões estritamente em PORTUGUÊS (Brasil) (PT-BR) no campo "textInBubblesPt".' : ''}
-        ${dialogueLanguage === 'en' ? 'Gere todos os textos dos balões estritamente em INGLÊS (English) no campo "textInBubblesEn".' : ''}
-        ${dialogueLanguage === 'es' ? 'Gere todos os textos dos balões estritamente em ESPANHOL (Español) no campo "textInBubblesEs".' : ''}
-        ${dialogueLanguage === 'all' ? 'Gere os textos dos balões nos 3 idiomas: Português ("textInBubblesPt"), Inglês ("textInBubblesEn") e Espanhol ("textInBubblesEs").' : ''}\n\n`;
+        ${dialogueLanguage === 'pt' ? `Gere os textos ${isDeepPhrasesMode ? 'das frases no topo' : 'dos balões'} estritamente em PORTUGUÊS (Brasil) (PT-BR) no campo "textInBubblesPt".` : ''}
+        ${dialogueLanguage === 'en' ? `Gere os textos ${isDeepPhrasesMode ? 'das frases no topo' : 'dos balões'} estritamente em INGLÊS (English) no campo "textInBubblesEn".` : ''}
+        ${dialogueLanguage === 'es' ? `Gere os textos ${isDeepPhrasesMode ? 'das frases no topo' : 'dos balões'} estritamente em ESPANHOL (Español) no campo "textInBubblesEs".` : ''}
+        ${dialogueLanguage === 'all' ? `Gere os textos nos 3 idiomas: Português ("textInBubblesPt"), Inglês ("textInBubblesEn") e Espanhol ("textInBubblesEs").` : ''}\n\n`;
 
         promptText += `Para cada slide, forneça:
         1. "slideNumber": número do slide.
-        2. "imagePromptEn": Prompt COMPLETO, ALTAMENTE DETALHADO e EXTENSO em Inglês para geradores de imagem modernos (FLOW, Flux, Ideogram, Midjourney). REGRA CRÍTICA: Cada prompt DEVE ter no MÍNIMO 80 palavras e JAMAIS ser cortado, resumido, abreviado ou truncado. Descreva com riqueza de detalhes: estilo artístico, cenário, iluminação, posição dos personagens, expressões faciais, cores, texturas, atmosfera, ângulo de câmera e composição. NUNCA use referências vagas como "consistent with previous" ou "same style as slide 1" — cada prompt deve ser COMPLETO e INDEPENDENTE. Se for ${artStyle}, descreva explicitamente o estilo visual em cada prompt.
-        3. ${dialogueLanguage === 'pt' ? '"textInBubblesPt": Texto no balão em Português.' : dialogueLanguage === 'en' ? '"textInBubblesEn": Texto no balão em Inglês.' : dialogueLanguage === 'es' ? '"textInBubblesEs": Texto no balão em Espanhol.' : '"textInBubblesPt", "textInBubblesEn", "textInBubblesEs": Textos nos balões em PT, EN e ES.'}
-        4. "descriptionPt": Breve descrição do que está acontecendo visualmente no slide em Português.
+        2. "imagePromptEn": Prompt COMPLETO, ALTAMENTE DETALHADO e EXTENSO em Inglês para geradores de imagem modernos (FLOW, Flux, Ideogram, Midjourney). REGRA CRÍTICA: Cada prompt DEVE ter no MÍNIMO 80 palavras e JAMAIS ser cortado, resumido ou truncado. Descreva com riqueza de detalhes: estilo visual (${artStyle}), cenário, iluminação cinematográfica, atmosfera emocional, cores e composição.${isDeepPhrasesMode ? ' OBRIGATÓRIO: inclua a regra de respiro no topo de 25% para tipografia e PROIBIÇÃO total de speech bubbles na arte.' : ''}
+        3. ${dialogueLanguage === 'pt' ? `"textInBubblesPt": ${isDeepPhrasesMode ? 'Frase de alto impacto no topo em Português.' : 'Texto no balão em Português.'}` : dialogueLanguage === 'en' ? `"textInBubblesEn": ${isDeepPhrasesMode ? 'Frase de alto impacto no topo em Inglês.' : 'Texto no balão em Inglês.'}` : dialogueLanguage === 'es' ? `"textInBubblesEs": ${isDeepPhrasesMode ? 'Frase de alto impacto no topo em Espanhol.' : 'Texto no balão em Espanhol.'}` : `"textInBubblesPt", "textInBubblesEn", "textInBubblesEs": Frases no topo ou textos nos balões em PT, EN e ES.`}
+        4. "descriptionPt": Breve descrição da cena visual em Português.
         
-        REGRA ABSOLUTA DE COMPLETUDE: Cada "imagePromptEn" DEVE ser um prompt auto-suficiente, completo e detalhado. NUNCA abrevie, resuma ou trunque prompts. NUNCA use "consistent with previous", "same as before", "similar style" ou qualquer referência a slides anteriores. Cada prompt é independente e deve funcionar sozinho.
-        Também forneça "instagramPost" com a legenda engajadora e emocionante.`;
+        REGRA ABSOLUTA DE COMPLETUDE: Cada "imagePromptEn" DEVE ser um prompt auto-suficiente, completo e detalhado. NUNCA abrevie ou use referências a slides anteriores.
+        Também forneça "instagramPost" com a legenda engajadora e emocionante para o post.`;
 
         const requiredSlideFields = ["slideNumber", "imagePromptEn", "descriptionPt"];
         if (dialogueLanguage === 'pt') requiredSlideFields.push("textInBubblesPt");
@@ -7141,14 +7196,24 @@ export default function App() {
           let list = jsonResult.carousels.map((car: any, idx: number) => {
             car.title = car.title || `Carrossel ${idx + 1}`;
             car.language = dialogueLanguage;
+            car.layoutMode = carouselLayoutMode;
+            car.typographyStyle = topTypographyStyle;
             if (car.slides && Array.isArray(car.slides)) {
               car.slides.forEach((slide: any) => {
+                slide.layoutMode = carouselLayoutMode;
+                slide.typographyStyle = topTypographyStyle;
                 if (dialogueLanguage === 'pt') {
                   slide.textInBubblesPt = slide.textInBubblesPt || slide.textInBubbles || '';
                 } else if (dialogueLanguage === 'en') {
                   slide.textInBubblesEn = slide.textInBubblesEn || slide.textInBubbles || '';
                 } else if (dialogueLanguage === 'es') {
                   slide.textInBubblesEs = slide.textInBubblesEs || slide.textInBubbles || '';
+                }
+                if (carouselLayoutMode === 'deep_phrases') {
+                  slide.topPhrasePt = slide.textInBubblesPt || slide.textInBubbles || '';
+                  slide.topPhraseEn = slide.textInBubblesEn || '';
+                  slide.topPhraseEs = slide.textInBubblesEs || '';
+                  slide.topPhrase = slide.topPhrasePt || slide.topPhraseEn || slide.topPhraseEs || '';
                 }
               });
             }
@@ -7172,13 +7237,23 @@ export default function App() {
         } else if (jsonResult && jsonResult.slides && Array.isArray(jsonResult.slides)) {
           jsonResult.title = jsonResult.title || topic || 'Carrossel';
           jsonResult.language = dialogueLanguage;
+          jsonResult.layoutMode = carouselLayoutMode;
+          jsonResult.typographyStyle = topTypographyStyle;
           jsonResult.slides.forEach((slide: any) => {
+            slide.layoutMode = carouselLayoutMode;
+            slide.typographyStyle = topTypographyStyle;
             if (dialogueLanguage === 'pt') {
               slide.textInBubblesPt = slide.textInBubblesPt || slide.textInBubbles || '';
             } else if (dialogueLanguage === 'en') {
               slide.textInBubblesEn = slide.textInBubblesEn || slide.textInBubbles || '';
             } else if (dialogueLanguage === 'es') {
               slide.textInBubblesEs = slide.textInBubblesEs || slide.textInBubbles || '';
+            }
+            if (carouselLayoutMode === 'deep_phrases') {
+              slide.topPhrasePt = slide.textInBubblesPt || slide.textInBubbles || '';
+              slide.topPhraseEn = slide.textInBubblesEn || '';
+              slide.topPhraseEs = slide.textInBubblesEs || '';
+              slide.topPhrase = slide.topPhrasePt || slide.topPhraseEn || slide.topPhraseEs || '';
             }
           });
           setBatchCarouselResults([jsonResult]);
@@ -10134,14 +10209,117 @@ export default function App() {
                     </select>
                   </div>
 
+                  {/* Seletor de Modo / Formato do Carrossel */}
+                  <div className="space-y-2 p-3 bg-gradient-to-br from-indigo-50/90 via-purple-50/40 to-white border border-indigo-200/80 rounded-2xl shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Formato do Carrossel</span>
+                      </label>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        {carouselLayoutMode === 'deep_phrases' ? '🌟 Frases no Topo' : '💬 Balões'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setCarouselLayoutMode('deep_phrases')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                          carouselLayoutMode === 'deep_phrases'
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-500/20'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold flex items-center gap-1">
+                            <span>🌟 Frases no Topo</span>
+                          </span>
+                          {carouselLayoutMode === 'deep_phrases' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                        <p className={`text-[9.5px] leading-tight ${carouselLayoutMode === 'deep_phrases' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                          Sem balões. Frases virais no topo com mesma fonte em todos os slides.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCarouselLayoutMode('dialogue_bubbles')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                          carouselLayoutMode === 'dialogue_bubbles'
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-500/20'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold flex items-center gap-1">
+                            <span>💬 Diálogos em Balões</span>
+                          </span>
+                          {carouselLayoutMode === 'dialogue_bubbles' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                        <p className={`text-[9.5px] leading-tight ${carouselLayoutMode === 'dialogue_bubbles' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                          Personagens conversando através de balões de fala clássicos.
+                        </p>
+                      </button>
+                    </div>
+
+                    {/* Seletor de Tipografia Fixa no Topo (apenas no modo deep_phrases) */}
+                    {carouselLayoutMode === 'deep_phrases' && (
+                      <div className="mt-2 pt-2.5 border-t border-indigo-100/80 space-y-1.5 animate-in fade-in">
+                        <label className="block text-[11px] font-bold text-slate-800">
+                          Fonte & Estilo Fixo no Topo (Idêntico em Todos os Slides):
+                        </label>
+                        <div className="space-y-1.5">
+                          {(Object.keys(TOP_TYPOGRAPHY_STYLES) as TopTypographyStyle[]).map(styleKey => {
+                            const styleInfo = TOP_TYPOGRAPHY_STYLES[styleKey];
+                            const isSelected = topTypographyStyle === styleKey;
+                            return (
+                              <button
+                                key={styleKey}
+                                type="button"
+                                onClick={() => setTopTypographyStyle(styleKey)}
+                                className={`w-full p-2 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                                  isSelected
+                                    ? 'bg-white border-indigo-500 shadow-xs ring-1 ring-indigo-500'
+                                    : 'bg-white/70 border-slate-200 hover:bg-white'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-bold text-slate-800">
+                                      {styleInfo.name}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                      {styleInfo.fontName.split(' - ')[0]}
+                                    </span>
+                                  </div>
+                                  <p className="text-[9px] text-slate-500 italic truncate mt-0.5">
+                                    Ex: "{styleInfo.sample}"
+                                  </p>
+                                </div>
+                                <div className="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 border-indigo-500 bg-white">
+                                  {isSelected && <div className="w-2 h-2 rounded-full bg-indigo-600" />}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
                     <p className="text-[10px] text-amber-700 font-bold leading-tight">
-                      Dica: Se selecionar mais de 1 personagem, a IA criará uma dinâmica de diálogo rica que combina com o nicho e tom escolhidos.
+                      {carouselLayoutMode === 'deep_phrases'
+                        ? 'Dica: No modo Frases no Topo, os personagens vivenciam a cena sem balões de fala. O prompt da IA reserva o terço superior limpo para aplicação da tipografia padronizada.'
+                        : 'Dica: Se selecionar mais de 1 personagem, a IA criará uma dinâmica de diálogo rica que combina com o nicho e tom escolhidos.'}
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-slate-900">Tom do Diálogo</label>
+                    <label className="block text-xs font-semibold text-slate-900">
+                      {carouselLayoutMode === 'deep_phrases' ? 'Tom Narrativo & Emocional' : 'Tom do Diálogo'}
+                    </label>
                     <div className="grid grid-cols-2 gap-1.5">
                       {(NICHE_CAROUSEL_TONES[niche] || []).map(tone => (
                         <button
@@ -11044,224 +11222,330 @@ export default function App() {
                 </div>
               </div>
 
-              {carouselResult.slides?.map((slide, index) => (
-                <div key={index} className="bg-slate-900 rounded-2xl p-6 text-slate-300 flex flex-col gap-4 shadow-inner border-l-4 border-indigo-500">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-white font-bold text-lg">Slide {slide.slideNumber}</h3>
-                    <div className="flex items-center gap-2">
-                       <button
-                         type="button"
-                         onClick={() => openCarouselSlideInLightbox(index)}
-                         className="flex items-center gap-1 text-[10px] font-bold py-1 px-2.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg transition cursor-pointer"
-                         title="Visualizar em Modo Apresentação / Lightbox com navegação"
-                       >
-                         <ZoomIn className="w-3 h-3" />
-                         <span>Apresentar Slide</span>
-                       </button>
-                       <span className="text-[10px] font-bold py-1 px-2 bg-indigo-500/20 text-indigo-400 rounded uppercase">Slide Completo</span>
-                    </div>
-                  </div>
+              {carouselResult.slides?.map((slide, index) => {
+                const isDeepMode = slide.layoutMode === 'deep_phrases' || carouselResult.layoutMode === 'deep_phrases';
+                const currentTypoKey = (slide.typographyStyle || carouselResult.typographyStyle || topTypographyStyle || 'sans_bold') as TopTypographyStyle;
+                const currentTypoInfo = TOP_TYPOGRAPHY_STYLES[currentTypoKey] || TOP_TYPOGRAPHY_STYLES.sans_bold;
+                const currentPhrasePt = slide.topPhrasePt || slide.textInBubblesPt || slide.textInBubbles || '';
+                const currentPhraseEn = slide.topPhraseEn || slide.textInBubblesEn || slide.textInBubbles || '';
+                const currentPhraseEs = slide.topPhraseEs || slide.textInBubblesEs || slide.textInBubbles || '';
 
-                  {/* Banner de Imagem de Referência Clonada & Substituição de Personagem */}
-                  {slide.originalImagePreview && (
-                    <div className="p-4 bg-slate-800/90 border border-indigo-500/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-700 shrink-0 relative group bg-black/40">
-                          <img
-                            src={slide.originalImagePreview}
-                            alt={slide.originalImageName || `Imagem Original Slide ${slide.slideNumber}`}
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => openCarouselSlideInLightbox(index)}
-                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white cursor-pointer"
-                            title="Ver imagem original em tamanho ampliado"
-                          >
-                            <ZoomIn className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="space-y-1.5 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              Referência Original Clonada:
-                            </span>
-                            <span className="text-xs text-white font-semibold truncate font-mono">
-                              {slide.originalImageName || `Slide ${slide.slideNumber}`}
-                            </span>
-                          </div>
-                          <div>
-                            {slide.originalHadCharacter ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                <span className="truncate">{slide.characterReplaced || "Personagem original substituído"}</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span>Cena Técnica Fiel (Sem Personagem na Imagem Original)</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openCarouselSlideInLightbox(index)}
-                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer border border-slate-600"
-                      >
-                        <ZoomIn className="w-3.5 h-3.5" />
-                        <span>Comparar em Tela Cheia</span>
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-indigo-900/20 rounded-xl p-4 border border-indigo-500/30">
-                      <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Conteúdo do Slide</h4>
-                      <p className="text-sm text-slate-200 leading-relaxed">{slide.descriptionPt}</p>
-                    </div>
-                    <div className="bg-emerald-900/20 rounded-xl p-4 border border-emerald-500/30">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3" /> Copiar Prompt + Diálogo
-                        </h4>
-                        {carouselResult.language && carouselResult.language !== 'all' && (
-                          <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 uppercase">
-                            {carouselResult.language === 'en' ? '🇺🇸 Inglês' : carouselResult.language === 'es' ? '🇪🇸 Espanhol' : '🇧🇷 Português'}
+                return (
+                  <div key={index} className={`bg-slate-900 rounded-2xl p-6 text-slate-300 flex flex-col gap-4 shadow-inner border-l-4 ${
+                    isDeepMode ? 'border-amber-500' : 'border-indigo-500'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <h3 className="text-white font-bold text-lg">Slide {slide.slideNumber}</h3>
+                        {isDeepMode && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-amber-400" />
+                            <span>Frases no Topo</span>
                           </span>
                         )}
                       </div>
-
-                      {/* Se foi gerado para 1 idioma específico */}
-                      {(carouselResult.language === 'pt' || (!carouselResult.language && slide.textInBubblesPt && !slide.textInBubblesEn && !slide.textInBubblesEs)) && (
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt || slide.textInBubbles}"`, `cb_pt_${index}`)}
-                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇧🇷 PT</span>
-                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesPt || slide.textInBubbles}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
-                            {copiedStates[`cb_pt_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
-                      )}
-
-                      {(carouselResult.language === 'en' || (!carouselResult.language && slide.textInBubblesEn && !slide.textInBubblesPt && !slide.textInBubblesEs)) && (
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (EN): "${slide.textInBubblesEn || slide.textInBubbles}"`, `cb_en_${index}`)}
-                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇺🇸 EN</span>
-                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesEn || slide.textInBubbles}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
-                            {copiedStates[`cb_en_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
-                      )}
-
-                      {(carouselResult.language === 'es' || (!carouselResult.language && slide.textInBubblesEs && !slide.textInBubblesPt && !slide.textInBubblesEn)) && (
-                        <button 
-                          onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (ES): "${slide.textInBubblesEs || slide.textInBubbles}"`, `cb_es_${index}`)}
-                          className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border border-emerald-500/30 group shadow-sm"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shrink-0">🇪🇸 ES</span>
-                            <p className="text-xs text-slate-100 font-medium italic truncate">"{slide.textInBubblesEs || slide.textInBubbles}"</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 uppercase shrink-0 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white transition">
-                            {copiedStates[`cb_es_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>+ Prompt</span>
-                          </div>
-                        </button>
-                      )}
-
-                      {/* Modo Trilíngue (PT, EN e ES) — APENAS quando idioma é explicitamente 'all' */}
-                      {carouselResult.language === 'all' && (
-                        <div className="space-y-2">
-                          <button 
-                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (PT): "${slide.textInBubblesPt}"`, `cb_pt_${index}`)}
-                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">PT</span>
-                              <p className="text-xs text-slate-200 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesPt}"</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                              {copiedStates[`cb_pt_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                              <span>+ Prompt</span>
-                            </div>
-                          </button>
-
-                          <button 
-                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (EN): "${slide.textInBubblesEn}"`, `cb_en_${index}`)}
-                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">EN</span>
-                              <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEn}"</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                              {copiedStates[`cb_en_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                              <span>+ Prompt</span>
-                            </div>
-                          </button>
-
-                          <button 
-                            onClick={() => handleCopy(`${slide.imagePromptEn}\n\nDialogue (ES): "${slide.textInBubblesEs}"`, `cb_es_${index}`)}
-                            className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-emerald-500/70 w-5">ES</span>
-                              <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{slide.textInBubblesEs}"</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
-                              {copiedStates[`cb_es_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
-                              <span>+ Prompt</span>
-                            </div>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-700 pt-4 mt-2">
-                    <div className="flex justify-between items-center mb-3">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <ImageIcon className="w-3.5 h-3.5 text-indigo-400" /> Prompt de Imagem (FLOW / I.A)
-                      </label>
                       <div className="flex items-center gap-2">
-                        <button 
+                        <button
                           type="button"
-                          onClick={() => handleShieldPromptAgainstBlankBubbles(index)}
-                          className="flex items-center gap-1 text-[10px] font-bold uppercase text-amber-400 hover:text-amber-300 transition bg-amber-950/40 border border-amber-800/60 px-2 py-1 rounded-lg cursor-pointer"
-                          title="Garante regras rígidas anti-balão vazio para que o FLOW não desenhe balões em branco no ouvinte"
+                          onClick={() => openCarouselSlideInLightbox(index)}
+                          className="flex items-center gap-1 text-[10px] font-bold py-1 px-2.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg transition cursor-pointer"
+                          title="Visualizar em Modo Apresentação / Lightbox com navegação"
                         >
-                          <ShieldCheck className="w-3 h-3 text-amber-400" />
-                          <span>Blindar Anti-Vazio</span>
+                          <ZoomIn className="w-3 h-3" />
+                          <span>Apresentar Slide</span>
                         </button>
-                        <button 
-                          onClick={() => handleCopy(slide.imagePromptEn || '', `cp_${index}`)}
-                          className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition cursor-pointer"
-                        >
-                          {copiedStates[`cp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
-                        </button>
+                        <span className="text-[10px] font-bold py-1 px-2 bg-indigo-500/20 text-indigo-400 rounded uppercase">Slide Completo</span>
                       </div>
                     </div>
-                    <div className="bg-slate-800/80 rounded-xl p-4 border border-slate-700">
-                      <code className="text-[11px] lg:text-xs text-green-400 leading-relaxed font-mono block whitespace-pre-wrap">
-                        {slide.imagePromptEn}
-                      </code>
+
+                    {/* Preview Visual da Frase Fixa no Topo (Safe-Zone 25%) */}
+                    {isDeepMode && currentPhrasePt && (
+                      <div className="p-4 bg-gradient-to-r from-slate-950 via-indigo-950/40 to-slate-950 border border-amber-500/40 rounded-2xl flex flex-col items-center justify-center text-center shadow-md relative overflow-hidden group">
+                        <div className="flex items-center justify-between w-full mb-1.5 px-2">
+                          <span className="text-[9.5px] font-mono text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3 text-amber-400" />
+                            <span>Preview no Topo do Slide (Safe-Zone 25% Limpa)</span>
+                          </span>
+                          <span className="text-[9px] font-mono bg-amber-500/20 text-amber-200 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                            Fonte Fixa: {currentTypoInfo.fontName}
+                          </span>
+                        </div>
+                        <div className={`mt-1.5 text-sm sm:text-base md:text-lg font-black text-amber-100 px-4 drop-shadow-md transition leading-relaxed ${
+                          currentTypoKey === 'serif_editorial' ? 'font-serif italic text-amber-200 font-semibold' :
+                          currentTypoKey === 'minimalist_clean' ? 'font-sans font-light tracking-widest uppercase text-slate-100' :
+                          'font-sans uppercase font-black tracking-tight text-white'
+                        }`}>
+                          "{currentPhrasePt}"
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Banner de Imagem de Referência Clonada & Substituição de Personagem */}
+                    {slide.originalImagePreview && (
+                      <div className="p-4 bg-slate-800/90 border border-indigo-500/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-700 shrink-0 relative group bg-black/40">
+                            <img
+                              src={slide.originalImagePreview}
+                              alt={slide.originalImageName || `Imagem Original Slide ${slide.slideNumber}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => openCarouselSlideInLightbox(index)}
+                              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white cursor-pointer"
+                              title="Ver imagem original em tamanho ampliado"
+                            >
+                              <ZoomIn className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="space-y-1.5 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                Referência Original Clonada:
+                              </span>
+                              <span className="text-xs text-white font-semibold truncate font-mono">
+                                {slide.originalImageName || `Slide ${slide.slideNumber}`}
+                              </span>
+                            </div>
+                            <div>
+                              {slide.originalHadCharacter ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                  <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="truncate">{slide.characterReplaced || "Personagem original substituído"}</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span>Cena Técnica Fiel (Sem Personagem na Imagem Original)</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openCarouselSlideInLightbox(index)}
+                          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer border border-slate-600"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          <span>Comparar em Tela Cheia</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-indigo-900/20 rounded-xl p-4 border border-indigo-500/30">
+                        <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Conteúdo do Slide</h4>
+                        <p className="text-sm text-slate-200 leading-relaxed">{slide.descriptionPt}</p>
+                      </div>
+                      <div className={`rounded-xl p-4 border ${
+                        isDeepMode ? 'bg-amber-950/20 border-amber-500/30' : 'bg-emerald-900/20 border-emerald-500/30'
+                      }`}>
+                        <div className="flex items-center justify-between mb-3 flex-wrap gap-1.5">
+                          <h4 className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 ${
+                            isDeepMode ? 'text-amber-300' : 'text-emerald-400'
+                          }`}>
+                            {isDeepMode ? <Sparkles className="w-3.5 h-3.5 text-amber-400" /> : <MessageSquare className="w-3 h-3" />}
+                            <span>{isDeepMode ? 'Copiar Prompt + Frase no Topo' : 'Copiar Prompt + Diálogo'}</span>
+                          </h4>
+                          {isDeepMode ? (
+                            <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                              {currentTypoInfo.fontName.split(' - ')[0]}
+                            </span>
+                          ) : (
+                            carouselResult.language && carouselResult.language !== 'all' && (
+                              <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 uppercase">
+                                {carouselResult.language === 'en' ? '🇺🇸 Inglês' : carouselResult.language === 'es' ? '🇪🇸 Espanhol' : '🇧🇷 Português'}
+                              </span>
+                            )
+                          )}
+                        </div>
+
+                        {/* Se foi gerado para 1 idioma específico */}
+                        {(carouselResult.language === 'pt' || (!carouselResult.language && (slide.topPhrasePt || slide.textInBubblesPt) && !slide.textInBubblesEn && !slide.textInBubblesEs)) && (
+                          <button 
+                            onClick={() => handleCopy(
+                              isDeepMode
+                                ? `${slide.imagePromptEn}\n\nTop Phrase (PT): "${currentPhrasePt}"`
+                                : `${slide.imagePromptEn}\n\nDialogue (PT): "${currentPhrasePt}"`,
+                              `cb_pt_${index}`
+                            )}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border group shadow-sm ${
+                              isDeepMode ? 'border-amber-500/30' : 'border-emerald-500/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                                isDeepMode ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                              }`}>🇧🇷 PT</span>
+                              <p className={`text-xs font-medium italic truncate ${isDeepMode ? 'text-amber-100' : 'text-slate-100'}`}>"{currentPhrasePt}"</p>
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-xs font-bold uppercase shrink-0 px-2.5 py-1 rounded-lg border transition ${
+                              isDeepMode
+                                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 group-hover:bg-amber-600 group-hover:text-white'
+                                : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white'
+                            }`}>
+                              {copiedStates[`cb_pt_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+                        )}
+
+                        {(carouselResult.language === 'en' || (!carouselResult.language && (slide.topPhraseEn || slide.textInBubblesEn) && !slide.textInBubblesPt && !slide.textInBubblesEs)) && (
+                          <button 
+                            onClick={() => handleCopy(
+                              isDeepMode
+                                ? `${slide.imagePromptEn}\n\nTop Phrase (EN): "${currentPhraseEn}"`
+                                : `${slide.imagePromptEn}\n\nDialogue (EN): "${currentPhraseEn}"`,
+                              `cb_en_${index}`
+                            )}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border group shadow-sm ${
+                              isDeepMode ? 'border-amber-500/30' : 'border-emerald-500/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                                isDeepMode ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                              }`}>🇺🇸 EN</span>
+                              <p className={`text-xs font-medium italic truncate ${isDeepMode ? 'text-amber-100' : 'text-slate-100'}`}>"{currentPhraseEn}"</p>
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-xs font-bold uppercase shrink-0 px-2.5 py-1 rounded-lg border transition ${
+                              isDeepMode
+                                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 group-hover:bg-amber-600 group-hover:text-white'
+                                : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white'
+                            }`}>
+                              {copiedStates[`cb_en_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+                        )}
+
+                        {(carouselResult.language === 'es' || (!carouselResult.language && (slide.topPhraseEs || slide.textInBubblesEs) && !slide.textInBubblesPt && !slide.textInBubblesEn)) && (
+                          <button 
+                            onClick={() => handleCopy(
+                              isDeepMode
+                                ? `${slide.imagePromptEn}\n\nTop Phrase (ES): "${currentPhraseEs}"`
+                                : `${slide.imagePromptEn}\n\nDialogue (ES): "${currentPhraseEs}"`,
+                              `cb_es_${index}`
+                            )}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition border group shadow-sm ${
+                              isDeepMode ? 'border-amber-500/30' : 'border-emerald-500/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                                isDeepMode ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                              }`}>🇪🇸 ES</span>
+                              <p className={`text-xs font-medium italic truncate ${isDeepMode ? 'text-amber-100' : 'text-slate-100'}`}>"{currentPhraseEs}"</p>
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-xs font-bold uppercase shrink-0 px-2.5 py-1 rounded-lg border transition ${
+                              isDeepMode
+                                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 group-hover:bg-amber-600 group-hover:text-white'
+                                : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 group-hover:bg-emerald-600 group-hover:text-white'
+                            }`}>
+                              {copiedStates[`cb_es_${index}`] ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>+ Prompt</span>
+                            </div>
+                          </button>
+                        )}
+
+                        {/* Modo Trilíngue (PT, EN e ES) — APENAS quando idioma é explicitamente 'all' */}
+                        {carouselResult.language === 'all' && (
+                          <div className="space-y-2">
+                            <button 
+                              onClick={() => handleCopy(
+                                isDeepMode
+                                  ? `${slide.imagePromptEn}\n\nTop Phrase (PT): "${currentPhrasePt}"`
+                                  : `${slide.imagePromptEn}\n\nDialogue (PT): "${currentPhrasePt}"`,
+                                `cb_pt_${index}`
+                              )}
+                              className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-bold w-5 ${isDeepMode ? 'text-amber-400' : 'text-emerald-500/70'}`}>PT</span>
+                                <p className={`text-xs font-medium italic truncate max-w-[150px] ${isDeepMode ? 'text-amber-100' : 'text-slate-200'}`}>"{currentPhrasePt}"</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                                {copiedStates[`cb_pt_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                                <span>+ Prompt</span>
+                              </div>
+                            </button>
+
+                            <button 
+                              onClick={() => handleCopy(
+                                isDeepMode
+                                  ? `${slide.imagePromptEn}\n\nTop Phrase (EN): "${currentPhraseEn}"`
+                                  : `${slide.imagePromptEn}\n\nDialogue (EN): "${currentPhraseEn}"`,
+                                `cb_en_${index}`
+                              )}
+                              className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-bold w-5 ${isDeepMode ? 'text-amber-400' : 'text-emerald-500/70'}`}>EN</span>
+                                <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{currentPhraseEn}"</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                                {copiedStates[`cb_en_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                                <span>+ Prompt</span>
+                              </div>
+                            </button>
+
+                            <button 
+                              onClick={() => handleCopy(
+                                isDeepMode
+                                  ? `${slide.imagePromptEn}\n\nTop Phrase (ES): "${currentPhraseEs}"`
+                                  : `${slide.imagePromptEn}\n\nDialogue (ES): "${currentPhraseEs}"`,
+                                `cb_es_${index}`
+                              )}
+                              className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700 transition border border-slate-700 group"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-bold w-5 ${isDeepMode ? 'text-amber-400' : 'text-emerald-500/70'}`}>ES</span>
+                                <p className="text-xs text-slate-400 font-medium italic truncate max-w-[150px]">"{currentPhraseEs}"</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase">
+                                {copiedStates[`cb_es_${index}`] ? <Check className="w-3" /> : <Copy className="w-3" />}
+                                <span>+ Prompt</span>
+                              </div>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-700 pt-4 mt-2">
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                          <ImageIcon className="w-3.5 h-3.5 text-indigo-400" /> Prompt de Imagem (FLOW / I.A)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => handleShieldPromptAgainstBlankBubbles(index)}
+                            className="flex items-center gap-1 text-[10px] font-bold uppercase text-amber-400 hover:text-amber-300 transition bg-amber-950/40 border border-amber-800/60 px-2 py-1 rounded-lg cursor-pointer"
+                            title={isDeepMode ? "Garante 0 balões de fala e reserva de 25-30% no topo para tipografia limpa" : "Garante regras rígidas anti-balão vazio para que o FLOW não desenhe balões em branco no ouvinte"}
+                          >
+                            <ShieldCheck className="w-3 h-3 text-amber-400" />
+                            <span>{isDeepMode ? 'Blindar Topo Limpo (Sem Balões)' : 'Blindar Anti-Vazio'}</span>
+                          </button>
+                          <button 
+                            onClick={() => handleCopy(slide.imagePromptEn || '', `cp_${index}`)}
+                            className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-indigo-400 hover:text-white transition cursor-pointer"
+                          >
+                            {copiedStates[`cp_${index}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copiar Prompt
+                          </button>
+                        </div>
+                      </div>
+                      <div className="bg-slate-800/80 rounded-xl p-4 border border-slate-700">
+                        <code className="text-[11px] lg:text-xs text-green-400 leading-relaxed font-mono block whitespace-pre-wrap">
+                          {slide.imagePromptEn}
+                        </code>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -14248,17 +14532,34 @@ export default function App() {
 
               {/* Painel Inferior de Metadados e Informações do Slide */}
               <div className="p-4 bg-slate-850 border-t border-slate-800 flex flex-col gap-3 max-h-[28vh] overflow-y-auto shrink-0">
-                {/* Diálogo / Fala no Balão */}
+                {/* Diálogo / Fala no Balão ou Frase de Impacto no Topo */}
                 {currentItem.dialogue && (
-                  <div className="p-3 bg-indigo-950/50 border border-indigo-500/30 rounded-xl flex items-start gap-2.5">
-                    <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                      <MessageSquare className="w-3.5 h-3.5" />
+                  <div className={`p-3 rounded-xl flex items-start gap-2.5 ${
+                    currentItem.layoutMode === 'deep_phrases'
+                      ? 'bg-gradient-to-r from-amber-950/40 via-indigo-950/40 to-slate-900 border border-amber-500/40'
+                      : 'bg-indigo-950/50 border border-indigo-500/30'
+                  }`}>
+                    <div className={`w-6 h-6 rounded-lg text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs ${
+                      currentItem.layoutMode === 'deep_phrases' ? 'bg-amber-600' : 'bg-indigo-600'
+                    }`}>
+                      {currentItem.layoutMode === 'deep_phrases' ? <Sparkles className="w-3.5 h-3.5 text-white" /> : <MessageSquare className="w-3.5 h-3.5" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="text-[10px] font-black uppercase text-indigo-300 tracking-wider">
-                        Fala no Balão de Diálogo:
-                      </span>
-                      <p className="text-xs sm:text-sm font-semibold text-indigo-100 mt-0.5 leading-relaxed">
+                      <div className="flex items-center justify-between flex-wrap gap-1.5">
+                        <span className={`text-[10px] font-black uppercase tracking-wider ${
+                          currentItem.layoutMode === 'deep_phrases' ? 'text-amber-300' : 'text-indigo-300'
+                        }`}>
+                          {currentItem.layoutMode === 'deep_phrases' ? '🌟 Frase de Impacto no Topo (Safe-Zone):' : 'Fala no Balão de Diálogo:'}
+                        </span>
+                        {currentItem.layoutMode === 'deep_phrases' && currentItem.typographyStyle && (
+                          <span className="text-[9px] font-mono bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                            Fonte Fixa: {TOP_TYPOGRAPHY_STYLES[currentItem.typographyStyle as TopTypographyStyle]?.fontName || currentItem.typographyStyle}
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-xs sm:text-sm font-bold mt-1 leading-relaxed ${
+                        currentItem.layoutMode === 'deep_phrases' ? 'text-amber-100' : 'text-indigo-100'
+                      }`}>
                         "{currentItem.dialogue}"
                       </p>
                     </div>
