@@ -14,3 +14,4 @@ providers-config.json
 !build/icon.png
 groq-keys.json
 scratch/
+temp_exports/
