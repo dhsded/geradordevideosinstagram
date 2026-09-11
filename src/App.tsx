@@ -6579,8 +6579,28 @@ export default function App() {
   };
 
   /**
-   * Gera preview de imagem gratuito com Pollinations.ai (modelo FLUX.1)
-   * Tenta primeiro via proxy backend; se falhar, tenta requisição direta do navegador.
+   * Helper seguro para download de imagens geradas (tanto Data URL quanto URL HTTP)
+   */
+  const downloadImageSafe = (url: string, filename: string) => {
+    if (!url) return;
+    if (url.startsWith('data:')) {
+      saveAs(url, filename);
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  /**
+   * Gera preview de imagem gratuito com Pollinations.ai (modelo FLUX.1 com contingência automática)
+   * Tenta primeiro via proxy backend (que não sofre bloqueio de Origin/Turnstile do Cloudflare).
+   * Se o backend estiver desconectado, usa URL direta compatível com tags <img> no navegador.
    */
   const requestPollinationsFluxPreview = async (
     prompt: string, 
@@ -6591,34 +6611,35 @@ export default function App() {
     const safeSeed = seed || Math.floor(Math.random() * 1000000);
     const cleanPrompt = prompt.trim().slice(0, 1800);
 
-    // 1. Tenta pelo endpoint local /api/generate-preview
+    // 1. Tenta pelo endpoint local /api/generate-preview (resiliente, server-to-server)
     try {
       const resp = await apiFetch('/api/generate-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: cleanPrompt, width, height, model: 'flux', seed: safeSeed })
       });
+
       if (resp.ok) {
         const data = await resp.json();
         if (data.dataUrl) return data.dataUrl;
+      } else {
+        const errJson = await resp.json().catch(() => ({}));
+        if (resp.status === 404) {
+          throw new Error("O servidor do PostForge precisa ser reiniciado para ativar a nova rota de preview (HTTP 404).");
+        }
+        if (errJson && errJson.error) {
+          throw new Error(errJson.error);
+        }
       }
-    } catch (backendErr) {
-      console.warn("Falha no proxy backend de preview, tentando direto via navegador:", backendErr);
+    } catch (backendErr: any) {
+      if (backendErr.message && backendErr.message.includes("servidor do PostForge precisa ser reiniciado")) {
+        throw backendErr;
+      }
+      console.warn("Proxy backend de preview não respondeu, utilizando URL direta:", backendErr);
     }
 
-    // 2. Fallback: Requisição direta via browser
-    const directUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&model=flux&nologo=true&seed=${safeSeed}`;
-    const directResp = await fetch(directUrl);
-    if (!directResp.ok) {
-      throw new Error(`Falha ao conectar com Pollinations.ai (${directResp.status})`);
-    }
-    const blob = await directResp.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    // 2. Fallback: URL direta de imagem (tags <img> com referrerpolicy="no-referrer" carregam perfeitamente sem bloqueio Turnstile)
+    return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&nologo=true&seed=${safeSeed}`;
   };
 
   /**
@@ -11068,7 +11089,12 @@ export default function App() {
                 {videoCoverPreviewUrl && (
                   <div className="mt-4 pt-4 border-t border-indigo-100 flex flex-col sm:flex-row items-center gap-4 relative z-10">
                     <div className="relative w-36 aspect-[9/16] rounded-xl overflow-hidden shadow-lg border border-indigo-200 bg-black shrink-0 group">
-                      <img src={videoCoverPreviewUrl} alt="Capa do Vídeo" className="w-full h-full object-cover transition duration-300 group-hover:scale-105" />
+                      <img 
+                        src={videoCoverPreviewUrl} 
+                        alt="Capa do Vídeo" 
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover transition duration-300 group-hover:scale-105" 
+                      />
                       <button
                         type="button"
                         onClick={() => openSingleImageInLightbox(videoCoverPreviewUrl, 'Capa do Vídeo - PostForge')}
@@ -11099,7 +11125,7 @@ export default function App() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => saveAs(videoCoverPreviewUrl, 'Capa_Video_FLUX.jpg')}
+                          onClick={() => downloadImageSafe(videoCoverPreviewUrl, 'Capa_Video_FLUX.jpg')}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition border border-slate-300 cursor-pointer shadow-xs"
                         >
                           <Download className="w-3.5 h-3.5 text-amber-500" />
@@ -11785,6 +11811,7 @@ export default function App() {
                           <img
                             src={slide.imageUrl}
                             alt={`Preview Slide ${slide.slideNumber}`}
+                            referrerPolicy="no-referrer"
                             className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
                           />
 
@@ -11850,7 +11877,7 @@ export default function App() {
 
                             <button
                               type="button"
-                              onClick={() => saveAs(slide.imageUrl!, `Slide_${slide.slideNumber}_FLUX.jpg`)}
+                              onClick={() => downloadImageSafe(slide.imageUrl!, `Slide_${slide.slideNumber}_FLUX.jpg`)}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition border border-slate-700 cursor-pointer"
                               title="Baixar imagem individual em alta resolução"
                             >
@@ -14866,7 +14893,7 @@ export default function App() {
                   {currentItem.url && (
                     <button
                       type="button"
-                      onClick={() => saveAs(currentItem.url, (currentItem.filename || currentItem.title).replace(/[^a-zA-Z0-9._-]/g, '_'))}
+                      onClick={() => downloadImageSafe(currentItem.url, ((currentItem.filename || currentItem.title).replace(/[^a-zA-Z0-9._-]/g, '_')) + (currentItem.url.includes('.') ? '' : '.jpg'))}
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
                       title="Baixar imagem individual"
                     >
@@ -14903,6 +14930,7 @@ export default function App() {
                   <img 
                     src={currentItem.url} 
                     alt={currentItem.title} 
+                    referrerPolicy="no-referrer"
                     className="max-h-[54vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800 transition-all duration-200"
                   />
                 ) : (
