@@ -138,6 +138,47 @@ export async function startServer(port = 3000) {
   });
 
   // ==========================================
+  // POLLINATIONS FLUX PREVIEW ENDPOINT
+  // ==========================================
+  app.post("/api/generate-preview", async (req, res) => {
+    try {
+      const { prompt, width = 1080, height = 1350, model = 'flux', seed } = req.body;
+      if (!prompt || typeof prompt !== 'string') {
+        return res.status(400).json({ error: "O prompt é obrigatório para gerar o preview." });
+      }
+      const safeSeed = seed || Math.floor(Math.random() * 1000000);
+      const cleanPrompt = prompt.trim().slice(0, 1800);
+      const encodedPrompt = encodeURIComponent(cleanPrompt);
+      const targetUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${model}&nologo=true&seed=${safeSeed}`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      const response = await fetch(targetUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`Pollinations retornou status ${response.status}: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mimeType = response.headers.get('content-type') || 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+
+      res.json({
+        success: true,
+        dataUrl,
+        seed: safeSeed,
+        url: targetUrl
+      });
+    } catch (error: any) {
+      console.error("Erro no proxy Pollinations:", error);
+      res.status(500).json({ error: error.message || "Erro ao gerar preview de imagem." });
+    }
+  });
+
+  // ==========================================
   // OPENROUTER MULTI-KEYS ENDPOINTS
   // ==========================================
   app.get("/api/openrouter-keys", (req, res) => {

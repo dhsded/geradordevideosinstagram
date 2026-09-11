@@ -802,6 +802,14 @@ export default function App() {
   const [customCloneCharDesc, setCustomCloneCharDesc] = useState('');
   const [customCloneCharImg, setCustomCloneCharImg] = useState<{ data: string; mimeType: string; preview: string } | null>(null);
 
+  // Pollinations FLUX Instant Preview States
+  const [generatingSlidePreviews, setGeneratingSlidePreviews] = useState<{ [slideIdx: number]: boolean }>({});
+  const [isGeneratingAllPreviews, setIsGeneratingAllPreviews] = useState(false);
+  const [previewBatchProgress, setPreviewBatchProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [showPreviewTextOverlay, setShowPreviewTextOverlay] = useState(true);
+  const [generatingVideoCoverPreview, setGeneratingVideoCoverPreview] = useState(false);
+  const [videoCoverPreviewUrl, setVideoCoverPreviewUrl] = useState<string | null>(null);
+
   // Video Analysis & Instagram Cloner states
   const [analysisSubTab, setAnalysisSubTab] = useState<'cloner' | 'local'>('cloner');
   const [clonerInputSource, setClonerInputSource] = useState<'file' | 'link' | 'browser'>('file');
@@ -912,6 +920,9 @@ export default function App() {
     setActiveCarouselIndex(0);
     setError(null);
     setLastGenerationMeta(null);
+    setGeneratingSlidePreviews({});
+    setIsGeneratingAllPreviews(false);
+    setVideoCoverPreviewUrl(null);
     addLog('info', 'PROJETO', '🗑️ Resultados limpos com sucesso. Interface pronta para nova geração.');
   };
 
@@ -6567,6 +6578,155 @@ export default function App() {
     }
   };
 
+  /**
+   * Gera preview de imagem gratuito com Pollinations.ai (modelo FLUX.1)
+   * Tenta primeiro via proxy backend; se falhar, tenta requisição direta do navegador.
+   */
+  const requestPollinationsFluxPreview = async (
+    prompt: string, 
+    width = 1080, 
+    height = 1350, 
+    seed?: number
+  ): Promise<string> => {
+    const safeSeed = seed || Math.floor(Math.random() * 1000000);
+    const cleanPrompt = prompt.trim().slice(0, 1800);
+
+    // 1. Tenta pelo endpoint local /api/generate-preview
+    try {
+      const resp = await apiFetch('/api/generate-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: cleanPrompt, width, height, model: 'flux', seed: safeSeed })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.dataUrl) return data.dataUrl;
+      }
+    } catch (backendErr) {
+      console.warn("Falha no proxy backend de preview, tentando direto via navegador:", backendErr);
+    }
+
+    // 2. Fallback: Requisição direta via browser
+    const directUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&model=flux&nologo=true&seed=${safeSeed}`;
+    const directResp = await fetch(directUrl);
+    if (!directResp.ok) {
+      throw new Error(`Falha ao conectar com Pollinations.ai (${directResp.status})`);
+    }
+    const blob = await directResp.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  /**
+   * Gera o preview de 1 slide específico do carrossel
+   */
+  const handleGenerateSlidePreview = async (slideIdx: number, forceNewSeed = false) => {
+    const targetSlide = carouselResult?.slides?.[slideIdx] || batchCarouselResults[activeCarouselIndex]?.slides?.[slideIdx];
+    if (!targetSlide || !targetSlide.imagePromptEn) {
+      addLog('warning', 'PREVIEW', `Slide ${slideIdx + 1} não possui prompt de imagem válido.`);
+      return;
+    }
+
+    setGeneratingSlidePreviews(prev => ({ ...prev, [slideIdx]: true }));
+    addLog('ai', 'PREVIEW', `Gerando arte instantânea do Slide ${slideIdx + 1} com FLUX.1 (Pollinations)...`);
+
+    try {
+      const seed = forceNewSeed ? Math.floor(Math.random() * 1000000) : undefined;
+      const dataUrl = await requestPollinationsFluxPreview(targetSlide.imagePromptEn, 1080, 1350, seed);
+
+      // Atualiza carouselResult
+      if (carouselResult && carouselResult.slides && carouselResult.slides[slideIdx]) {
+        const updatedSlides = [...carouselResult.slides];
+        updatedSlides[slideIdx] = {
+          ...updatedSlides[slideIdx],
+          imageUrl: dataUrl
+        };
+        setCarouselResult({ ...carouselResult, slides: updatedSlides });
+      }
+
+      // Atualiza batchCarouselResults
+      if (batchCarouselResults.length > 0 && batchCarouselResults[activeCarouselIndex]?.slides?.[slideIdx]) {
+        const targetCar = batchCarouselResults[activeCarouselIndex];
+        const updatedSlides = [...targetCar.slides];
+        updatedSlides[slideIdx] = {
+          ...updatedSlides[slideIdx],
+          imageUrl: dataUrl
+        };
+        const updatedBatch = [...batchCarouselResults];
+        updatedBatch[activeCarouselIndex] = {
+          ...targetCar,
+          slides: updatedSlides
+        };
+        setBatchCarouselResults(updatedBatch);
+      }
+
+      addLog('success', 'PREVIEW', `✨ Imagem do Slide ${slideIdx + 1} gerada com sucesso via FLUX.1!`);
+    } catch (err: any) {
+      console.error(err);
+      addLog('error', 'PREVIEW', `Erro ao gerar preview do Slide ${slideIdx + 1}: ${err.message || err}`);
+    } finally {
+      setGeneratingSlidePreviews(prev => ({ ...prev, [slideIdx]: false }));
+    }
+  };
+
+  /**
+   * Gera os previews de todos os slides do carrossel em sequência
+   */
+  const handleGenerateAllSlidePreviews = async () => {
+    const currentSlides = carouselResult?.slides || batchCarouselResults[activeCarouselIndex]?.slides || [];
+    if (currentSlides.length === 0) {
+      addLog('warning', 'PREVIEW', 'Nenhum slide disponível para gerar preview.');
+      return;
+    }
+
+    setIsGeneratingAllPreviews(true);
+    setPreviewBatchProgress({ current: 0, total: currentSlides.length });
+    addLog('ai', 'PREVIEW', `Iniciando geração em lote de ${currentSlides.length} previews via FLUX.1...`);
+
+    let successCount = 0;
+    for (let i = 0; i < currentSlides.length; i++) {
+      setPreviewBatchProgress({ current: i + 1, total: currentSlides.length });
+      try {
+        await handleGenerateSlidePreview(i);
+        successCount++;
+      } catch (err) {
+        console.error(`Erro ao gerar slide ${i + 1}:`, err);
+      }
+    }
+
+    setIsGeneratingAllPreviews(false);
+    addLog('success', 'PREVIEW', `🎉 Lote de previews finalizado: ${successCount} de ${currentSlides.length} imagens geradas com sucesso!`);
+  };
+
+  /**
+   * Gera o preview da capa do vídeo no Roteiro (Script)
+   */
+  const handleGenerateVideoCoverPreview = async () => {
+    const coverPrompt = result?.nanoBananaImagePrompt;
+    if (!coverPrompt) {
+      addLog('warning', 'PREVIEW', 'Nenhum prompt de capa de vídeo encontrado.');
+      return;
+    }
+
+    setGeneratingVideoCoverPreview(true);
+    addLog('ai', 'PREVIEW', 'Gerando preview da Capa do Vídeo com FLUX.1...');
+
+    try {
+      const dataUrl = await requestPollinationsFluxPreview(coverPrompt, 1080, 1920);
+      setVideoCoverPreviewUrl(dataUrl);
+      addLog('success', 'PREVIEW', '✨ Preview da Capa do Vídeo gerado com sucesso via FLUX.1!');
+    } catch (err: any) {
+      console.error(err);
+      addLog('error', 'PREVIEW', `Erro ao gerar preview da capa: ${err.message || err}`);
+    } finally {
+      setGeneratingVideoCoverPreview(false);
+    }
+  };
+
   const handleUploadClonerImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -10871,17 +11031,84 @@ export default function App() {
                     </div>
                     <h3 className="text-indigo-900 font-bold text-sm uppercase">Prompt Capa de Vídeo (PostForge)</h3>
                   </div>
-                  <button 
-                    onClick={() => handleCopy(result.nanoBananaImagePrompt || '', 'cover_prompt')}
-                    className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-600 bg-white px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition shadow-sm border border-indigo-200"
-                  >
-                    {copiedStates['cover_prompt'] || copiedStates['nano_banana'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    Copiar Prompt
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={handleGenerateVideoCoverPreview}
+                      disabled={generatingVideoCoverPreview}
+                      className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 px-3 py-1.5 rounded-lg shadow-xs transition cursor-pointer disabled:opacity-50"
+                      title="Gera instantaneamente a capa de vídeo via I.A FLUX.1 gratuita"
+                    >
+                      {generatingVideoCoverPreview ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                          <span>Gerando Capa...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                          <span>{videoCoverPreviewUrl ? '🔄 Regenerar Capa' : '⚡ Gerar Preview (FLUX)'}</span>
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      onClick={() => handleCopy(result.nanoBananaImagePrompt || '', 'cover_prompt')}
+                      className="flex items-center gap-1.5 text-xs font-bold uppercase text-indigo-600 bg-white px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition shadow-sm border border-indigo-200"
+                    >
+                      {copiedStates['cover_prompt'] || copiedStates['nano_banana'] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      Copiar Prompt
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-white rounded-xl border border-indigo-200 p-4 relative z-10">
                   <code className="text-[11px] lg:text-xs text-indigo-700 leading-tight block font-mono whitespace-pre-wrap">{result.nanoBananaImagePrompt}</code>
                 </div>
+
+                {/* Exibição da Imagem de Capa Gerada via FLUX */}
+                {videoCoverPreviewUrl && (
+                  <div className="mt-4 pt-4 border-t border-indigo-100 flex flex-col sm:flex-row items-center gap-4 relative z-10">
+                    <div className="relative w-36 aspect-[9/16] rounded-xl overflow-hidden shadow-lg border border-indigo-200 bg-black shrink-0 group">
+                      <img src={videoCoverPreviewUrl} alt="Capa do Vídeo" className="w-full h-full object-cover transition duration-300 group-hover:scale-105" />
+                      <button
+                        type="button"
+                        onClick={() => openSingleImageInLightbox(videoCoverPreviewUrl, 'Capa do Vídeo - PostForge')}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white cursor-pointer"
+                        title="Ampliar Capa em Tela Cheia"
+                      >
+                        <ZoomIn className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" /> Capa Gerada com FLUX.1
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-500">9:16 (1080x1920)</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Capa vertical em proporção 9:16 pronta para Reels, Shorts e TikTok, renderizada a partir do prompt mestre.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => openSingleImageInLightbox(videoCoverPreviewUrl, 'Capa do Vídeo - PostForge')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          <span>Ampliar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveAs(videoCoverPreviewUrl, 'Capa_Video_FLUX.jpg')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition border border-slate-300 cursor-pointer shadow-xs"
+                        >
+                          <Download className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Baixar Capa</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Instagram Post Description */}
@@ -11159,6 +11386,42 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center flex-wrap gap-2">
+                  {/* Botão de Geração em Lote de Previews com FLUX (Pollinations) */}
+                  <button
+                    type="button"
+                    onClick={handleGenerateAllSlidePreviews}
+                    disabled={isGeneratingAllPreviews}
+                    className="flex items-center gap-2 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 text-xs font-black px-4 py-2 rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                    title="Gera instantaneamente as imagens de todos os slides via I.A FLUX.1 gratuita (Pollinations.ai)"
+                  >
+                    {isGeneratingAllPreviews ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                        <span>Gerando {previewBatchProgress.current}/{previewBatchProgress.total}...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-slate-950" />
+                        <span>⚡ Gerar Todos os Previews (FLUX)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Toggle para ligar/desligar overlay da frase no topo */}
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewTextOverlay(prev => !prev)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border transition cursor-pointer ${
+                      showPreviewTextOverlay
+                        ? 'bg-amber-950/40 text-amber-300 border-amber-500/50 hover:bg-amber-900/50'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                    title="Alterna a exibição da frase tipográfica real sobre a imagem no preview"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{showPreviewTextOverlay ? 'Overlay: Ativo' : 'Overlay: Oculto'}</span>
+                  </button>
+
                   <button 
                     onClick={handleExportProjectJSON} 
                     className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3.5 py-2 rounded-xl border border-indigo-200 transition cursor-pointer shadow-2xs"
@@ -11514,12 +11777,164 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Card de Preview da Imagem Gerada via FLUX (Pollinations) */}
+                    {slide.imageUrl ? (
+                      <div className="bg-slate-950 border border-amber-500/40 rounded-2xl p-4 flex flex-col md:flex-row items-center gap-5 shadow-2xl overflow-hidden relative group">
+                        {/* Frame Proporcional 4:5 da Imagem */}
+                        <div className="relative w-full max-w-[280px] sm:max-w-[320px] aspect-[4/5] rounded-xl overflow-hidden shadow-xl border border-slate-700/80 bg-black shrink-0">
+                          <img
+                            src={slide.imageUrl}
+                            alt={`Preview Slide ${slide.slideNumber}`}
+                            className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+
+                          {/* Overlay Opcional da Frase de Impacto no Topo (Safe-Zone 25%) */}
+                          {showPreviewTextOverlay && isDeepMode && currentPhrasePt && (
+                            <div className="absolute top-0 inset-x-0 pt-4 pb-8 px-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex flex-col items-center text-center pointer-events-none z-10">
+                              <p className={`text-xs sm:text-sm font-extrabold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] px-1 leading-snug ${
+                                currentTypoKey === 'serif_editorial' ? 'font-serif italic text-amber-100 font-semibold' :
+                                currentTypoKey === 'minimalist_clean' ? 'font-sans font-light tracking-widest uppercase text-slate-100' :
+                                'font-sans uppercase font-black tracking-tight text-white'
+                              }`}>
+                                "{currentPhrasePt}"
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Badge Flutuante no Canto */}
+                          <div className="absolute bottom-2 left-2 bg-slate-900/80 backdrop-blur-md px-2 py-0.5 rounded-md border border-slate-700/80 text-[9px] font-mono font-bold text-amber-400 z-10 flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                            <span>FLUX.1 Preview</span>
+                          </div>
+
+                          {/* Botão Flutuante de Zoom */}
+                          <button
+                            type="button"
+                            onClick={() => openCarouselSlideInLightbox(index)}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white cursor-pointer z-20"
+                            title="Visualizar em Tela Cheia no Lightbox"
+                          >
+                            <div className="p-3 rounded-full bg-slate-900/90 border border-white/20 shadow-2xl flex items-center gap-2 text-xs font-bold">
+                              <ZoomIn className="w-4 h-4" />
+                              <span>Expandir Slide</span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* Detalhes & Ações da Imagem */}
+                        <div className="flex-1 w-full space-y-3">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                <Check className="w-3 h-3 text-emerald-400" /> Arte Gerada com Sucesso
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-400">
+                                Proporção 4:5 (1080x1350)
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            Esta imagem foi renderizada instantaneamente pelo modelo <strong className="text-amber-300">FLUX.1</strong> a partir do prompt visual e composição estruturada para este slide.
+                          </p>
+
+                          <div className="flex items-center flex-wrap gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => openCarouselSlideInLightbox(index)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                            >
+                              <ZoomIn className="w-3.5 h-3.5" />
+                              <span>Apresentar em Tela Cheia</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => saveAs(slide.imageUrl!, `Slide_${slide.slideNumber}_FLUX.jpg`)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition border border-slate-700 cursor-pointer"
+                              title="Baixar imagem individual em alta resolução"
+                            >
+                              <Download className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Baixar Imagem</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateSlidePreview(index, true)}
+                              disabled={generatingSlidePreviews[index]}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition border border-slate-700 cursor-pointer disabled:opacity-50"
+                              title="Gerar nova variação desta cena com nova semente (seed)"
+                            >
+                              {generatingSlidePreviews[index] ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                                  <span>Gerando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Nova Variação</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Banner Sugestivo para Gerar Preview */
+                      <div className="p-3 bg-slate-800/40 border border-slate-700/60 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                          <p className="text-xs text-slate-300">
+                            Gere a arte visual deste slide instantaneamente com I.A gratuita (FLUX.1).
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateSlidePreview(index)}
+                          disabled={generatingSlidePreviews[index]}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 rounded-lg text-xs font-black transition shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {generatingSlidePreviews[index] ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                              <span>Gerando Arte...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                              <span>⚡ Gerar Preview (FLUX)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="border-t border-slate-700 pt-4 mt-2">
                       <div className="flex justify-between items-center mb-3">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                           <ImageIcon className="w-3.5 h-3.5 text-indigo-400" /> Prompt de Imagem (FLOW / I.A)
                         </label>
                         <div className="flex items-center gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => handleGenerateSlidePreview(index)}
+                            disabled={generatingSlidePreviews[index]}
+                            className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 px-2.5 py-1 rounded-lg shadow-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Gera instantaneamente o preview visual desta imagem usando o modelo FLUX.1 (Gratuito via Pollinations)"
+                          >
+                            {generatingSlidePreviews[index] ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin text-slate-950" />
+                                <span>Gerando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3 h-3 text-slate-950" />
+                                <span>{slide.imageUrl ? '🔄 Regenerar' : '⚡ Gerar Preview'}</span>
+                              </>
+                            )}
+                          </button>
                           <button 
                             type="button"
                             onClick={() => handleShieldPromptAgainstBlankBubbles(index)}
