@@ -471,6 +471,17 @@ export interface MultiProjectAuditResponse {
   imagens_descartadas_globais?: string[];
 }
 
+export interface AuditDetectedBatch {
+  id: string;              // ex: "batch_1"
+  projectNumber: number;   // 1, 2, 3...
+  title: string;           // ex: "A Descoberta do Amor Próprio"
+  niche?: string;          // ex: "Psicologia"
+  artStyle?: string;       // ex: "Desenho à Mão (Sketched)"
+  slideCount: number;      // ex: 6
+  formattedScriptText: string; // Bloco formatado com os slides deste projeto
+  selected: boolean;       // Marcado para análise
+}
+
 export interface LightboxGalleryItem {
   url: string;
   title: string;
@@ -786,6 +797,7 @@ export default function App() {
   const [auditScriptInput, setAuditScriptInput] = useState<string>('');
   const [auditCharacterNotes, setAuditCharacterNotes] = useState<string>('');
   const [auditDocumentInfo, setAuditDocumentInfo] = useState<{ filename: string; size: number; wordCount?: number } | null>(null);
+  const [detectedAuditBatches, setDetectedAuditBatches] = useState<AuditDetectedBatch[]>([]);
   const [isExtractingDoc, setIsExtractingDoc] = useState(false);
   const [isDragOverDoc, setIsDragOverDoc] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
@@ -3841,6 +3853,7 @@ export default function App() {
     setAuditScriptInput('');
     setAuditCharacterNotes('');
     setAuditDocumentInfo(null);
+    setDetectedAuditBatches([]);
     setAuditResult(null);
     setAuditError(null);
     setOrderedSlidesList([]);
@@ -4334,6 +4347,123 @@ export default function App() {
     return { formattedText: cleanFallback };
   };
 
+  const extractAuditBatches = (rawText: string, parsed?: any): AuditDetectedBatch[] => {
+    const batches: AuditDetectedBatch[] = [];
+
+    const formatSingleCarousel = (car: any, pNum: number, defaultNiche?: string, defaultStyle?: string): AuditDetectedBatch => {
+      const cTitle = car.title || car.theme || `Carrossel ${pNum}`;
+      let singleScriptText = `=== PROJETO ${pNum}: ${cTitle.toUpperCase()} ===\n`;
+      
+      const metaParts: string[] = [];
+      const n = car.niche || defaultNiche;
+      const s = car.artStyle || defaultStyle;
+      if (n) metaParts.push(`Nicho: ${n}`);
+      if (s) metaParts.push(`Estilo: ${s}`);
+      if (metaParts.length > 0) singleScriptText += `${metaParts.join(' • ')}\n`;
+
+      if (car.instagramPost) {
+        singleScriptText += `Contexto/Legenda: ${car.instagramPost.substring(0, 160)}...\n`;
+      }
+      singleScriptText += `\n`;
+
+      const slides = car.slides || [];
+      slides.forEach((slide: any, sIdx: number) => {
+        const slideNum = slide.slideNumber || (sIdx + 1);
+        const bubbleText = slide.textInBubblesPt || slide.textInBubblesEn || slide.textInBubblesEs || slide.textInBubbles || '';
+        const desc = slide.descriptionPt || slide.description || '';
+        const prompt = slide.imagePromptEn || slide.prompt || '';
+
+        singleScriptText += `[SLIDE ${slideNum}]\n`;
+        if (desc) singleScriptText += `• Descrição da Cena: ${desc}\n`;
+        if (prompt) singleScriptText += `• Prompt de Imagem (FLOW / I.A): ${prompt}\n`;
+        if (bubbleText) singleScriptText += `• Texto no Balão: "${bubbleText}"\n`;
+        singleScriptText += `\n`;
+      });
+      singleScriptText += `----------------------------------------------------\n`;
+
+      return {
+        id: `batch_${pNum}`,
+        projectNumber: pNum,
+        title: cTitle,
+        niche: n,
+        artStyle: s,
+        slideCount: slides.length,
+        formattedScriptText: singleScriptText.trim(),
+        selected: true
+      };
+    };
+
+    // Caso 1: Documento estruturado (JSON, Payload do PDF ou Carrosséis parseados)
+    if (parsed) {
+      let carousels: any[] = [];
+      let defNiche = '';
+      let defStyle = '';
+
+      if (parsed.type === 'json' && parsed.data) {
+        const d = parsed.data;
+        if (Array.isArray(d.batchCarouselResults) && d.batchCarouselResults.length > 0) {
+          carousels = d.batchCarouselResults;
+        } else if (Array.isArray(d.carousels) && d.carousels.length > 0) {
+          carousels = d.carousels;
+        } else if (Array.isArray(d.projects) && d.projects.length > 0) {
+          carousels = d.projects;
+        } else if (d.carouselResult) {
+          carousels = [d.carouselResult];
+        }
+        defNiche = d.niche || '';
+        defStyle = d.artStyle || '';
+      } else if (parsed.type === 'carousel' && Array.isArray(parsed.carousels)) {
+        carousels = parsed.carousels;
+      }
+
+      if (carousels.length > 0) {
+        carousels.forEach((car, idx) => {
+          batches.push(formatSingleCarousel(car, idx + 1, defNiche, defStyle));
+        });
+        return batches;
+      }
+    }
+
+    // Caso 2: Texto já formatado ou importado com marcadores === PROJETO X ou === CARROSSEL X
+    const targetText = rawText || (parsed && parsed.text) || '';
+    if (targetText) {
+      const projectRegex = /(?:^|\n)\s*===\s*(?:PROJETO|CARROSSEL)\s*(\d+)[\s:]*([^\n=]*?)\s*===/gi;
+      const matches = [...targetText.matchAll(projectRegex)];
+
+      if (matches.length > 1) {
+        matches.forEach((m, idx) => {
+          const pNum = parseInt(m[1], 10) || (idx + 1);
+          const titleCandidate = m[2].trim().replace(/^:\s*/, '') || `Carrossel ${pNum}`;
+          
+          const startIdx = m.index;
+          const nextMatch = matches[idx + 1];
+          const endIdx = nextMatch ? nextMatch.index : targetText.length;
+          const blockText = targetText.slice(startIdx, endIdx).trim();
+
+          const slideMatches = blockText.match(/(?:\[SLIDE\s*\d+\]|SLIDE\s*\d+)/gi) || [];
+          const slideCount = slideMatches.length || 1;
+
+          const nicheMatch = blockText.match(/Nicho:\s*([^•\n\r]+)/i);
+          const styleMatch = blockText.match(/Estilo:\s*([^•\n\r]+)/i);
+
+          batches.push({
+            id: `batch_${pNum}`,
+            projectNumber: pNum,
+            title: titleCandidate,
+            niche: nicheMatch ? nicheMatch[1].trim() : undefined,
+            artStyle: styleMatch ? styleMatch[1].trim() : undefined,
+            slideCount,
+            formattedScriptText: blockText,
+            selected: true
+          });
+        });
+        return batches;
+      }
+    }
+
+    return batches;
+  };
+
   const handleImportProjectFile = async (file: File) => {
     if (!file) return;
     try {
@@ -4615,6 +4745,10 @@ export default function App() {
       const finalScriptText = formattedText || rawContent;
       setAuditScriptInput(finalScriptText);
 
+      // Identificar lotes e carrosséis individuais para seleção granular
+      const batches = extractAuditBatches(finalScriptText, parsed);
+      setDetectedAuditBatches(batches);
+
       if (characterNotes) {
         setAuditCharacterNotes(prev => {
           if (!prev.trim()) return characterNotes;
@@ -4628,7 +4762,11 @@ export default function App() {
         size: file.size,
         wordCount: words
       });
-      addLog('success', 'DOCUMENTO', `Texto do documento "${file.name}" extraído e estruturado para auditoria (${words} palavras).`);
+      if (batches.length > 1) {
+        addLog('success', 'DOCUMENTO', `Documento "${file.name}" processado: ${batches.length} carrosséis detectados (${words} palavras). Selecione os que deseja auditar.`);
+      } else {
+        addLog('success', 'DOCUMENTO', `Texto do documento "${file.name}" extraído e estruturado para auditoria (${words} palavras).`);
+      }
     } catch (err: any) {
       console.error('Erro ao processar documento de roteiro:', err);
       setAuditError(`Erro ao carregar documento "${file.name}": ${err.message}`);
@@ -4642,6 +4780,7 @@ export default function App() {
   const handleClearAuditDocument = () => {
     setAuditDocumentInfo(null);
     setAuditScriptInput('');
+    setDetectedAuditBatches([]);
   };
 
   const handlePullScriptFromGeneration = () => {
@@ -4675,8 +4814,19 @@ export default function App() {
       ].filter(Boolean).join('\n');
       
       setAuditCharacterNotes(charNotes);
-      addLog('info', 'AUDITORIA', `${batchCarouselResults.length} roteiros de carrossel puxados e organizados por projeto.`);
+      const batches = extractAuditBatches(scriptText, { 
+        type: 'json', 
+        data: { 
+          batchCarouselResults, 
+          artStyle, 
+          niche: selectedNiche,
+          characterDescription 
+        } 
+      });
+      setDetectedAuditBatches(batches);
+      addLog('info', 'AUDITORIA', `${batchCarouselResults.length} roteiros de carrossel puxados e organizados por projeto (${batches.length} carrosséis detectados para seleção).`);
     } else if (carouselResult && carouselResult.slides && carouselResult.slides.length > 0) {
+      setDetectedAuditBatches([]);
       let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${carouselResult.slides.length} SLIDES): ${carouselResult.title || topic || 'Carrossel Sem Título'} ===\n\n`;
       carouselResult.slides.forEach((s) => {
         const bubbleText = s.textInBubblesPt || s.textInBubblesEn || s.textInBubblesEs || s.textInBubbles || '';
@@ -4697,6 +4847,7 @@ export default function App() {
       setAuditCharacterNotes(charNotes);
       addLog('info', 'AUDITORIA', `Roteiro de ${carouselResult.slides.length} slides puxado do Carrossel com prompts visuais completos.`);
     } else if (result && result.scenes && result.scenes.length > 0) {
+      setDetectedAuditBatches([]);
       let scriptText = `=== ROTEIRO / STORYBOARD ESTRUTURADO (${result.scenes.length} CENAS): ${topic || 'Vídeo Sem Título'} ===\n\n`;
       if (result.nanoBananaImagePrompt) {
         scriptText += `[CAPA DO VÍDEO]\n• Prompt Visual: ${result.nanoBananaImagePrompt}\n\n`;
@@ -4720,6 +4871,7 @@ export default function App() {
       setAuditCharacterNotes(charNotes);
       addLog('info', 'AUDITORIA', `Roteiro de ${result.scenes.length} cenas puxado do Vídeo com prompts visuais completos.`);
     } else {
+      setDetectedAuditBatches([]);
       setAuditError('Nenhum roteiro ou carrossel gerado foi encontrado na sessão. Gere um na aba Vídeo/Carrossel ou carregue um arquivo .PDF / .DOC / .TXT diretamente.');
     }
   };
@@ -4737,6 +4889,42 @@ export default function App() {
     addLog('info', 'AUDITORIA', 'Todos os roteiros foram enviados para a Auditoria Visual! Agora faça o upload das imagens para separação e download.');
   };
 
+  const handleToggleAuditBatch = (batchId: string) => {
+    setDetectedAuditBatches(prev => {
+      const updated = prev.map(b => b.id === batchId ? { ...b, selected: !b.selected } : b);
+      const selected = updated.filter(b => b.selected);
+      if (selected.length > 0) {
+        setAuditScriptInput(selected.map(b => b.formattedScriptText).join('\n\n'));
+      } else {
+        setAuditScriptInput('');
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectAllAuditBatches = (selected: boolean) => {
+    setDetectedAuditBatches(prev => {
+      const updated = prev.map(b => ({ ...b, selected }));
+      if (selected) {
+        setAuditScriptInput(updated.map(b => b.formattedScriptText).join('\n\n'));
+      } else {
+        setAuditScriptInput('');
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectOnlyAuditBatch = (batchId: string) => {
+    setDetectedAuditBatches(prev => {
+      const updated = prev.map(b => ({ ...b, selected: b.id === batchId }));
+      const single = updated.find(b => b.id === batchId);
+      if (single) {
+        setAuditScriptInput(single.formattedScriptText);
+      }
+      return updated;
+    });
+  };
+
   const handleRunAudit = async () => {
     if (uploadedAuditImages.length === 0) {
       setAuditError('Por favor, faça o upload de pelo menos 1 imagem para auditoria.');
@@ -4749,12 +4937,38 @@ export default function App() {
       return;
     }
 
+    const selectedBatches = detectedAuditBatches.length > 0 ? detectedAuditBatches.filter(b => b.selected) : [];
+    if (detectedAuditBatches.length > 0 && selectedBatches.length === 0) {
+      setAuditError('Por favor, selecione pelo menos 1 carrossel na lista acima para auditar.');
+      addLog('warning', 'AUDITORIA', 'Tentativa de auditoria sem carrosséis selecionados.');
+      return;
+    }
+
+    let scriptsTextToSend = auditScriptInput.trim();
+    if (detectedAuditBatches.length > 0 && selectedBatches.length > 0) {
+      if (selectedBatches.length === 1 && selectedBatches.length < detectedAuditBatches.length) {
+        scriptsTextToSend = auditScriptInput.trim() || selectedBatches[0].formattedScriptText;
+      } else if (selectedBatches.length < detectedAuditBatches.length) {
+        scriptsTextToSend = selectedBatches.map(b => b.formattedScriptText).join('\n\n');
+      }
+    }
+
     setIsAuditing(true);
     setAuditError(null);
     setAuditResult(null);
 
     const modelToUse = activeProvider === 'openrouter' ? openrouterModelInput : geminiModel;
-    addLog('ai', 'AUDITORIA', `Iniciando Auditoria Visual com IA: ${uploadedAuditImages.length} imagens geradas + ${auditReferenceImages.length} refs de personagem via ${activeProvider.toUpperCase()} (${modelToUse})...`);
+    if (detectedAuditBatches.length > 0 && selectedBatches.length > 0) {
+      if (selectedBatches.length === 1) {
+        addLog('ai', 'AUDITORIA', `⚡ Modo Ultra Rápido: auditando 1 carrossel (#${selectedBatches[0].projectNumber}: ${selectedBatches[0].title}) com ${uploadedAuditImages.length} imagens geradas via ${activeProvider.toUpperCase()} (${modelToUse})...`);
+      } else if (selectedBatches.length < detectedAuditBatches.length) {
+        addLog('ai', 'AUDITORIA', `⚡ Análise Otimizada: auditando ${selectedBatches.length} de ${detectedAuditBatches.length} carrosséis com ${uploadedAuditImages.length} imagens geradas via ${activeProvider.toUpperCase()} (${modelToUse})...`);
+      } else {
+        addLog('ai', 'AUDITORIA', `Iniciando Auditoria Visual em Lote: todos os ${detectedAuditBatches.length} carrosséis com ${uploadedAuditImages.length} imagens via ${activeProvider.toUpperCase()} (${modelToUse})...`);
+      }
+    } else {
+      addLog('ai', 'AUDITORIA', `Iniciando Auditoria Visual com IA: ${uploadedAuditImages.length} imagens geradas + ${auditReferenceImages.length} refs de personagem via ${activeProvider.toUpperCase()} (${modelToUse})...`);
+    }
 
     try {
       const controller = new AbortController();
@@ -4771,7 +4985,7 @@ export default function App() {
           mimeType: img.mimeType,
           data: img.base64
         })),
-        scriptsText: auditScriptInput,
+        scriptsText: scriptsTextToSend,
         characterNotes: auditCharacterNotes,
         provider: activeProvider,
         model: modelToUse
@@ -8690,6 +8904,138 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Seletor de Carrosséis / Lotes Detectados */}
+                  {detectedAuditBatches.length > 1 && (
+                    <div className="p-3 bg-gradient-to-r from-indigo-50/90 via-slate-50 to-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-2.5 animate-in fade-in duration-200 shadow-2xs">
+                      {/* Cabeçalho do Seletor */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 pb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                            <Layers className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-800">
+                              Carrosséis no Documento:
+                            </span>
+                            <span className="text-xs font-semibold text-indigo-700 ml-1.5">
+                              {detectedAuditBatches.filter(b => b.selected).length} de {detectedAuditBatches.length} selecionados
+                            </span>
+                          </div>
+
+                          {/* Badge Indicativo de Velocidade / Tokens */}
+                          {detectedAuditBatches.filter(b => b.selected).length === 1 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <Zap className="w-3 h-3 text-emerald-600" />
+                              Modo Ultra Rápido (~8-15s • ~800 tokens)
+                            </span>
+                          ) : detectedAuditBatches.filter(b => b.selected).length < detectedAuditBatches.length ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                              <Zap className="w-3 h-3 text-blue-600" />
+                              Análise Otimizada ({detectedAuditBatches.filter(b => b.selected).length} carrosséis)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+                              Lote Completo ({detectedAuditBatches.length} carrosséis)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Ações de Seleção Rápida */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectAllAuditBatches(true)}
+                            className="px-2 py-0.5 text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-md transition cursor-pointer shadow-2xs"
+                            title="Marcar todos os carrosséis para auditoria"
+                          >
+                            Selecionar Todos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectAllAuditBatches(false)}
+                            className="px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition cursor-pointer shadow-2xs"
+                            title="Desmarcar todos os carrosséis"
+                          >
+                            Desmarcar Todos
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Lista Scrollável de Carrosséis */}
+                      <div className="max-h-52 overflow-y-auto pr-1 space-y-1.5">
+                        {detectedAuditBatches.map((batch) => {
+                          const isSelected = batch.selected;
+                          return (
+                            <div
+                              key={batch.id}
+                              className={`p-2 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
+                                isSelected 
+                                  ? 'bg-white border-indigo-300 shadow-2xs' 
+                                  : 'bg-slate-50/70 border-slate-200/80 opacity-60 hover:opacity-90'
+                              }`}
+                            >
+                              {/* Checkbox + Informações */}
+                              <label className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleAuditBatch(batch.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${
+                                      isSelected ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'
+                                    }`}>
+                                      #{batch.projectNumber}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-800 truncate" title={batch.title}>
+                                      {batch.title}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 flex-wrap">
+                                    <span className="font-semibold text-slate-600">
+                                      {batch.slideCount} slides
+                                    </span>
+                                    {batch.niche && (
+                                      <span>• Nicho: <strong className="text-slate-700">{batch.niche}</strong></span>
+                                    )}
+                                    {batch.artStyle && (
+                                      <span>• Estilo: <strong className="text-slate-700">{batch.artStyle}</strong></span>
+                                    )}
+                                  </div>
+                                </div>
+                              </label>
+
+                              {/* Botão de Atalho "Apenas Este" */}
+                              <button
+                                type="button"
+                                onClick={() => handleSelectOnlyAuditBatch(batch.id)}
+                                className={`shrink-0 px-2 py-1 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                                  isSelected && detectedAuditBatches.filter(b => b.selected).length === 1
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border border-slate-200 hover:border-indigo-300'
+                                }`}
+                                title={`Isolar e analisar apenas o Carrossel #${batch.projectNumber} (Desmarca os outros)`}
+                              >
+                                <Zap className="w-2.5 h-2.5" />
+                                <span>{isSelected && detectedAuditBatches.filter(b => b.selected).length === 1 ? 'Apenas Este (Ativo)' : 'Apenas Este'}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Alerta caso nenhum esteja marcado */}
+                      {detectedAuditBatches.filter(b => b.selected).length === 0 && (
+                        <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Nenhum carrossel selecionado. Marque ao menos um acima ou clique em "Selecionar Todos" para auditar.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Dropzone / Textarea de Roteiro */}
                   <div 
                     onDragOver={(e) => { e.preventDefault(); setIsDragOverDoc(true); }}
@@ -8708,8 +9054,9 @@ export default function App() {
                       value={auditScriptInput}
                       onChange={(e) => {
                         setAuditScriptInput(e.target.value);
-                        if (auditDocumentInfo && !e.target.value.trim()) {
-                          setAuditDocumentInfo(null);
+                        if (!e.target.value.trim()) {
+                          if (auditDocumentInfo) setAuditDocumentInfo(null);
+                          if (detectedAuditBatches.length > 0) setDetectedAuditBatches([]);
                         }
                       }}
                       placeholder={`Cole aqui o roteiro, arraste um arquivo (.PDF, .DOC, .TXT) aqui dentro, ou clique em "Carregar PDF / DOC".\n\nExemplo:\nSlide 1: Coração vermelho olhando com tristeza para o horizonte...\nSlide 2: Cérebro azul examinando um mapa de pensamentos...`}
