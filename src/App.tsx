@@ -10432,8 +10432,8 @@ export default function App() {
                                 <img
                                   src={assignedFrame.dataUrl}
                                   alt="frame"
-                                  className="absolute top-0 left-0 w-full object-cover"
-                                  style={{ height: `${reelsTopOffsetPercent}%` }}
+                                  className="absolute inset-0 w-full h-full object-contain"
+                                  style={{ pointerEvents: 'none' }}
                                 />
                               )}
 
@@ -10523,13 +10523,13 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Moldura sobreposta (apenas o topo) */}
+                      {/* Moldura sobreposta (PNG completo com transparência) */}
                       {reelsFrames.length > 0 ? (
                         <img
                           src={reelsFrames[0].dataUrl}
                           alt="Moldura preview"
-                          className="absolute top-0 left-0 w-full object-cover"
-                          style={{ height: `${reelsTopOffsetPercent}%` }}
+                          className="absolute inset-0 w-full h-full object-contain"
+                          style={{ pointerEvents: 'none' }}
                         />
                       ) : (
                         <div
