@@ -655,6 +655,7 @@ export interface ReelsVideoItem {
   errorMsg?: string;
   outputPath?: string;
   outputSize?: number;
+  thumbnail?: string;  // data URL do frame capturado para preview
 }
 
 export default function App() {
@@ -7537,28 +7538,86 @@ export default function App() {
     handleReelsVideoFiles(files);
   };
 
-  const handleReelsVideoFiles = (files: FileList | File[]) => {
-    const arr = Array.from(files);
-    const videoExts = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'm4v'];
-    const videoFiles = arr.filter(f => {
-      const ext = f.name.split('.').pop()?.toLowerCase() || '';
-      return videoExts.includes(ext) || f.type.startsWith('video/');
+  // Captura um frame do vídeo em ~1s para usar como thumbnail na grade
+  const captureVideoThumbnail = (file: File): Promise<string> =>
+    new Promise((resolve) => {
+      try {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        const cleanup = () => { try { URL.revokeObjectURL(url); } catch (_) {} };
+        const timeoutId = setTimeout(() => { cleanup(); resolve(''); }, 6000);
+
+        video.addEventListener('loadedmetadata', () => {
+          video.currentTime = Math.min(1.0, (video.duration || 2) / 3);
+        }, { once: true });
+
+        video.addEventListener('seeked', () => {
+          clearTimeout(timeoutId);
+          try {
+            const canvas = document.createElement('canvas');
+            const aspectRatio = video.videoHeight > 0 ? video.videoHeight / video.videoWidth : 16 / 9;
+            canvas.width = 280;
+            canvas.height = Math.round(280 * aspectRatio);
+            canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+            cleanup();
+            resolve(canvas.toDataURL('image/jpeg', 0.75));
+          } catch (_) { cleanup(); resolve(''); }
+        }, { once: true });
+
+        video.addEventListener('error', () => { clearTimeout(timeoutId); cleanup(); resolve(''); }, { once: true });
+      } catch (_) { resolve(''); }
     });
-    if (videoFiles.length === 0) return;
+
+  const handleReelsVideoFiles = async (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    // Aceitar qualquer arquivo que o sistema entenda como vídeo, OU com extensões comuns de vídeo
+    const videoFiles = arr.filter(f => {
+      if (f.type.startsWith('video/')) return true;
+      const ext = f.name.split('.').pop()?.toLowerCase() || '';
+      // Lista ampla de extensões de vídeo conhecidas pelo FFmpeg
+      return ['mp4', 'mov', 'avi', 'webm', 'mkv', 'm4v', 'flv', 'wmv', 'ts', 'mts', 'm2ts',
+              'mpg', 'mpeg', 'mp2', 'mpe', 'mpv', 'm2v', '3gp', '3g2', 'asf', 'rmvb', 'rm',
+              'ogv', 'ogg', 'vob', 'divx', 'xvid', 'f4v', 'hevc', 'h264', 'h265'].includes(ext);
+    });
+    if (videoFiles.length === 0) {
+      addLog('warning', 'REELS', `Nenhum arquivo de vídeo reconhecido nos ${arr.length} arquivo(s) selecionado(s).`);
+      return;
+    }
+    addLog('info', 'REELS', `Carregando ${videoFiles.length} vídeo(s)... Capturando thumbnails para preview.`);
+
+    // Criar os itens imediatamente (sem thumbnail) para aparecerem na grade já
     const newItems: ReelsVideoItem[] = videoFiles.map(f => ({
       id: Math.random().toString(36).substring(2, 9),
       name: f.name,
       path: (f as any).path || f.name,
       size: f.size,
       status: 'pending',
+      thumbnail: undefined,
     }));
     setReelsVideoQueue(prev => [...prev, ...newItems]);
+
+    // Definir pasta de saída automaticamente com base no caminho do primeiro vídeo
     if (!reelsOutputFolder) {
       const firstPath = (videoFiles[0] as any).path || '';
       if (firstPath) {
         const dir = firstPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') + '/ReelsEditados';
         setReelsOutputFolder(dir.replace(/\//g, '\\'));
       }
+    }
+
+    // Capturar thumbnails em background (não bloqueia a UI)
+    for (let idx = 0; idx < videoFiles.length; idx++) {
+      const file = videoFiles[idx];
+      const itemId = newItems[idx].id;
+      captureVideoThumbnail(file).then(thumbnail => {
+        if (thumbnail) {
+          setReelsVideoQueue(prev => prev.map(v => v.id === itemId ? { ...v, thumbnail } : v));
+        }
+      });
     }
   };
 
@@ -7579,7 +7638,8 @@ export default function App() {
 
     reelsCancelRef.cancelled = false;
     setIsReelsProcessing(true);
-    addLog('info', 'REELS', `Iniciando processamento de ${pendingVideos.length} vídeos com ${reelsFrames.length} moldura(s)...`);
+    addLog('info', 'REELS', `Iniciando processamento de ${pendingVideos.length} vídeo(s) com ${reelsFrames.length} moldura(s)...`);
+    addLog('info', 'REELS', `🔒 Limpeza de metadados ATIVA — GPS, câmera, autor e data serão removidos de todos os vídeos.`);
 
     let doneCount = 0;
     let errorCount = 0;
@@ -7598,7 +7658,8 @@ export default function App() {
 
       setReelsProcessingIndex(i);
       setReelsVideoQueue(prev => prev.map((v, idx) => idx === i ? { ...v, status: 'processing' } : v));
-      addLog('info', 'REELS', `[${doneCount + errorCount + 1}/${pendingVideos.length}] Processando: ${video.name}...`);
+      addLog('info', 'REELS', `[${doneCount + errorCount + 1}/${pendingVideos.length}] Processando: ${video.name} (moldura: ${frame.name})...`);
+      addLog('doc', 'REELS', `🔒 Limpando metadados de: ${video.name}`);
 
       try {
         const baseName = video.name.replace(/\.[^.]+$/, '');
@@ -7627,7 +7688,7 @@ export default function App() {
         setReelsVideoQueue(prev => prev.map((v, idx) => idx === i ? {
           ...v, status: 'done', outputPath: data.outputPath, outputSize: data.sizeBytes
         } : v));
-        addLog('success', 'REELS', `✅ ${video.name} → ${outputFileName} (${(data.sizeBytes / 1024 / 1024).toFixed(1)} MB)`);
+        addLog('success', 'REELS', `✅ ${video.name} → ${outputFileName} (${(data.sizeBytes / 1024 / 1024).toFixed(1)} MB) | metadados limpos ✓`);
         doneCount++;
       } catch (err: any) {
         setReelsVideoQueue(prev => prev.map((v, idx) => idx === i ? {
@@ -10285,7 +10346,7 @@ export default function App() {
                       </div>
                       <div>
                         <h3 className="text-xs font-bold text-slate-800">Fila de Vídeos</h3>
-                        <p className="text-[10px] text-slate-400">{reelsVideoQueue.length > 0 ? `${reelsVideoQueue.length} vídeo(s)` : 'MP4, MOV, AVI, WEBM'}</p>
+                        <p className="text-[10px] text-slate-400">{reelsVideoQueue.length > 0 ? `${reelsVideoQueue.length} vídeo(s) · todos os formatos suportados` : 'MP4, MOV, AVI, MKV, WMV, FLV e mais'}</p>
                       </div>
                     </div>
                     {reelsVideoQueue.length > 0 && (
@@ -10302,7 +10363,7 @@ export default function App() {
                     onDragOver={e => { e.preventDefault(); setIsDragOverReelsVideo(true); }}
                     onDragLeave={() => setIsDragOverReelsVideo(false)}
                     onDrop={handleReelsVideoDrop}
-                    className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition mb-3 shrink-0 ${isDragOverReelsVideo ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                    className={`border-2 border-dashed rounded-xl p-3 text-center transition mb-3 shrink-0 ${isDragOverReelsVideo ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
                   >
                     <Upload className="w-5 h-5 text-slate-400 mx-auto mb-1" />
                     <p className="text-[11px] font-bold text-slate-600 mb-1">Arraste vídeos ou pasta aqui</p>
@@ -10311,7 +10372,7 @@ export default function App() {
                         <input
                           ref={reelsVideoInputRef}
                           type="file"
-                          accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,.mp4,.mov,.avi,.webm,.mkv,.m4v"
+                          accept="video/*,.mp4,.mov,.avi,.webm,.mkv,.m4v,.flv,.wmv,.ts,.mts,.mpg,.mpeg,.3gp,.asf,.rmvb,.ogv,.vob,.divx,.f4v"
                           multiple
                           className="hidden"
                           onChange={e => { if (e.target.files) handleReelsVideoFiles(e.target.files); e.target.value = ''; }}
@@ -10324,7 +10385,7 @@ export default function App() {
                         <input
                           ref={reelsVideoFolderRef}
                           type="file"
-                          accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,.mp4,.mov,.avi,.webm,.mkv,.m4v"
+                          accept="video/*,.mp4,.mov,.avi,.webm,.mkv,.m4v,.flv,.wmv,.ts,.mts,.mpg,.mpeg,.3gp,.asf,.rmvb,.ogv,.vob,.divx,.f4v"
                           multiple
                           // @ts-ignore
                           webkitdirectory=""
@@ -10338,44 +10399,86 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Lista de vídeos */}
-                  <div className="flex-1 overflow-y-auto space-y-1.5 min-h-0">
+                  {/* Grade de Thumbnails dos Vídeos */}
+                  <div className="flex-1 overflow-y-auto min-h-0">
                     {reelsVideoQueue.length === 0 && (
                       <div className="text-center py-8 text-slate-300">
                         <Clapperboard className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         <p className="text-xs">Nenhum vídeo adicionado</p>
+                        <p className="text-[10px] mt-1 text-slate-400">Suporta todos os formatos: MP4, MKV, MOV, AVI, WMV, FLV...</p>
                       </div>
                     )}
-                    {reelsVideoQueue.map((video, vi) => {
-                      const statusIcon = video.status === 'done' ? '✅' : video.status === 'error' ? '❌' : video.status === 'processing' ? '⚙️' : '⏳';
-                      const statusColor = video.status === 'done' ? 'border-emerald-200 bg-emerald-50' : video.status === 'error' ? 'border-rose-200 bg-rose-50' : video.status === 'processing' ? 'border-indigo-200 bg-indigo-50 animate-pulse' : 'border-slate-100 bg-white';
-                      const assignedFrame = reelsFrames.length > 0 ? reelsFrames[vi % reelsFrames.length] : null;
-                      return (
-                        <div key={video.id} className={`flex items-center gap-2 p-2 rounded-xl border ${statusColor} transition`}>
-                          <span className="text-sm shrink-0">{statusIcon}</span>
-                          {assignedFrame && (
-                            <img src={assignedFrame.dataUrl} alt="frame" className="w-7 h-10 object-cover rounded-lg border border-slate-200 shrink-0" title={`Moldura: ${assignedFrame.name}`} />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-bold text-slate-700 truncate">{video.name}</p>
-                            <p className="text-[10px] text-slate-400">{(video.size / 1024 / 1024).toFixed(1)} MB</p>
-                            {video.status === 'error' && video.errorMsg && (
-                              <p className="text-[9px] text-rose-600 mt-0.5 leading-tight line-clamp-2">{video.errorMsg}</p>
-                            )}
-                            {video.status === 'done' && video.outputSize && (
-                              <p className="text-[9px] text-emerald-600 mt-0.5">→ {(video.outputSize / 1024 / 1024).toFixed(1)} MB</p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => setReelsVideoQueue(prev => prev.filter(v => v.id !== video.id))}
-                            className="w-5 h-5 text-slate-300 hover:text-rose-500 transition shrink-0 cursor-pointer flex items-center justify-center"
-                            title="Remover da fila"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                    {reelsVideoQueue.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {reelsVideoQueue.map((video, vi) => {
+                          const assignedFrame = reelsFrames.length > 0 ? reelsFrames[vi % reelsFrames.length] : null;
+                          const isProcessing = video.status === 'processing';
+                          const isDone = video.status === 'done';
+                          const isError = video.status === 'error';
+                          const cardBorder = isDone ? 'ring-2 ring-emerald-400' : isError ? 'ring-2 ring-rose-400' : isProcessing ? 'ring-2 ring-indigo-400' : 'ring-1 ring-slate-200';
+                          return (
+                            <div key={video.id} className={`relative rounded-xl overflow-hidden bg-slate-900 group cursor-default ${cardBorder} transition-all`} style={{ aspectRatio: '9/16' }}>
+                              {/* Thumbnail do vídeo */}
+                              {video.thumbnail ? (
+                                <img src={video.thumbnail} alt={video.name} className="absolute inset-0 w-full h-full object-cover" />
+                              ) : (
+                                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-slate-700 to-slate-900">
+                                  <Clapperboard className={`w-6 h-6 text-slate-500 ${isProcessing ? 'animate-pulse' : ''}`} />
+                                </div>
+                              )}
+
+                              {/* Overlay da moldura no topo (preview da composição) */}
+                              {assignedFrame && (
+                                <img
+                                  src={assignedFrame.dataUrl}
+                                  alt="frame"
+                                  className="absolute top-0 left-0 w-full object-cover"
+                                  style={{ height: `${reelsTopOffsetPercent}%` }}
+                                />
+                              )}
+
+                              {/* Badge de status */}
+                              <div className="absolute top-1 right-1">
+                                {isProcessing && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin bg-indigo-500/80" />}
+                                {isDone && <span className="text-sm drop-shadow-lg">✅</span>}
+                                {isError && <span className="text-sm drop-shadow-lg">❌</span>}
+                                {video.status === 'pending' && <span className="text-[10px] bg-black/50 text-white px-1 py-0.5 rounded font-bold">⏳</span>}
+                              </div>
+
+                              {/* Tamanho de saída se concluído */}
+                              {isDone && video.outputSize && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-emerald-600/90 px-1 py-0.5 text-center">
+                                  <span className="text-[8px] text-white font-bold">{(video.outputSize / 1024 / 1024).toFixed(1)} MB ✓</span>
+                                </div>
+                              )}
+
+                              {/* Nome do vídeo no hover */}
+                              <div className="absolute inset-0 bg-black/0 hover:bg-black/50 transition-all flex flex-col justify-end opacity-0 hover:opacity-100">
+                                <div className="p-1.5">
+                                  <p className="text-[8px] text-white font-bold leading-tight break-all line-clamp-2">{video.name}</p>
+                                  <p className="text-[7px] text-white/70">{(video.size / 1024 / 1024).toFixed(1)} MB</p>
+                                  {isError && video.errorMsg && (
+                                    <p className="text-[7px] text-rose-300 mt-0.5 line-clamp-2">{video.errorMsg}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => setReelsVideoQueue(prev => prev.filter(v => v.id !== video.id))}
+                                  className="absolute top-1 left-1 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-[10px] font-bold flex items-center justify-center cursor-pointer shadow"
+                                  title="Remover"
+                                >
+                                  ×
+                                </button>
+                              </div>
+
+                              {/* Número do vídeo */}
+                              <div className="absolute bottom-1 left-1 text-[7px] bg-black/60 text-white px-1 py-0.5 rounded font-mono">
+                                {vi + 1}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Barra de progresso global */}
@@ -10399,23 +10502,28 @@ export default function App() {
               {/* Coluna Direita: Preview + Configurações + Botão */}
               <div className="lg:col-span-7 flex flex-col gap-4 overflow-y-auto min-h-0">
 
-                {/* Preview da Composição */}
+                {/* Preview da Composição — com vídeo real */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
                   <h3 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5 text-rose-500" />
                     Preview da Composição
+                    {reelsVideoQueue.length > 0 && reelsFrames.length > 0 && (
+                      <span className="ml-auto text-[9px] text-slate-400 font-normal">Mostrando: {reelsVideoQueue[0]?.name?.slice(0, 30)}...</span>
+                    )}
                   </h3>
                   <div className="flex gap-4 items-start">
-                    {/* Preview visual da moldura com offset */}
-                    <div className="relative w-28 shrink-0 rounded-xl overflow-hidden border-2 border-slate-200 shadow-sm" style={{ aspectRatio: '9/16', background: '#1e293b' }}>
-                      {/* Área de vídeo (simulada) */}
-                      <div
-                        className="absolute left-0 right-0 bottom-0 bg-gradient-to-b from-slate-600 to-slate-800 flex items-center justify-center"
-                        style={{ top: `${reelsTopOffsetPercent}%` }}
-                      >
-                        <Video className="w-5 h-5 text-slate-400 opacity-50" />
-                      </div>
-                      {/* Moldura por cima */}
+                    {/* Preview visual composto: thumbnail do vídeo + moldura sobreposta */}
+                    <div className="relative shrink-0 rounded-xl overflow-hidden border-2 border-slate-200 shadow-sm bg-slate-900" style={{ width: 120, aspectRatio: '9/16' }}>
+                      {/* Thumbnail do vídeo real (primeiro da fila) */}
+                      {reelsVideoQueue[0]?.thumbnail ? (
+                        <img src={reelsVideoQueue[0].thumbnail} alt="Video preview" className="absolute inset-0 w-full h-full object-cover" />
+                      ) : (
+                        <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900 flex items-center justify-center">
+                          <Video className="w-6 h-6 text-slate-500 opacity-50" />
+                        </div>
+                      )}
+
+                      {/* Moldura sobreposta (apenas o topo) */}
                       {reelsFrames.length > 0 ? (
                         <img
                           src={reelsFrames[0].dataUrl}
@@ -10425,12 +10533,13 @@ export default function App() {
                         />
                       ) : (
                         <div
-                          className="absolute top-0 left-0 right-0 bg-white flex items-center justify-center border-b border-dashed border-slate-300"
+                          className="absolute top-0 left-0 right-0 bg-white/90 flex items-center justify-center border-b border-dashed border-slate-300"
                           style={{ height: `${reelsTopOffsetPercent}%` }}
                         >
                           <p className="text-[8px] text-slate-400 text-center px-1">Moldura<br/>aqui</p>
                         </div>
                       )}
+
                       {/* Linha de separação */}
                       <div className="absolute left-0 right-0 border-t-2 border-dashed border-rose-400" style={{ top: `${reelsTopOffsetPercent}%` }} />
                       {/* Label do offset */}
@@ -10441,7 +10550,7 @@ export default function App() {
 
                     <div className="flex-1">
                       <p className="text-[11px] text-slate-600 mb-2 leading-relaxed">
-                        A linha vermelha mostra onde começa a área do vídeo. A moldura (perfil + texto) fica <strong>por cima</strong> do vídeo no topo.
+                        A moldura (perfil + texto) fica <strong>por cima</strong> do vídeo no topo. Ajuste o slider para definir onde começa a área do vídeo.
                       </p>
                       {/* Slider do offset */}
                       <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between mb-1">
