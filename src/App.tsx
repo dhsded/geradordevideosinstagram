@@ -650,6 +650,7 @@ export interface ReelsVideoItem {
   id: string;
   name: string;
   path: string;        // caminho absoluto no sistema de arquivos (Electron)
+  fileRef?: File;      // referência ao File original (fallback para modo web/sem path absoluto)
   size: number;        // bytes
   status: 'pending' | 'processing' | 'done' | 'error';
   errorMsg?: string;
@@ -7590,14 +7591,19 @@ export default function App() {
     addLog('info', 'REELS', `Carregando ${videoFiles.length} vídeo(s)... Capturando thumbnails para preview.`);
 
     // Criar os itens imediatamente (sem thumbnail) para aparecerem na grade já
-    const newItems: ReelsVideoItem[] = videoFiles.map(f => ({
-      id: Math.random().toString(36).substring(2, 9),
-      name: f.name,
-      path: (f as any).path || f.name,
-      size: f.size,
-      status: 'pending',
-      thumbnail: undefined,
-    }));
+    const newItems: ReelsVideoItem[] = videoFiles.map(f => {
+      const absolutePath = (f as any).path || '';
+      const hasAbsolutePath = absolutePath && (absolutePath.includes('/') || absolutePath.includes('\\')) && absolutePath !== f.name;
+      return {
+        id: Math.random().toString(36).substring(2, 9),
+        name: f.name,
+        path: absolutePath || f.name,
+        fileRef: hasAbsolutePath ? undefined : f, // guarda o File original como fallback
+        size: f.size,
+        status: 'pending',
+        thumbnail: undefined,
+      };
+    });
     setReelsVideoQueue(prev => [...prev, ...newItems]);
 
     // Definir pasta de saída automaticamente com base no caminho do primeiro vídeo
@@ -7665,10 +7671,15 @@ export default function App() {
         const baseName = video.name.replace(/\.[^.]+$/, '');
         const outputFileName = `${baseName}_frame.mp4`;
 
-        const resp = await apiFetch('/api/reels-editor/process-one', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Verificar se temos caminho absoluto (Electron) ou precisamos enviar base64 (modo web)
+        const hasAbsPath = video.path && video.path !== video.name &&
+          (video.path.includes('/') || video.path.includes('\\'));
+
+        let bodyPayload: Record<string, unknown>;
+
+        if (hasAbsPath) {
+          // Modo Electron: usa o caminho do arquivo no disco
+          bodyPayload = {
             videoPath: video.path,
             frameBase64: frame.base64Data,
             frameMimeType: frame.mimeType,
@@ -7676,8 +7687,41 @@ export default function App() {
             crf: reelsCrf,
             outputFolder: reelsOutputFolder,
             outputFileName,
-          }),
+          };
+        } else if (video.fileRef) {
+          // Modo Web: lê o arquivo em base64 e envia ao servidor
+          addLog('info', 'REELS', `📦 Enviando vídeo via upload (modo web)...`);
+          const videoBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              resolve(result.includes(',') ? result.split(',')[1] : result);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(video.fileRef!);
+          });
+          const videoMimeType = video.fileRef.type || 'video/mp4';
+          bodyPayload = {
+            videoBase64,
+            videoMimeType,
+            videoFileName: video.name,
+            frameBase64: frame.base64Data,
+            frameMimeType: frame.mimeType,
+            topOffsetPercent: reelsTopOffsetPercent,
+            crf: reelsCrf,
+            outputFolder: reelsOutputFolder,
+            outputFileName,
+          };
+        } else {
+          throw new Error(`Caminho do arquivo não encontrado. Tente reabrir o app via Electron.`);
+        }
+
+        const resp = await apiFetch('/api/reels-editor/process-one', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload),
         });
+
 
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));

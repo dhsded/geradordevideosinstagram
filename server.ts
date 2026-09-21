@@ -218,6 +218,9 @@ export async function startServer(port = 3000) {
     try {
       const {
         videoPath,
+        videoBase64,
+        videoMimeType,
+        videoFileName,
         frameBase64,
         frameMimeType = 'image/png',
         topOffsetPercent = 35,
@@ -226,8 +229,8 @@ export async function startServer(port = 3000) {
         outputFileName,
       } = req.body;
 
-      if (!videoPath || !frameBase64 || !outputFolder || !outputFileName) {
-        return res.status(400).json({ error: "Parâmetros obrigatórios ausentes: videoPath, frameBase64, outputFolder, outputFileName." });
+      if ((!videoPath && !videoBase64) || !frameBase64 || !outputFolder || !outputFileName) {
+        return res.status(400).json({ error: "Parâmetros obrigatórios ausentes: (videoPath ou videoBase64), frameBase64, outputFolder, outputFileName." });
       }
 
       // Garantir que a pasta de saída existe
@@ -242,7 +245,22 @@ export async function startServer(port = 3000) {
       const frameBuffer = Buffer.from(frameBase64, 'base64');
       fs.writeFileSync(tempFramePath, frameBuffer);
 
+      // Resolver o caminho do vídeo (path absoluto ou base64)
+      let resolvedVideoPath = videoPath;
+      let tempVideoPath: string | null = null;
+
+      if (!resolvedVideoPath || resolvedVideoPath === videoFileName) {
+        // Modo web: vídeo chegou em base64 — gravar em temp
+        const videoExt = (videoFileName || 'video.mp4').split('.').pop()?.toLowerCase() || 'mp4';
+        tempVideoPath = path.join(tempDir, `reels_video_${Date.now()}.${videoExt}`);
+        const videoBuffer = Buffer.from(videoBase64, 'base64');
+        fs.writeFileSync(tempVideoPath, videoBuffer);
+        resolvedVideoPath = tempVideoPath;
+        console.log(`[Reels Editor] Vídeo recebido via base64, salvo em temp: ${tempVideoPath}`);
+      }
+
       const outputPath = path.join(outputFolder, outputFileName);
+
 
       // Calcular dimensões com base no offset do topo (percentual da altura 1920)
       const canvasH = 1920;
@@ -265,7 +283,7 @@ export async function startServer(port = 3000) {
       ].join('');
 
       const ffmpegArgs = [
-        '-i', videoPath,
+        '-i', resolvedVideoPath,
         '-i', tempFramePath,
         '-filter_complex', filterComplex,
         '-map', '[out]',
@@ -283,7 +301,7 @@ export async function startServer(port = 3000) {
         outputPath,
       ];
 
-      console.log(`[Reels Editor] Processando: ${path.basename(videoPath)} → ${outputFileName}`);
+      console.log(`[Reels Editor] Processando: ${path.basename(resolvedVideoPath)} → ${outputFileName}`);
 
       await new Promise<void>((resolve, reject) => {
         const proc = spawn('ffmpeg', ffmpegArgs);
@@ -295,6 +313,7 @@ export async function startServer(port = 3000) {
 
         proc.on('close', (code: number) => {
           try { fs.unlinkSync(tempFramePath); } catch (_) {}
+          if (tempVideoPath) { try { fs.unlinkSync(tempVideoPath); } catch (_) {} }
           if (code === 0) {
             console.log(`[Reels Editor] ✅ Sucesso: ${outputFileName}`);
             resolve();
@@ -307,6 +326,7 @@ export async function startServer(port = 3000) {
 
         proc.on('error', (err: Error) => {
           try { fs.unlinkSync(tempFramePath); } catch (_) {}
+          if (tempVideoPath) { try { fs.unlinkSync(tempVideoPath); } catch (_) {} }
           reject(new Error(`Falha ao iniciar o FFmpeg: ${err.message}. Verifique se o FFmpeg está no PATH do sistema.`));
         });
       });
@@ -324,6 +344,7 @@ export async function startServer(port = 3000) {
       res.status(500).json({ error: error.message || "Erro desconhecido ao processar o vídeo." });
     }
   });
+
 
   app.post("/api/reels-editor/open-output-folder", (req, res) => {
     try {
