@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import os from "os";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import JSZip from "jszip";
 import { createServer as createViteServer } from "vite";
 
@@ -286,7 +286,6 @@ export async function startServer(port = 3000) {
       console.log(`[Reels Editor] Processando: ${path.basename(videoPath)} → ${outputFileName}`);
 
       await new Promise<void>((resolve, reject) => {
-        const { spawn } = require('child_process');
         const proc = spawn('ffmpeg', ffmpegArgs);
         let stderrLog = '';
 
