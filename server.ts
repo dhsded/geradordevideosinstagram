@@ -360,6 +360,31 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // Abre seletor nativo de pasta via PowerShell e retorna o caminho escolhido
+  app.post("/api/pick-folder", (req, res) => {
+    const { defaultPath } = req.body || {};
+    const safePath = (defaultPath || '').replace(/'/g, '').replace(/"/g, '');
+    const psLines = [
+      `Add-Type -AssemblyName System.Windows.Forms`,
+      `$d = New-Object System.Windows.Forms.FolderBrowserDialog`,
+      `$d.Description = 'Selecione a pasta de saida dos videos'`,
+      `$d.ShowNewFolderButton = $true`,
+      safePath ? `$d.SelectedPath = '${safePath}'` : ``,
+      `$r = $d.ShowDialog()`,
+      `if ($r -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }`,
+    ].filter(Boolean).join('; ');
+
+    exec(
+      `powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${psLines}"`,
+      { timeout: 60000 },
+      (_err, stdout) => {
+        const chosen = stdout.trim();
+        if (!chosen) return res.json({ cancelled: true, path: null });
+        res.json({ cancelled: false, path: chosen });
+      }
+    );
+  });
+
   // ==========================================
   // OPENROUTER MULTI-KEYS ENDPOINTS
   // ==========================================
