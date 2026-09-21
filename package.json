@@ -36,6 +36,11 @@
       "metadata.json",
       "package.json"
     ],
+    "asarUnpack": [
+      "dist/server.cjs",
+      "dist/server.cjs.map",
+      "node_modules/**/*"
+    ],
     "extraResources": [
       {
         "from": "keys.json",

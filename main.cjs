@@ -81,14 +81,29 @@ async function startBackend() {
     });
   } else {
     console.log('📦 Starting internal backend server in production mode...');
-    const serverScript = path.join(__dirname, 'dist', 'server.cjs');
+    // No modo empacotado, arquivos do asarUnpack ficam em resources/app.asar.unpacked/
+    const serverScript = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'server.cjs');
+    console.log('[Backend] Server script path:', serverScript);
+    console.log('[Backend] Exists:', fs.existsSync(serverScript));
     try {
+      // Ajustar o NODE_PATH para que o server.cjs encontre seus módulos externos
+      const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked');
+      process.env.NODE_PATH = path.join(unpackedDir, 'node_modules');
+      require('module').Module._initPaths();
+
       const serverModule = require(serverScript);
       if (typeof serverModule.startServer === 'function') {
-        serverModule.startServer(3000);
+        serverModule.startServer(3000).then(() => {
+          console.log('[Backend] Server started successfully on port 3000');
+        }).catch((err) => {
+          console.error('[Backend] Server start error:', err);
+        });
+      } else {
+        console.error('[Backend] startServer function not found in module. Exports:', Object.keys(serverModule));
       }
     } catch (err) {
-      console.error('Failed to start internal server:', err);
+      console.error('[Backend] Failed to start internal server:', err.message);
+      console.error(err.stack);
     }
   }
 }
