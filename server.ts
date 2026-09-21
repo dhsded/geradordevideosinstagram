@@ -212,6 +212,135 @@ export async function startServer(port = 3000) {
   });
 
   // ==========================================
+  // REELS EDITOR — PROCESSAMENTO EM MASSA COM FFMPEG
+  // ==========================================
+  app.post("/api/reels-editor/process-one", async (req, res) => {
+    try {
+      const {
+        videoPath,
+        frameBase64,
+        frameMimeType = 'image/png',
+        topOffsetPercent = 35,
+        crf = 23,
+        outputFolder,
+        outputFileName,
+      } = req.body;
+
+      if (!videoPath || !frameBase64 || !outputFolder || !outputFileName) {
+        return res.status(400).json({ error: "Parâmetros obrigatórios ausentes: videoPath, frameBase64, outputFolder, outputFileName." });
+      }
+
+      // Garantir que a pasta de saída existe
+      if (!fs.existsSync(outputFolder)) {
+        fs.mkdirSync(outputFolder, { recursive: true });
+      }
+
+      // Salvar a moldura em arquivo temporário
+      const tempDir = os.tmpdir();
+      const frameExt = (frameMimeType.includes('jpeg') || frameMimeType.includes('jpg')) ? 'jpg' : 'png';
+      const tempFramePath = path.join(tempDir, `reels_frame_${Date.now()}.${frameExt}`);
+      const frameBuffer = Buffer.from(frameBase64, 'base64');
+      fs.writeFileSync(tempFramePath, frameBuffer);
+
+      const outputPath = path.join(outputFolder, outputFileName);
+
+      // Calcular dimensões com base no offset do topo (percentual da altura 1920)
+      const canvasH = 1920;
+      const canvasW = 1080;
+      const topOffsetPx = Math.round(canvasH * (topOffsetPercent / 100));
+      const videoAreaH = canvasH - topOffsetPx;
+
+      // Filtro FFmpeg:
+      // 1. Escalar o vídeo para a área disponível (1080 x videoAreaH), depois pad para 9:16 completo.
+      // 2. Escalar a moldura para 1080x1920 e cortar apenas os topOffsetPx do topo.
+      // 3. Overlay da moldura sobre o vídeo expandido.
+      // 4. Remover todos os metadados com -map_metadata -1.
+      const filterComplex = [
+        `[0:v]scale=${canvasW}:${videoAreaH}:force_original_aspect_ratio=increase,`,
+        `crop=${canvasW}:${videoAreaH},`,
+        `pad=${canvasW}:${canvasH}:0:${topOffsetPx}:color=black[vid_padded];`,
+        `[1:v]scale=${canvasW}:${canvasH}[frame_full];`,
+        `[frame_full]crop=${canvasW}:${topOffsetPx}:0:0[frame_top];`,
+        `[vid_padded][frame_top]overlay=0:0:format=auto,setsar=1[out]`
+      ].join('');
+
+      const ffmpegArgs = [
+        '-i', videoPath,
+        '-i', tempFramePath,
+        '-filter_complex', filterComplex,
+        '-map', '[out]',
+        '-map', '0:a?',
+        '-map_metadata', '-1',
+        '-map_metadata:s:v', '-1',
+        '-map_metadata:s:a', '-1',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', String(crf),
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        outputPath,
+      ];
+
+      console.log(`[Reels Editor] Processando: ${path.basename(videoPath)} → ${outputFileName}`);
+
+      await new Promise<void>((resolve, reject) => {
+        const { spawn } = require('child_process');
+        const proc = spawn('ffmpeg', ffmpegArgs);
+        let stderrLog = '';
+
+        proc.stderr.on('data', (data: Buffer) => {
+          stderrLog += data.toString();
+        });
+
+        proc.on('close', (code: number) => {
+          try { fs.unlinkSync(tempFramePath); } catch (_) {}
+          if (code === 0) {
+            console.log(`[Reels Editor] ✅ Sucesso: ${outputFileName}`);
+            resolve();
+          } else {
+            const errMsg = stderrLog.split('\n').filter(Boolean).slice(-8).join('\n');
+            console.error(`[Reels Editor] ❌ Erro FFmpeg (code ${code}):\n${errMsg}`);
+            reject(new Error(`FFmpeg retornou código ${code}.\n${errMsg}`));
+          }
+        });
+
+        proc.on('error', (err: Error) => {
+          try { fs.unlinkSync(tempFramePath); } catch (_) {}
+          reject(new Error(`Falha ao iniciar o FFmpeg: ${err.message}. Verifique se o FFmpeg está no PATH do sistema.`));
+        });
+      });
+
+      const stats = fs.statSync(outputPath);
+      res.json({
+        success: true,
+        outputPath,
+        outputFileName,
+        sizeBytes: stats.size,
+      });
+
+    } catch (error: any) {
+      console.error("[Reels Editor] Erro geral:", error);
+      res.status(500).json({ error: error.message || "Erro desconhecido ao processar o vídeo." });
+    }
+  });
+
+  app.post("/api/reels-editor/open-output-folder", (req, res) => {
+    try {
+      const { folderPath } = req.body;
+      if (!folderPath) return res.status(400).json({ error: "folderPath é obrigatório." });
+      const normalized = folderPath.replace(/\//g, '\\');
+      exec(`explorer.exe "${normalized}"`, (err) => {
+        if (err) console.warn(`[Reels Editor] Não foi possível abrir pasta: ${err.message}`);
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
   // OPENROUTER MULTI-KEYS ENDPOINTS
   // ==========================================
   app.get("/api/openrouter-keys", (req, res) => {
