@@ -439,7 +439,10 @@ export interface ClonedVideoScene {
   numero_cena: number;
   enquadramento: string;
   acao_visual: string;
-  fala: string;
+  fala: string;          // fala no idioma primário (ou campo legado)
+  fala_pt?: string;      // fala em português
+  fala_en?: string;      // fala em inglês
+  fala_es?: string;      // fala em espanhol
   prompt_imagem_en: string;
 }
 
@@ -449,6 +452,14 @@ export interface ClonedCarouselSlide {
   titulo_slide: string;
   conteudo_texto: string;
   prompt_imagem_en: string;
+}
+
+export interface ClonerVersion {
+  titulo_sugerido: string;
+  gancho_novo: string;
+  cenas: ClonedVideoScene[];
+  cta_final: string;
+  idioma?: string;
 }
 
 export interface ClonerResultData {
@@ -463,12 +474,15 @@ export interface ClonerResultData {
     formato_ideal: string;
     justificativa: string;
   };
-  roteiro_clonado_video: {
+  // Versão única (compatibilidade retroativa)
+  roteiro_clonado_video?: {
     titulo_sugerido: string;
     gancho_novo: string;
     cenas: ClonedVideoScene[];
     cta_final: string;
   };
+  // Multi-versões (quando versionCount > 1 ou sempre)
+  versoes_clonadas?: ClonerVersion[];
   carrossel_adaptado: {
     titulo_carrossel: string;
     slides: ClonedCarouselSlide[];
@@ -664,6 +678,89 @@ export interface ReelsVideoItem {
   outputPath?: string;
   outputSize?: number;
   thumbnail?: string;  // data URL do frame capturado para preview
+}
+
+// Sub-componente para cena do clonador (necessário para usar useState por cena sem violar as regras dos Hooks)
+function ClonerSceneCard({
+  cena,
+  cIdx,
+  versionIndex,
+  copiedStates,
+  handleCopy
+}: {
+  cena: ClonedVideoScene;
+  cIdx: number;
+  versionIndex: number;
+  copiedStates: Record<string, boolean>;
+  handleCopy: (text: string, key: string) => void;
+}) {
+  const isMultiLang = !!(cena.fala_pt || cena.fala_en || cena.fala_es);
+  const availLangs = isMultiLang
+    ? LANGUAGES.filter(l => l.id !== 'all' && (cena[`fala_${l.id}` as keyof ClonedVideoScene] as string)?.trim())
+    : [];
+  const [activeLangTab, setActiveLangTab] = React.useState(availLangs[0]?.id || 'pt');
+  const falaToShow = isMultiLang
+    ? (cena[`fala_${activeLangTab}` as keyof ClonedVideoScene] as string) || cena.fala
+    : cena.fala;
+  const copyKey = `cloner_prompt_${versionIndex}_${cIdx}`;
+
+  return (
+    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-black flex items-center justify-center border border-indigo-500/30">
+            {cena.numero_cena || (cIdx + 1)}
+          </span>
+          <span className="text-xs font-bold text-slate-300">
+            Cena {cena.numero_cena || (cIdx + 1)} • <code className="text-indigo-400">{cena.enquadramento}</code>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => handleCopy(cena.prompt_imagem_en, copyKey)}
+          className="text-[10px] font-bold text-indigo-400 hover:text-white transition flex items-center gap-1"
+        >
+          {copiedStates[copyKey] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          <span>Prompt</span>
+        </button>
+      </div>
+
+      <p className="text-xs text-slate-400 leading-relaxed">
+        <strong className="text-slate-300">Ação Visual:</strong> {cena.acao_visual}
+      </p>
+
+      {/* Fala — mono ou multi-idioma */}
+      <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+        {isMultiLang && availLangs.length > 1 && (
+          <div className="flex gap-1 mb-1.5">
+            {availLangs.map(l => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => setActiveLangTab(l.id)}
+                className={`px-1.5 py-0.5 rounded-lg text-[9px] font-bold transition cursor-pointer ${
+                  activeLangTab === l.id
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {l.flag} {l.code}
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase block">
+          Fala{isMultiLang ? ` — ${LANGUAGES.find(l => l.id === activeLangTab)?.name || activeLangTab}` : ''}:
+        </span>
+        <p className="text-xs text-white font-medium italic mt-0.5">"{falaToShow}"</p>
+      </div>
+
+      <div className="p-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono text-[11px] text-green-400">
+        <span className="text-[9px] text-slate-500 uppercase block font-sans">Prompt para Gerador de Imagem:</span>
+        <p className="mt-0.5">{cena.prompt_imagem_en}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -875,6 +972,10 @@ export default function App() {
   const [clonerNiche, setClonerNiche] = useState(''); // '' = detectar automaticamente
   const [clonerTone, setClonerTone] = useState('');
   const [clonerObjective, setClonerObjective] = useState('Clonagem com adaptação autoral e retenção viral');
+  const [clonerTargetLanguages, setClonerTargetLanguages] = useState<string[]>(['pt']);
+  const [clonerVersionCount, setClonerVersionCount] = useState<1 | 2 | 3>(1);
+  const [clonerFidelityMode, setClonerFidelityMode] = useState<'faithful' | 'creative'>('faithful');
+  const [clonerActiveVersionIndex, setClonerActiveVersionIndex] = useState(0);
   const [clonerTranscriptInput, setClonerTranscriptInput] = useState('');
   const [isCloning, setIsCloning] = useState(false);
   const [clonerResult, setClonerResult] = useState<ClonerResultData | null>(null);
@@ -2578,11 +2679,13 @@ export default function App() {
     }
 
     const autoDetect = !clonerNiche.trim();
+    const langLabels = clonerTargetLanguages.map(l => LANGUAGES.find(x => x.id === l)?.name || l).join(', ');
 
     setIsCloning(true);
+    setClonerActiveVersionIndex(0);
     setError(null);
     try {
-      addLog('ai', 'CLONADOR', `Iniciando transcrição de áudio e engenharia reversa com IA${autoDetect ? ' (categoria será detectada automaticamente)' : ` (${clonerNiche} • ${clonerTone})`}...`);
+      addLog('ai', 'CLONADOR', `Iniciando transcrição${autoDetect ? ' + detecção de categoria' : ` (${clonerNiche})`} • ${clonerVersionCount} versão(ões) • Idioma(s): ${langLabels}...`);
       
       const payload = {
         videoData: videoFile?.data || instagramVideoPreview?.base64Data,
@@ -2593,6 +2696,9 @@ export default function App() {
         targetTone: clonerTone || undefined,
         cloneObjective: clonerObjective,
         autoDetectNiche: autoDetect,
+        targetLanguages: clonerTargetLanguages,
+        versionCount: clonerVersionCount,
+        fidelityMode: clonerFidelityMode,
         provider: activeProvider,
         model: activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel)
       };
@@ -2618,9 +2724,10 @@ export default function App() {
           setClonerNiche(matchedNiche);
           const tones = NICHE_SCRIPT_TONES[matchedNiche];
           if (tones && tones.length > 0 && !clonerTone) setClonerTone(tones[0]);
-          addLog('success', 'CLONADOR', `Categoria detectada automaticamente: "${matchedNiche}" (${resJson.data.categoria_detectada.subtopico || ''})`);
+          addLog('success', 'CLONADOR', `Categoria detectada: "${matchedNiche}" (${resJson.data.categoria_detectada.subtopico || ''})`);
         }
-        addLog('success', 'CLONADOR', 'Vídeo clonado com sucesso! Roteiro de Vídeo, Carrossel e Legenda gerados.');
+        const versoesCount = resJson.data.versoes_clonadas?.length || 1;
+        addLog('success', 'CLONADOR', `✅ ${versoesCount} versão(ões) clonada(s) com sucesso em ${langLabels}!`);
       } else {
         throw new Error('Formato de resposta inválido.');
       }
@@ -13396,6 +13503,109 @@ export default function App() {
                   </div>
                   )}
 
+                  {/* Fidelidade */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">Modo de Clonagem</label>
+                    <div className="flex gap-1.5">
+                      {([
+                        { value: 'faithful', label: '🎯 Fiel ao original', title: 'Preserva número de cenas, ritmo e estrutura do original' },
+                        { value: 'creative', label: '✨ Adaptação criativa', title: 'Recria o conteúdo com liberdade, mantendo apenas o tema' },
+                      ] as const).map(({ value, label, title }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          title={title}
+                          onClick={() => setClonerFidelityMode(value)}
+                          className={`flex-1 px-2 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer ${
+                            clonerFidelityMode === value
+                              ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30'
+                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 leading-snug">
+                      {clonerFidelityMode === 'faithful'
+                        ? 'Mantém exatamente o número de cenas, ritmo e gancho do original. Adapta apenas a linguagem.'
+                        : 'Usa o original como inspiração. Pode reordenar, combinar ou criar novas cenas.'}
+                    </p>
+                  </div>
+
+                  {/* Idiomas de saída */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">Idioma(s) de Saída</label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {LANGUAGES.map(lang => {
+                        const isAll = lang.id === 'all';
+                        const isSelected = isAll
+                          ? clonerTargetLanguages.length === 3 && ['pt','en','es'].every(l => clonerTargetLanguages.includes(l))
+                          : clonerTargetLanguages.includes(lang.id) && clonerTargetLanguages.length < 3;
+                        return (
+                          <button
+                            key={lang.id}
+                            type="button"
+                            onClick={() => {
+                              if (isAll) {
+                                // toggle: se todos já selecionados → volta para só PT; senão → seleciona todos
+                                const allSelected = ['pt','en','es'].every(l => clonerTargetLanguages.includes(l));
+                                setClonerTargetLanguages(allSelected ? ['pt'] : ['pt','en','es']);
+                              } else {
+                                setClonerTargetLanguages(prev => {
+                                  if (prev.includes(lang.id) && prev.length > 1) return prev.filter(l => l !== lang.id);
+                                  if (!prev.includes(lang.id)) return [...prev, lang.id];
+                                  return prev; // não remove o último
+                                });
+                              }
+                            }}
+                            className={`px-2 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                            }`}
+                          >
+                            <span>{lang.flag}</span>
+                            <span>{lang.code}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {clonerTargetLanguages.length > 1 && (
+                      <p className="text-[9px] text-indigo-600 flex items-center gap-1">
+                        <Globe className="w-2.5 h-2.5" />
+                        Cada cena terá a fala em {clonerTargetLanguages.length} idiomas.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Número de versões */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700">Número de Versões</label>
+                    <div className="flex gap-1.5">
+                      {([1, 2, 3] as const).map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setClonerVersionCount(n)}
+                          className={`flex-1 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer ${
+                            clonerVersionCount === n
+                              ? 'bg-purple-600 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                          }`}
+                        >
+                          {n === 1 ? '1 versão' : `${n} versões`}
+                        </button>
+                      ))}
+                    </div>
+                    {clonerVersionCount > 1 && (
+                      <p className="text-[9px] text-purple-600 flex items-center gap-1">
+                        <Sparkle className="w-2.5 h-2.5" />
+                        A IA gerará {clonerVersionCount} variações com ganchos distintos.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-700">Objetivo da Clonagem</label>
                     <input
@@ -13544,7 +13754,11 @@ export default function App() {
                         }`}
                       >
                         <Clapperboard className="w-3.5 h-3.5" />
-                        <span>1. Roteiro de Vídeo ({clonerResult.roteiro_clonado_video?.cenas?.length || 0} cenas)</span>
+                        <span>1. Roteiro de Vídeo {
+                          clonerResult.versoes_clonadas?.length
+                            ? `(${clonerResult.versoes_clonadas.length} versão(ões))`
+                            : `(${clonerResult.roteiro_clonado_video?.cenas?.length || 0} cenas)`
+                        }</span>
                       </button>
 
                       <button
@@ -13590,58 +13804,73 @@ export default function App() {
                     {/* Conteúdo da Aba Ativa */}
                     <div className="flex-1 overflow-y-auto pr-1 space-y-3">
                       {/* ABA 1: ROTEIRO DE VÍDEO CLONADO */}
-                      {clonerActiveViewTab === 'video' && (
-                        <div className="space-y-3">
-                          {clonerResult.roteiro_clonado_video?.gancho_novo && (
-                            <div className="p-3.5 bg-gradient-to-r from-indigo-950/60 to-purple-950/60 rounded-2xl border border-indigo-500/40">
-                              <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold">Gancho de Retenção (Primeiros 3 Segundos):</span>
-                              <p className="text-xs font-bold text-white mt-1">"{clonerResult.roteiro_clonado_video.gancho_novo}"</p>
-                            </div>
-                          )}
-
-                          <div className="space-y-2.5">
-                            {clonerResult.roteiro_clonado_video?.cenas?.map((cena, cIdx) => (
-                              <div key={cIdx} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-black flex items-center justify-center border border-indigo-500/30">
-                                      {cena.numero_cena || (cIdx + 1)}
-                                    </span>
-                                    <span className="text-xs font-bold text-slate-300">Cena {cena.numero_cena || (cIdx + 1)} • <code className="text-indigo-400">{cena.enquadramento}</code></span>
-                                  </div>
+                      {clonerActiveViewTab === 'video' && (() => {
+                        // Normaliza: usa versoes_clonadas se disponível, senão roteiro_clonado_video legacy
+                        const versoes: ClonerVersion[] = clonerResult.versoes_clonadas?.length
+                          ? clonerResult.versoes_clonadas
+                          : clonerResult.roteiro_clonado_video
+                            ? [clonerResult.roteiro_clonado_video as ClonerVersion]
+                            : [];
+                        const versao = versoes[clonerActiveVersionIndex] || versoes[0];
+                        const isMultiV = versoes.length > 1;
+                        return (
+                          <div className="space-y-3">
+                            {/* Abas de versão */}
+                            {isMultiV && (
+                              <div className="flex gap-1.5 shrink-0">
+                                {versoes.map((v, vi) => (
                                   <button
+                                    key={vi}
                                     type="button"
-                                    onClick={() => handleCopy(cena.prompt_imagem_en, `cloner_prompt_${cIdx}`)}
-                                    className="text-[10px] font-bold text-indigo-400 hover:text-white transition flex items-center gap-1"
+                                    onClick={() => setClonerActiveVersionIndex(vi)}
+                                    className={`flex-1 px-2 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer ${
+                                      clonerActiveVersionIndex === vi
+                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                                    }`}
                                   >
-                                    {copiedStates[`cloner_prompt_${cIdx}`] ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                    <span>Copiar Prompt</span>
+                                    {vi === 0 ? '★ Versão 1' : `Versão ${vi + 1}`}
                                   </button>
-                                </div>
-
-                                <p className="text-xs text-slate-400 leading-relaxed"><strong className="text-slate-300">Ação Visual:</strong> {cena.acao_visual}</p>
-                                
-                                <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
-                                  <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase block">Fala da Cena:</span>
-                                  <p className="text-xs text-white font-medium italic mt-0.5">"{cena.fala}"</p>
-                                </div>
-
-                                <div className="p-2 bg-slate-900/60 rounded-xl border border-slate-800/80 font-mono text-[11px] text-green-400">
-                                  <span className="text-[9px] text-slate-500 uppercase block font-sans">Prompt para Gerador de Imagem:</span>
-                                  <p className="mt-0.5">{cena.prompt_imagem_en}</p>
-                                </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            )}
 
-                          {clonerResult.roteiro_clonado_video?.cta_final && (
-                            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs">
-                              <span className="text-[10px] font-mono text-pink-400 font-bold uppercase">CTA Final Recomendada:</span>
-                              <p className="text-white font-bold mt-0.5">{clonerResult.roteiro_clonado_video.cta_final}</p>
+                            {/* Gancho */}
+                            {versao?.gancho_novo && (
+                              <div className="p-3.5 bg-gradient-to-r from-indigo-950/60 to-purple-950/60 rounded-2xl border border-indigo-500/40">
+                                <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold">
+                                  {isMultiV ? `Gancho — Versão ${clonerActiveVersionIndex + 1}:` : 'Gancho de Retenção (Primeiros 3 Segundos):'}
+                                </span>
+                                <p className="text-xs font-bold text-white mt-1">"{versao.gancho_novo}"</p>
+                                {versao.titulo_sugerido && (
+                                  <p className="text-[10px] text-indigo-300 mt-1 font-medium">📌 {versao.titulo_sugerido}</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Cenas */}
+                            <div className="space-y-2.5">
+                              {versao?.cenas?.map((cena, cIdx) => (
+                                <ClonerSceneCard
+                                  key={`${clonerActiveVersionIndex}-${cIdx}`}
+                                  cena={cena}
+                                  cIdx={cIdx}
+                                  versionIndex={clonerActiveVersionIndex}
+                                  copiedStates={copiedStates}
+                                  handleCopy={handleCopy}
+                                />
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      )}
+
+                            {versao?.cta_final && (
+                              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                                <span className="text-[10px] font-mono text-pink-400 font-bold uppercase">CTA Final Recomendada:</span>
+                                <p className="text-white font-bold mt-0.5">{versao.cta_final}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* ABA 2: CARROSSEL ADAPTADO */}
                       {clonerActiveViewTab === 'carousel' && (

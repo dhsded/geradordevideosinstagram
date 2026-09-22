@@ -1767,20 +1767,50 @@ Responda em formato JSON estrito:
         targetTone = "Acolhedor / Compassivo",
         cloneObjective = "Clonagem com adaptação autoral e retenção viral",
         autoDetectNiche = false,
+        targetLanguages = ["pt"],
+        versionCount = 1,
+        fidelityMode = "faithful",
         provider: reqProvider,
         model: reqModel
       } = req.body;
 
-      // Bloco condicional do nicho: auto-detecção ou manual
+      const isMultilang = Array.isArray(targetLanguages) && targetLanguages.length > 1;
+      const isMultiVersion = Number(versionCount) > 1;
+      const isFaithful = fidelityMode === "faithful";
+
+      // ── Bloco de idioma ──────────────────────────────────────────────
+      const langNames: Record<string, string> = { pt: "Português (Brasil)", en: "Inglês (English)", es: "Espanhol (Español)" };
+      const langList = (Array.isArray(targetLanguages) ? targetLanguages : ["pt"])
+        .map((l: string) => langNames[l] || l).join(", ");
+
+      const langInstruction = isMultilang
+        ? `   - IDIOMAS DE SAÍDA: ${langList}. Para CADA cena, forneça a fala nos campos "fala_pt", "fala_en" e "fala_es". TODOS os três campos devem existir mesmo que o idioma não tenha sido solicitado — nesse caso preencha com string vazia "".`
+        : `   - IDIOMA DE SAÍDA: ${langNames[targetLanguages[0]] || targetLanguages[0]}. Escreva a fala no campo "fala" apenas neste idioma.`;
+
+      // ── Bloco de fidelidade ──────────────────────────────────────────
+      const fidelityInstruction = isFaithful
+        ? `REGRAS DE FIDELIDADE AO ORIGINAL (MODO FIEL):
+   - Mantenha EXATAMENTE o mesmo número de cenas do vídeo original
+   - Preserve o ritmo, o fluxo e a estrutura narrativa original (gancho → desenvolvimento → CTA)
+   - O gancho clonado DEVE ser baseado no gancho original, reformulado mas com o mesmo impacto
+   - Adapte APENAS expressões regionais, referências culturais e linguagem para o público-alvo
+   - NÃO invente novas cenas, NÃO reordene cenas, NÃO altere o conteúdo central de cada cena`
+        : `REGRAS DE ADAPTAÇÃO CRIATIVA (MODO CRIATIVO):
+   - Use o vídeo original como inspiração, mas crie uma versão nova e original
+   - Pode alterar o número de cenas, reordenar, combinar ou expandir cenas
+   - Crie um gancho completamente novo que seja ainda mais forte que o original
+   - Explore ângulos e abordagens diferentes mantendo o tema central`;
+
+      // ── Bloco de nicho ───────────────────────────────────────────────
       const nicheBlock = autoDetectNiche
         ? `3. DETECTE A CATEGORIA E NICHO DESTE VÍDEO:
    - Analise o tema central, vocabulário, público-alvo e estilo de comunicação
    - Identifique o nicho principal (ex: Psicologia, Fitness, Finanças, Tecnologia, Culinária, Educação, Entretenimento, etc.)
    - Identifique um subtópico específico (ex: "Autoestima e Relacionamentos", "Emagrecimento Funcional", etc.)
-   - Sugira o formato ideal de conteúdo para este nicho (ex: "Reel educativo com storytelling", "Carrossel com dicas práticas", etc.)
+   - Sugira o formato ideal de conteúdo para este nicho
 
-4. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL) adaptada ao nicho detectado:`
-        : `3. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL):
+4. CRIE A(S) VERSÃO(ÕES) CLONADA(S) seguindo as regras abaixo:`
+        : `3. CRIE A(S) VERSÃO(ÕES) CLONADA(S):
    - Nicho de Destino: "${targetNiche}"
    - Tom de Voz Desejado: "${targetTone}"
    - Objetivo: "${cloneObjective}"`;
@@ -1789,84 +1819,95 @@ Responda em formato JSON estrito:
         ? `  "categoria_detectada": {
     "nicho": "Nome do nicho principal detectado (ex: Psicologia, Fitness, Finanças, etc.)",
     "subtopico": "Subtópico específico identificado dentro do nicho",
-    "formato_ideal": "Formato de conteúdo recomendado para este nicho (ex: Reel educativo, Carrossel motivacional, etc.)",
+    "formato_ideal": "Formato de conteúdo recomendado para este nicho",
     "justificativa": "Breve explicação de por que este vídeo pertence a este nicho"
   },`
         : `  "categoria_detectada": null,`;
 
-      let prompt = `Você é o maior especialista e estrategista do mundo em Engenharia Reversa de Conteúdo Viral e Roteirização para Instagram (Reels, Vídeos Curtos e Carrosséis).
+      // ── Bloco de cenas (mono ou multilíngue) ────────────────────────
+      const sceneFields = isMultilang
+        ? `{
+          "numero_cena": 1,
+          "enquadramento": "Close-up / Médio / Amplo",
+          "acao_visual": "Descrição detalhada do cenário, personagens, postura e emoções...",
+          "fala": "",
+          "fala_pt": "Texto da fala em Português...",
+          "fala_en": "Spoken text in English...",
+          "fala_es": "Texto hablado en Español...",
+          "prompt_imagem_en": "Detailed cinematic English prompt for this scene..."
+        }`
+        : `{
+          "numero_cena": 1,
+          "enquadramento": "Close-up / Médio / Amplo",
+          "acao_visual": "Descrição detalhada do cenário, personagens, postura e emoções...",
+          "fala": "Texto falado nesta cena com impacto e naturalidade...",
+          "prompt_imagem_en": "Detailed cinematic English prompt for this scene..."
+        }`;
 
-Sua missão é realizar a CLONAGEM INTELIGENTE deste vídeo.
-${videoData ? "1. Analise o áudio, expressões e todas as falas deste vídeo para transcrever fielmente todos os diálogos." : transcriptInput ? `1. Analise a seguinte transcrição/conteúdo original fornecido:\n\"\"\"\n${transcriptInput}\n\"\"\"` : "1. Analise o conteúdo fornecido."}
-
-2. DESCONSTRUA o padrão viral do vídeo:
-   - Gancho inicial (primeiros 3 segundos que retêm o espectador)
-   - Gatilho emocional / Ponto de virada
-   - Tese principal de aprendizado
-   - Call to action (CTA)
-
-${nicheBlock}
-   - REGRA OBRIGATÓRIA: Nas falas dos diálogos, NUNCA coloque prefixos com nomes de personagens (ex: NÃO faça "Coração: ..."). O balão/fala deve conter APENAS o texto falado. A indicação de quem fala deve ir na descrição da cena!
-
-Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e sem texto fora do JSON) com esta estrutura exata:
-{
-  "transcricao_original": {
-    "dialogo_completo": "Transcrição integral e fiel de todas as falas do narrador ou personagens no vídeo...",
-    "gancho_identificado": "A frase ou gancho inicial que abriu o vídeo original...",
-    "analise_retencao": "Explicação estratégica de por que este vídeo engaja e como retém o público..."
-  },
-${nicheJsonBlock}
+      // ── Bloco de versões (single ou multi) ──────────────────────────
+      const nv = Math.min(Math.max(Number(versionCount) || 1, 1), 3);
+      const versionsJsonBlock = isMultiVersion
+        ? `  "versoes_clonadas": [
+    ${Array.from({ length: nv }, (_, i) => `{
+      "titulo_sugerido": "Título ${i === 0 ? 'principal' : `variação ${i + 1}`} — forte e magnético",
+      "gancho_novo": "${i === 0 ? 'Gancho principal baseado no original' : `Gancho variação ${i + 1} — abordagem diferente do mesmo tema`}",
+      "cenas": [ ${sceneFields} ],
+      "cta_final": "Chamada para ação de alto engajamento"
+    }`).join(',\n    ')}
+  ],
+  "roteiro_clonado_video": null,`
+        : `  "versoes_clonadas": null,
   "roteiro_clonado_video": {
     "titulo_sugerido": "Título forte e magnético do novo roteiro",
-    "gancho_novo": "Gancho inicial de abertura para os primeiros 3 segundos",
-    "cenas": [
-      {
-        "numero_cena": 1,
-        "enquadramento": "Close-up / Médio / Amplo",
-        "acao_visual": "Descrição detalhada do cenário, personagens, postura e emoções...",
-        "fala": "Texto falado nesta cena com impacto e naturalidade...",
-        "prompt_imagem_en": "Detailed cinematic prompt in English for AI image generator matching the scene, photorealistic or consistent animation style, highly detailed, 8k..."
-      }
-    ],
+    "gancho_novo": "Gancho inicial baseado no original — para os primeiros 3 segundos",
+    "cenas": [ ${sceneFields} ],
     "cta_final": "Chamada para ação final de alto engajamento"
+  },`;
+
+      const prompt = `Você é o maior especialista do mundo em Engenharia Reversa de Conteúdo Viral e Roteirização para Instagram.
+
+Sua missão: CLONAGEM INTELIGENTE ${isFaithful ? '(MODO FIEL AO ORIGINAL)' : '(MODO ADAPTAÇÃO CRIATIVA)'}.
+
+PASSO 1 — TRANSCRIÇÃO FIEL:
+${videoData ? "Analise o áudio e todas as falas deste vídeo. Transcreva FIELMENTE 100% dos diálogos, incluindo pausas e ênfases importantes." : transcriptInput ? `Analise a seguinte transcrição/conteúdo original fornecido:\n"""\n${transcriptInput}\n"""` : "Analise o conteúdo fornecido."}
+
+PASSO 2 — DESCONSTRUÇÃO DO PADRÃO VIRAL:
+   - Gancho inicial exato (primeiros 3 segundos)
+   - Número exato de cenas/blocos de fala
+   - Gatilho emocional / Ponto de virada
+   - Tese principal de aprendizado
+   - Call to action (CTA) original
+
+${nicheBlock}
+
+${fidelityInstruction}
+
+${langInstruction}
+   - REGRA OBRIGATÓRIA: NUNCA coloque prefixos de personagens nas falas (ex: NÃO faça "Coração: ..."). A fala deve conter APENAS o texto falado.
+   - Gere ${nv} versão(ões) ${nv > 1 ? 'com ganchos diferentes mas mesma fidelidade ao original' : ''}.
+
+Retorne ESTRITAMENTE em JSON VÁLIDO (sem comentários, sem texto fora do JSON):
+{
+  "transcricao_original": {
+    "dialogo_completo": "Transcrição INTEGRAL e FIEL de TODAS as falas, palavra por palavra...",
+    "gancho_identificado": "A frase exata de abertura do vídeo original...",
+    "analise_retencao": "Por que este vídeo engaja — estrutura, emoção, ritmo..."
   },
+${nicheJsonBlock}
+${versionsJsonBlock}
   "carrossel_adaptado": {
     "titulo_carrossel": "Título do Carrossel adaptado",
     "slides": [
-      {
-        "slide_numero": 1,
-        "tipo": "Capa",
-        "titulo_slide": "Frase de impacto da capa do carrossel",
-        "conteudo_texto": "Texto curto de apoio...",
-        "prompt_imagem_en": "Prompt em inglês para imagem da capa..."
-      },
-      {
-        "slide_numero": 2,
-        "tipo": "Desenvolvimento",
-        "titulo_slide": "Passo 1 / Insight Central",
-        "conteudo_texto": "Explicação profunda e direta ao ponto...",
-        "prompt_imagem_en": "Prompt em inglês para imagem do slide..."
-      },
-      {
-        "slide_numero": 3,
-        "tipo": "Desenvolvimento",
-        "titulo_slide": "Passo 2 / Quebra de Padrão",
-        "conteudo_texto": "Explicação adicional...",
-        "prompt_imagem_en": "Prompt em inglês..."
-      },
-      {
-        "slide_numero": 4,
-        "tipo": "CTA",
-        "titulo_slide": "Salve para não esquecer",
-        "conteudo_texto": "Comente abaixo o que você achou e compartilhe com alguém que precisa ouvir isso.",
-        "prompt_imagem_en": "Prompt em inglês para slide final..."
-      }
+      { "slide_numero": 1, "tipo": "Capa", "titulo_slide": "Frase de impacto da capa", "conteudo_texto": "Texto de apoio...", "prompt_imagem_en": "Prompt em inglês..." },
+      { "slide_numero": 2, "tipo": "Desenvolvimento", "titulo_slide": "Insight Central", "conteudo_texto": "Explicação profunda...", "prompt_imagem_en": "Prompt..." },
+      { "slide_numero": 3, "tipo": "Desenvolvimento", "titulo_slide": "Quebra de Padrão", "conteudo_texto": "Explicação adicional...", "prompt_imagem_en": "Prompt..." },
+      { "slide_numero": 4, "tipo": "CTA", "titulo_slide": "Salve para não esquecer", "conteudo_texto": "Comente abaixo e compartilhe.", "prompt_imagem_en": "Prompt final..." }
     ]
   },
   "legenda_instagram": {
-    "gancho": "Primeira linha irresistível da legenda (para fazer clicar em 'mais')...",
-    "corpo": "Texto completo da legenda com quebras de linha elegantes, espaçamento limpo e emojis estratégicos...",
-    "cta": "Chamada clara para comentar ou salvar...",
+    "gancho": "Primeira linha irresistível da legenda...",
+    "corpo": "Texto completo com quebras de linha e emojis estratégicos...",
+    "cta": "Chamada para comentar ou salvar...",
     "hashtags": ["#nicho", "#instagram", "#viral", "#conteudo"]
   }
 }`;
