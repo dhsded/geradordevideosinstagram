@@ -672,6 +672,7 @@ export default function App() {
   const [reelsOutputFolder, setReelsOutputFolder] = useState<string>('');
   const [isReelsProcessing, setIsReelsProcessing] = useState<boolean>(false);
   const [reelsProcessingIndex, setReelsProcessingIndex] = useState<number>(-1);
+  const [reelsPreviewVideoIndex, setReelsPreviewVideoIndex] = useState<number>(0);
   const [reelsCancelRef] = useState<{ cancelled: boolean }>({ cancelled: false });
   const [isDragOverReelsFrame, setIsDragOverReelsFrame] = useState<boolean>(false);
   const [isDragOverReelsVideo, setIsDragOverReelsVideo] = useState<boolean>(false);
@@ -10470,25 +10471,52 @@ export default function App() {
                       </div>
                     )}
                     {reelsVideoQueue.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-3 gap-2 pb-1">
                         {reelsVideoQueue.map((video, vi) => {
                           const assignedFrame = reelsFrames.length > 0 ? reelsFrames[vi % reelsFrames.length] : null;
                           const isProcessing = video.status === 'processing';
                           const isDone = video.status === 'done';
                           const isError = video.status === 'error';
-                          const cardBorder = isDone ? 'ring-2 ring-emerald-400' : isError ? 'ring-2 ring-rose-400' : isProcessing ? 'ring-2 ring-indigo-400' : 'ring-1 ring-slate-200';
+                          const isPending = video.status === 'pending';
+                          const isSelectedPreview = reelsPreviewVideoIndex === vi;
+                          const hasThumb = !!video.thumbnail;
+
+                          // Anel de borda: selecionado para preview → azul, done → verde, error → vermelho, processing → indigo pulsando, default → cinza
+                          const cardRing = isSelectedPreview
+                            ? 'ring-2 ring-blue-500 ring-offset-1'
+                            : isDone ? 'ring-2 ring-emerald-400'
+                            : isError ? 'ring-2 ring-rose-400'
+                            : isProcessing ? 'ring-2 ring-indigo-400'
+                            : 'ring-1 ring-slate-200 hover:ring-slate-400';
+
                           return (
-                            <div key={video.id} className={`relative rounded-xl overflow-hidden bg-slate-900 group cursor-default ${cardBorder} transition-all`} style={{ aspectRatio: '9/16' }}>
-                              {/* Thumbnail do vídeo */}
-                              {video.thumbnail ? (
+                            <div
+                              key={video.id}
+                              className={`relative rounded-xl overflow-hidden bg-slate-900 group cursor-pointer ${cardRing} transition-all`}
+                              style={{ aspectRatio: '9/16' }}
+                              onClick={() => setReelsPreviewVideoIndex(vi)}
+                              title={`Clique para ver no preview: ${video.name}`}
+                            >
+                              {/* ── FUNDO: Thumbnail real ou Skeleton ── */}
+                              {hasThumb ? (
                                 <img src={video.thumbnail} alt={video.name} className="absolute inset-0 w-full h-full object-cover" />
                               ) : (
-                                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-slate-700 to-slate-900">
-                                  <Clapperboard className={`w-6 h-6 text-slate-500 ${isProcessing ? 'animate-pulse' : ''}`} />
+                                /* Skeleton animado enquanto aguarda captura do frame */
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-slate-700 to-slate-900 gap-1.5 px-1">
+                                  {/* Shimmer bars */}
+                                  <div className="w-full space-y-1.5 px-1">
+                                    <div className="h-1.5 bg-slate-600/80 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                                    <div className="h-1.5 bg-slate-600/60 rounded-full animate-pulse w-4/5" style={{ animationDelay: '150ms' }} />
+                                    <div className="h-1.5 bg-slate-600/40 rounded-full animate-pulse w-3/5" style={{ animationDelay: '300ms' }} />
+                                  </div>
+                                  <Clapperboard className="w-5 h-5 text-slate-500 mt-1" />
+                                  {!isProcessing && (
+                                    <span className="text-[7px] text-slate-500 text-center leading-tight px-1">Carregando preview...</span>
+                                  )}
                                 </div>
                               )}
 
-                              {/* Overlay da moldura no topo (preview da composição) */}
+                              {/* ── MOLDURA sobreposta (PNG completo com transparência) ── */}
                               {assignedFrame && (
                                 <img
                                   src={assignedFrame.dataUrl}
@@ -10498,32 +10526,62 @@ export default function App() {
                                 />
                               )}
 
-                              {/* Badge de status */}
+                              {/* ── LINHA de corte da moldura (sempre visível) ── */}
+                              {assignedFrame && (
+                                <div
+                                  className="absolute left-0 right-0"
+                                  style={{ top: `${reelsTopOffsetPercent}%`, pointerEvents: 'none' }}
+                                >
+                                  <div className="border-t border-dashed border-rose-400/70 w-full" />
+                                  <div className="flex justify-end pr-0.5 -mt-0">
+                                    <span className="text-[6px] bg-rose-500/80 text-white px-0.5 py-px rounded-b font-bold leading-none">{reelsTopOffsetPercent}%</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* ── BADGE de status (canto superior direito) ── */}
                               <div className="absolute top-1 right-1">
-                                {isProcessing && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin bg-indigo-500/80" />}
+                                {isProcessing && (
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" style={{ background: 'rgba(99,102,241,0.85)' }} />
+                                )}
                                 {isDone && <span className="text-sm drop-shadow-lg">✅</span>}
                                 {isError && <span className="text-sm drop-shadow-lg">❌</span>}
-                                {video.status === 'pending' && <span className="text-[10px] bg-black/50 text-white px-1 py-0.5 rounded font-bold">⏳</span>}
+                                {isPending && !hasThumb && (
+                                  <span className="text-[8px] bg-slate-800/70 text-slate-300 px-1 py-px rounded font-bold">…</span>
+                                )}
+                                {isPending && hasThumb && (
+                                  <span className="text-[8px] bg-black/50 text-white px-1 py-0.5 rounded font-bold">⏳</span>
+                                )}
                               </div>
 
-                              {/* Tamanho de saída se concluído */}
+                              {/* ── Indicador "selecionado para preview" ── */}
+                              {isSelectedPreview && (
+                                <div className="absolute top-1 left-1">
+                                  <span className="text-[7px] bg-blue-500 text-white px-1 py-px rounded font-bold leading-none">👁</span>
+                                </div>
+                              )}
+
+                              {/* ── Tamanho de saída se concluído ── */}
                               {isDone && video.outputSize && (
                                 <div className="absolute bottom-0 left-0 right-0 bg-emerald-600/90 px-1 py-0.5 text-center">
                                   <span className="text-[8px] text-white font-bold">{(video.outputSize / 1024 / 1024).toFixed(1)} MB ✓</span>
                                 </div>
                               )}
 
-                              {/* Nome do vídeo no hover */}
-                              <div className="absolute inset-0 bg-black/0 hover:bg-black/50 transition-all flex flex-col justify-end opacity-0 hover:opacity-100">
-                                <div className="p-1.5">
+                              {/* ── Hover overlay com detalhes + botão remover ── */}
+                              <div className="absolute inset-0 bg-black/0 hover:bg-black/60 transition-all flex flex-col justify-end opacity-0 hover:opacity-100">
+                                <div className="p-1.5 pb-2">
                                   <p className="text-[8px] text-white font-bold leading-tight break-all line-clamp-2">{video.name}</p>
                                   <p className="text-[7px] text-white/70">{(video.size / 1024 / 1024).toFixed(1)} MB</p>
+                                  {assignedFrame && (
+                                    <p className="text-[7px] text-rose-300 mt-0.5">🖼 {assignedFrame.name}</p>
+                                  )}
                                   {isError && video.errorMsg && (
                                     <p className="text-[7px] text-rose-300 mt-0.5 line-clamp-2">{video.errorMsg}</p>
                                   )}
                                 </div>
                                 <button
-                                  onClick={() => setReelsVideoQueue(prev => prev.filter(v => v.id !== video.id))}
+                                  onClick={e => { e.stopPropagation(); setReelsVideoQueue(prev => prev.filter(v => v.id !== video.id)); }}
                                   className="absolute top-1 left-1 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-[10px] font-bold flex items-center justify-center cursor-pointer shadow"
                                   title="Remover"
                                 >
@@ -10531,10 +10589,12 @@ export default function App() {
                                 </button>
                               </div>
 
-                              {/* Número do vídeo */}
-                              <div className="absolute bottom-1 left-1 text-[7px] bg-black/60 text-white px-1 py-0.5 rounded font-mono">
-                                {vi + 1}
-                              </div>
+                              {/* ── Número do vídeo (canto inferior esquerdo) ── */}
+                              {!(isDone && video.outputSize) && (
+                                <div className="absolute bottom-1 left-1 text-[7px] bg-black/60 text-white px-1 py-0.5 rounded font-mono">
+                                  {vi + 1}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -10563,83 +10623,139 @@ export default function App() {
               {/* Coluna Direita: Preview + Configurações + Botão */}
               <div className="lg:col-span-7 flex flex-col gap-4 overflow-y-auto min-h-0">
 
-                {/* Preview da Composição — com vídeo real */}
+                {/* Preview da Composição — interativo */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
                   <h3 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5 text-rose-500" />
                     Preview da Composição
-                    {reelsVideoQueue.length > 0 && reelsFrames.length > 0 && (
-                      <span className="ml-auto text-[9px] text-slate-400 font-normal">Mostrando: {reelsVideoQueue[0]?.name?.slice(0, 30)}...</span>
+                    {reelsVideoQueue.length > 0 && (
+                      <span className="ml-auto text-[9px] text-slate-400 font-normal">
+                        Clique num vídeo da grade para prévia
+                      </span>
                     )}
                   </h3>
                   <div className="flex gap-4 items-start">
-                    {/* Preview visual composto: thumbnail do vídeo + moldura sobreposta */}
-                    <div className="relative shrink-0 rounded-xl overflow-hidden border-2 border-slate-200 shadow-sm bg-slate-900" style={{ width: 120, aspectRatio: '9/16' }}>
-                      {/* Thumbnail do vídeo real (primeiro da fila) */}
-                      {reelsVideoQueue[0]?.thumbnail ? (
-                        <img src={reelsVideoQueue[0].thumbnail} alt="Video preview" className="absolute inset-0 w-full h-full object-cover" />
-                      ) : (
-                        <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900 flex items-center justify-center">
-                          <Video className="w-6 h-6 text-slate-500 opacity-50" />
-                        </div>
-                      )}
+                    {/* Preview maior e informativo */}
+                    {(() => {
+                      const previewVideo = reelsVideoQueue[reelsPreviewVideoIndex] ?? reelsVideoQueue[0];
+                      const previewFrame = previewVideo && reelsFrames.length > 0
+                        ? reelsFrames[reelsPreviewVideoIndex % reelsFrames.length] ?? reelsFrames[0]
+                        : reelsFrames[0] ?? null;
+                      const hasThumb = !!previewVideo?.thumbnail;
 
-                      {/* Moldura sobreposta (PNG completo com transparência) */}
-                      {reelsFrames.length > 0 ? (
-                        <img
-                          src={reelsFrames[0].dataUrl}
-                          alt="Moldura preview"
-                          className="absolute inset-0 w-full h-full object-contain"
-                          style={{ pointerEvents: 'none' }}
-                        />
-                      ) : (
-                        <div
-                          className="absolute top-0 left-0 right-0 bg-white/90 flex items-center justify-center border-b border-dashed border-slate-300"
-                          style={{ height: `${reelsTopOffsetPercent}%` }}
-                        >
-                          <p className="text-[8px] text-slate-400 text-center px-1">Moldura<br/>aqui</p>
-                        </div>
-                      )}
+                      return (
+                        <>
+                          {/* Miniatura do preview */}
+                          <div className="relative shrink-0 rounded-xl overflow-hidden border-2 border-slate-200 shadow-md bg-slate-900" style={{ width: 130, aspectRatio: '9/16' }}>
+                            {/* Fundo: thumbnail do vídeo selecionado ou skeleton */}
+                            {hasThumb ? (
+                              <img src={previewVideo.thumbnail} alt="Video preview" className="absolute inset-0 w-full h-full object-cover" />
+                            ) : (
+                              <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900 flex flex-col items-center justify-center gap-2 px-2">
+                                <div className="w-full space-y-1.5">
+                                  <div className="h-1.5 bg-slate-600/80 rounded-full animate-pulse" />
+                                  <div className="h-1.5 bg-slate-600/60 rounded-full animate-pulse w-4/5" />
+                                  <div className="h-1.5 bg-slate-600/40 rounded-full animate-pulse w-3/5" />
+                                </div>
+                                <Video className="w-6 h-6 text-slate-500 opacity-50" />
+                                <span className="text-[8px] text-slate-500 text-center">
+                                  {previewVideo ? 'Capturando frame...' : 'Nenhum vídeo'}
+                                </span>
+                              </div>
+                            )}
 
-                      {/* Linha de separação */}
-                      <div className="absolute left-0 right-0 border-t-2 border-dashed border-rose-400" style={{ top: `${reelsTopOffsetPercent}%` }} />
-                      {/* Label do offset */}
-                      <div className="absolute left-0 right-0 flex justify-end pr-1" style={{ top: `${reelsTopOffsetPercent}%`, marginTop: 2 }}>
-                        <span className="text-[7px] bg-rose-500 text-white px-1 py-0.5 rounded font-bold">{reelsTopOffsetPercent}%</span>
-                      </div>
-                    </div>
+                            {/* Moldura PNG sobreposta */}
+                            {previewFrame ? (
+                              <img
+                                src={previewFrame.dataUrl}
+                                alt="Moldura preview"
+                                className="absolute inset-0 w-full h-full object-contain"
+                                style={{ pointerEvents: 'none' }}
+                              />
+                            ) : (
+                              <div
+                                className="absolute top-0 left-0 right-0 bg-white/90 flex items-center justify-center border-b-2 border-dashed border-rose-300"
+                                style={{ height: `${reelsTopOffsetPercent}%` }}
+                              >
+                                <p className="text-[8px] text-slate-400 text-center px-1">Moldura<br/>aqui</p>
+                              </div>
+                            )}
 
-                    <div className="flex-1">
-                      <p className="text-[11px] text-slate-600 mb-2 leading-relaxed">
-                        A moldura (perfil + texto) fica <strong>por cima</strong> do vídeo no topo. Ajuste o slider para definir onde começa a área do vídeo.
-                      </p>
-                      {/* Slider do offset */}
-                      <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between mb-1">
-                        <span>Altura da Moldura (Topo)</span>
-                        <span className="text-rose-600 font-black">{reelsTopOffsetPercent}%</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={10}
-                        max={60}
-                        step={1}
-                        value={reelsTopOffsetPercent}
-                        onChange={e => setReelsTopOffsetPercent(Number(e.target.value))}
-                        className="w-full accent-rose-500 mb-2"
-                      />
-                      {/* Presets */}
-                      <div className="flex gap-1.5">
-                        {[25, 30, 35, 40, 45].map(v => (
-                          <button
-                            key={v}
-                            onClick={() => setReelsTopOffsetPercent(v)}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-lg transition cursor-pointer ${reelsTopOffsetPercent === v ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}
-                          >
-                            {v}%
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                            {/* Linha de corte sempre visível */}
+                            <div className="absolute left-0 right-0" style={{ top: `${reelsTopOffsetPercent}%` }}>
+                              <div className="border-t-2 border-dashed border-rose-400 w-full" />
+                              <div className="flex justify-end pr-1 mt-0.5">
+                                <span className="text-[7px] bg-rose-500 text-white px-1 py-0.5 rounded font-bold">{reelsTopOffsetPercent}%</span>
+                              </div>
+                            </div>
+
+                            {/* Número do vídeo selecionado */}
+                            {previewVideo && (
+                              <div className="absolute top-1 left-1 bg-blue-500/90 text-white text-[7px] font-bold px-1 py-0.5 rounded">
+                                #{(reelsPreviewVideoIndex ?? 0) + 1}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Painel direito: infos + slider */}
+                          <div className="flex-1 min-w-0">
+                            {/* Info do vídeo selecionado */}
+                            {previewVideo && (
+                              <div className="mb-3 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-700 truncate" title={previewVideo.name}>
+                                  🎬 {previewVideo.name}
+                                </p>
+                                <p className="text-[9px] text-slate-400">{(previewVideo.size / 1024 / 1024).toFixed(1)} MB</p>
+                                {previewFrame && (
+                                  <p className="text-[9px] text-rose-600 mt-0.5 truncate" title={previewFrame.name}>
+                                    🖼 Moldura: {previewFrame.name}
+                                  </p>
+                                )}
+                                <p className={`text-[9px] mt-0.5 font-bold ${
+                                  previewVideo.status === 'done' ? 'text-emerald-600' :
+                                  previewVideo.status === 'error' ? 'text-rose-600' :
+                                  previewVideo.status === 'processing' ? 'text-indigo-600' : 'text-slate-400'
+                                }`}>
+                                  {previewVideo.status === 'done' ? `✅ Concluído — ${previewVideo.outputSize ? (previewVideo.outputSize/1024/1024).toFixed(1)+' MB' : ''}` :
+                                   previewVideo.status === 'error' ? `❌ ${previewVideo.errorMsg?.slice(0, 40)}` :
+                                   previewVideo.status === 'processing' ? '⚙️ Processando...' : '⏳ Aguardando'}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Slider do offset */}
+                            <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between mb-1">
+                              <span>Altura da Moldura</span>
+                              <span className="text-rose-600 font-black">{reelsTopOffsetPercent}%</span>
+                            </label>
+                            <input
+                              type="range"
+                              min={10}
+                              max={60}
+                              step={1}
+                              value={reelsTopOffsetPercent}
+                              onChange={e => setReelsTopOffsetPercent(Number(e.target.value))}
+                              className="w-full accent-rose-500 mb-2"
+                            />
+                            {/* Presets */}
+                            <div className="flex gap-1.5 flex-wrap">
+                              {[25, 30, 35, 40, 45].map(v => (
+                                <button
+                                  key={v}
+                                  onClick={() => setReelsTopOffsetPercent(v)}
+                                  className={`px-2 py-1 text-[10px] font-bold rounded-lg transition cursor-pointer ${reelsTopOffsetPercent === v ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}
+                                >
+                                  {v}%
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-slate-400 mt-2 leading-relaxed">
+                              A moldura fica <strong>por cima</strong> do vídeo. A linha tracejada mostra onde o vídeo começa abaixo da moldura.
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
