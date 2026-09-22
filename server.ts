@@ -137,79 +137,7 @@ export async function startServer(port = 3000) {
     }
   });
 
-  // ==========================================
-  // POLLINATIONS FLUX PREVIEW ENDPOINT (RESILIENTE COM FALLBACK RÁPIDO)
-  // ==========================================
-  app.post("/api/generate-preview", async (req, res) => {
-    try {
-      const { prompt, width = 1080, height = 1350, model = 'flux', seed } = req.body;
-      if (!prompt || typeof prompt !== 'string') {
-        return res.status(400).json({ error: "O prompt é obrigatório para gerar o preview." });
-      }
-      const safeSeed = seed || Math.floor(Math.random() * 1000000);
-      const cleanPrompt = prompt.trim().slice(0, 1800);
-      const encodedPrompt = encodeURIComponent(cleanPrompt);
 
-      const browserHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-      };
-
-      let response: Response | null = null;
-      let modelUsed = model || 'flux';
-
-      // 1. Tentar primeiro com o modelo FLUX (timeout ágil de 15s para evitar fila congestionada)
-      const fluxUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=flux&nologo=true&seed=${safeSeed}`;
-      try {
-        console.log(`[Preview Pollinations] Gerando arte com FLUX.1 (seed: ${safeSeed})...`);
-        const ctrlFlux = new AbortController();
-        const timeoutFlux = setTimeout(() => ctrlFlux.abort(), 15000);
-        const rFlux = await fetch(fluxUrl, { headers: browserHeaders, signal: ctrlFlux.signal });
-        clearTimeout(timeoutFlux);
-        if (rFlux.ok) {
-          response = rFlux;
-          modelUsed = 'flux';
-        } else {
-          console.warn(`[Preview Pollinations] FLUX retornou HTTP ${rFlux.status}, acionando motor rápido de contingência...`);
-        }
-      } catch (fluxErr: any) {
-        console.warn(`[Preview Pollinations] FLUX demorou ou falhou (${fluxErr.message}), acionando motor rápido de contingência...`);
-      }
-
-      // 2. Se o FLUX demorar ou falhar, fallback instantâneo para o motor turbo/default (responde em <1s)
-      if (!response) {
-        modelUsed = 'turbo';
-        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true&seed=${safeSeed}`;
-        console.log(`[Preview Pollinations] Executando fallback ultra-rápido...`);
-        const ctrlFallback = new AbortController();
-        const timeoutFallback = setTimeout(() => ctrlFallback.abort(), 20000);
-        const rFallback = await fetch(fallbackUrl, { headers: browserHeaders, signal: ctrlFallback.signal });
-        clearTimeout(timeoutFallback);
-        if (rFallback.ok) {
-          response = rFallback;
-        } else {
-          throw new Error(`Serviço de geração retornou status ${rFallback.status}: ${rFallback.statusText}`);
-        }
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const mimeType = response.headers.get('content-type') || 'image/jpeg';
-      const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
-
-      console.log(`[Preview Pollinations] Arte gerada com sucesso via motor ${modelUsed} (${buffer.length} bytes).`);
-
-      res.json({
-        success: true,
-        dataUrl,
-        seed: safeSeed,
-        modelUsed
-      });
-    } catch (error: any) {
-      console.error("[Preview Pollinations] Erro ao processar requisição:", error);
-      res.status(500).json({ error: error.message || "Erro ao gerar preview de imagem." });
-    }
-  });
 
   // ==========================================
   // REELS EDITOR — PROCESSAMENTO EM MASSA COM FFMPEG
