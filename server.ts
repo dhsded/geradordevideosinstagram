@@ -1763,12 +1763,36 @@ Responda em formato JSON estrito:
         videoData,
         mimeType,
         transcriptInput,
-        targetNiche = "Psicologia",
+        targetNiche,
         targetTone = "Acolhedor / Compassivo",
         cloneObjective = "Clonagem com adaptação autoral e retenção viral",
+        autoDetectNiche = false,
         provider: reqProvider,
         model: reqModel
       } = req.body;
+
+      // Bloco condicional do nicho: auto-detecção ou manual
+      const nicheBlock = autoDetectNiche
+        ? `3. DETECTE A CATEGORIA E NICHO DESTE VÍDEO:
+   - Analise o tema central, vocabulário, público-alvo e estilo de comunicação
+   - Identifique o nicho principal (ex: Psicologia, Fitness, Finanças, Tecnologia, Culinária, Educação, Entretenimento, etc.)
+   - Identifique um subtópico específico (ex: "Autoestima e Relacionamentos", "Emagrecimento Funcional", etc.)
+   - Sugira o formato ideal de conteúdo para este nicho (ex: "Reel educativo com storytelling", "Carrossel com dicas práticas", etc.)
+
+4. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL) adaptada ao nicho detectado:`
+        : `3. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL):
+   - Nicho de Destino: "${targetNiche}"
+   - Tom de Voz Desejado: "${targetTone}"
+   - Objetivo: "${cloneObjective}"`;
+
+      const nicheJsonBlock = autoDetectNiche
+        ? `  "categoria_detectada": {
+    "nicho": "Nome do nicho principal detectado (ex: Psicologia, Fitness, Finanças, etc.)",
+    "subtopico": "Subtópico específico identificado dentro do nicho",
+    "formato_ideal": "Formato de conteúdo recomendado para este nicho (ex: Reel educativo, Carrossel motivacional, etc.)",
+    "justificativa": "Breve explicação de por que este vídeo pertence a este nicho"
+  },`
+        : `  "categoria_detectada": null,`;
 
       let prompt = `Você é o maior especialista e estrategista do mundo em Engenharia Reversa de Conteúdo Viral e Roteirização para Instagram (Reels, Vídeos Curtos e Carrosséis).
 
@@ -1781,10 +1805,7 @@ ${videoData ? "1. Analise o áudio, expressões e todas as falas deste vídeo pa
    - Tese principal de aprendizado
    - Call to action (CTA)
 
-3. CRIE A VERSÃO CLONADA E OTIMIZADA (AUTORAL):
-   - Nicho de Destino: "${targetNiche}"
-   - Tom de Voz Desejado: "${targetTone}"
-   - Objetivo: "${cloneObjective}"
+${nicheBlock}
    - REGRA OBRIGATÓRIA: Nas falas dos diálogos, NUNCA coloque prefixos com nomes de personagens (ex: NÃO faça "Coração: ..."). O balão/fala deve conter APENAS o texto falado. A indicação de quem fala deve ir na descrição da cena!
 
 Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e sem texto fora do JSON) com esta estrutura exata:
@@ -1794,6 +1815,7 @@ Retorne sua resposta ESTRITAMENTE em formato JSON VÁLIDO (sem comentários e se
     "gancho_identificado": "A frase ou gancho inicial que abriu o vídeo original...",
     "analise_retencao": "Explicação estratégica de por que este vídeo engaja e como retém o público..."
   },
+${nicheJsonBlock}
   "roteiro_clonado_video": {
     "titulo_sugerido": "Título forte e magnético do novo roteiro",
     "gancho_novo": "Gancho inicial de abertura para os primeiros 3 segundos",

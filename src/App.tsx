@@ -457,6 +457,12 @@ export interface ClonerResultData {
     gancho_identificado: string;
     analise_retencao: string;
   };
+  categoria_detectada?: {
+    nicho: string;
+    subtopico: string;
+    formato_ideal: string;
+    justificativa: string;
+  };
   roteiro_clonado_video: {
     titulo_sugerido: string;
     gancho_novo: string;
@@ -866,8 +872,8 @@ export default function App() {
   const [instagramUrl, setInstagramUrl] = useState('');
   const [isFetchingInstagram, setIsFetchingInstagram] = useState(false);
   const [instagramVideoPreview, setInstagramVideoPreview] = useState<{ url?: string; thumbnail?: string; title?: string; sourceUrl?: string; isLocalFile?: boolean; base64Data?: string; mimeType?: string } | null>(null);
-  const [clonerNiche, setClonerNiche] = useState(NICHES[0]);
-  const [clonerTone, setClonerTone] = useState(NICHE_SCRIPT_TONES['Psicologia']?.[0] || 'Acolhedor / Compassivo');
+  const [clonerNiche, setClonerNiche] = useState(''); // '' = detectar automaticamente
+  const [clonerTone, setClonerTone] = useState('');
   const [clonerObjective, setClonerObjective] = useState('Clonagem com adaptação autoral e retenção viral');
   const [clonerTranscriptInput, setClonerTranscriptInput] = useState('');
   const [isCloning, setIsCloning] = useState(false);
@@ -2571,19 +2577,22 @@ export default function App() {
       return;
     }
 
+    const autoDetect = !clonerNiche.trim();
+
     setIsCloning(true);
     setError(null);
     try {
-      addLog('ai', 'CLONADOR', `Iniciando transcrição de áudio e engenharia reversa com IA (${clonerNiche} • ${clonerTone})...`);
+      addLog('ai', 'CLONADOR', `Iniciando transcrição de áudio e engenharia reversa com IA${autoDetect ? ' (categoria será detectada automaticamente)' : ` (${clonerNiche} • ${clonerTone})`}...`);
       
       const payload = {
         videoData: videoFile?.data || instagramVideoPreview?.base64Data,
         mimeType: videoFile?.mimeType || instagramVideoPreview?.mimeType || 'video/mp4',
         videoUrl: instagramVideoPreview?.url,
         transcriptInput: clonerTranscriptInput.trim() || undefined,
-        targetNiche: clonerNiche,
-        targetTone: clonerTone,
+        targetNiche: clonerNiche || undefined,
+        targetTone: clonerTone || undefined,
         cloneObjective: clonerObjective,
+        autoDetectNiche: autoDetect,
         provider: activeProvider,
         model: activeProvider === 'groq' ? groqModelInput : (activeProvider === 'openrouter' ? openrouterModelInput : geminiModel)
       };
@@ -2602,6 +2611,15 @@ export default function App() {
       const resJson = await response.json();
       if (resJson.data) {
         setClonerResult(resJson.data);
+        // Se a IA detectou automaticamente a categoria, aplicar ao state
+        if (autoDetect && resJson.data.categoria_detectada?.nicho) {
+          const detectedNiche = resJson.data.categoria_detectada.nicho;
+          const matchedNiche = NICHES.find(n => n.toLowerCase() === detectedNiche.toLowerCase()) || detectedNiche;
+          setClonerNiche(matchedNiche);
+          const tones = NICHE_SCRIPT_TONES[matchedNiche];
+          if (tones && tones.length > 0 && !clonerTone) setClonerTone(tones[0]);
+          addLog('success', 'CLONADOR', `Categoria detectada automaticamente: "${matchedNiche}" (${resJson.data.categoria_detectada.subtopico || ''})`);
+        }
         addLog('success', 'CLONADOR', 'Vídeo clonado com sucesso! Roteiro de Vídeo, Carrossel e Legenda gerados.');
       } else {
         throw new Error('Formato de resposta inválido.');
@@ -13300,16 +13318,70 @@ export default function App() {
                       onChange={(e) => {
                         const newN = e.target.value;
                         setClonerNiche(newN);
-                        if (NICHE_SCRIPT_TONES[newN]?.length > 0) {
+                        if (newN && NICHE_SCRIPT_TONES[newN]?.length > 0) {
                           setClonerTone(NICHE_SCRIPT_TONES[newN][0]);
+                        } else if (!newN) {
+                          setClonerTone('');
                         }
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-1 focus:ring-purple-500"
                     >
+                      <option value="">🔍 Detectar automaticamente pela IA</option>
                       {NICHES.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
+                    {!clonerNiche && (
+                      <p className="text-[10px] text-purple-600 flex items-center gap-1">
+                        <Sparkle className="w-3 h-3" />
+                        A IA irá identificar o nicho e criar a categoria após analisar o conteúdo.
+                      </p>
+                    )}
                   </div>
 
+                  {/* Card de Categoria Detectada — aparece após clonagem automática */}
+                  {clonerResult?.categoria_detectada && (
+                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 space-y-1.5">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className="w-5 h-5 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                        </div>
+                        <span className="text-[11px] font-black text-purple-800 uppercase tracking-wider">Categoria Detectada pela IA</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded-full">
+                          {clonerResult.categoria_detectada.nicho}
+                        </span>
+                        {clonerResult.categoria_detectada.subtopico && (
+                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full border border-indigo-200">
+                            {clonerResult.categoria_detectada.subtopico}
+                          </span>
+                        )}
+                        {clonerResult.categoria_detectada.formato_ideal && (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded-full border border-slate-200">
+                            {clonerResult.categoria_detectada.formato_ideal}
+                          </span>
+                        )}
+                      </div>
+                      {clonerResult.categoria_detectada.justificativa && (
+                        <p className="text-[10px] text-purple-700 leading-relaxed mt-1">
+                          {clonerResult.categoria_detectada.justificativa}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => {
+                          const niche = clonerResult.categoria_detectada!.nicho;
+                          const matched = NICHES.find(n => n.toLowerCase() === niche.toLowerCase()) || niche;
+                          setClonerNiche(matched);
+                          const tones = NICHE_SCRIPT_TONES[matched];
+                          if (tones?.length > 0) setClonerTone(tones[0]);
+                        }}
+                        className="mt-1 text-[10px] text-purple-600 hover:text-purple-800 underline underline-offset-2 cursor-pointer transition"
+                      >
+                        Usar este nicho nas próximas clonagens
+                      </button>
+                    </div>
+                  )}
+
+                  {clonerNiche && (
                   <div className="space-y-2">
                     <label className="block text-[11px] font-bold text-slate-700">Tom de Voz Desejado</label>
                     <select
@@ -13322,6 +13394,7 @@ export default function App() {
                       ))}
                     </select>
                   </div>
+                  )}
 
                   <div className="space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-700">Objetivo da Clonagem</label>
@@ -13442,6 +13515,22 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    {/* Badge de Categoria Detectada — no topo do resultado */}
+                    {clonerResult.categoria_detectada && (
+                      <div className="flex items-center gap-2 flex-wrap py-1.5 px-2 bg-purple-900/30 border border-purple-700/40 rounded-xl mb-1 shrink-0">
+                        <Sparkles className="w-3 h-3 text-purple-400 shrink-0" />
+                        <span className="text-[10px] text-purple-300 font-bold">Categoria detectada:</span>
+                        <span className="px-2 py-px bg-purple-600 text-white text-[10px] font-bold rounded-full">
+                          {clonerResult.categoria_detectada.nicho}
+                        </span>
+                        {clonerResult.categoria_detectada.subtopico && (
+                          <span className="text-[10px] text-purple-400">· {clonerResult.categoria_detectada.subtopico}</span>
+                        )}
+                        {clonerResult.categoria_detectada.formato_ideal && (
+                          <span className="ml-auto text-[9px] text-slate-400 italic">{clonerResult.categoria_detectada.formato_ideal}</span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Abas de Conteúdo do Resultado */}
                     <div className="flex items-center gap-2 border-b border-slate-800 pb-2 shrink-0">
