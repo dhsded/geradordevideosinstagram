@@ -469,7 +469,7 @@ export class AIService {
     const geminiKeyAvailable = keysManager.getActiveKey() || (process.env.GEMINI_API_KEY || '').trim();
 
     // Se houver vídeo ou imagem para análise, o Gemini Vision é o único com suporte multimodal nativo rápido
-    if (hasMedia && geminiKeyAvailable && activeProvider !== 'gemini' && !options.provider) {
+    if (hasMedia && geminiKeyAvailable) {
       try {
         return await this.generateWithGemini({
           parts,

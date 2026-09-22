@@ -1756,12 +1756,53 @@ Responda em formato JSON estrito:
     }
   });
 
-  // 2. Transcrever Diálogos & Clonar Conteúdo com IA
+  // Helper para extrair áudio leve (MP3) de buffer de vídeo usando ffmpeg
+  async function extractAudioFromBuffer(videoBuffer: Buffer, mimeType = 'video/mp4'): Promise<{ buffer: Buffer; mimeType: string }> {
+    const tmpDir = os.tmpdir();
+    const rand = Math.random().toString(36).substring(2, 9);
+    const inputExt = mimeType.includes('webm') ? '.webm' : '.mp4';
+    const inputPath = path.join(tmpDir, `pf_cloner_in_${Date.now()}_${rand}${inputExt}`);
+    const outputPath = path.join(tmpDir, `pf_cloner_out_${Date.now()}_${rand}.mp3`);
+
+    try {
+      await fs.promises.writeFile(inputPath, videoBuffer);
+      await new Promise<void>((resolve, reject) => {
+        const p = spawn('ffmpeg', [
+          '-y',
+          '-i', inputPath,
+          '-vn',
+          '-acodec', 'libmp3lame',
+          '-b:a', '128k',
+          outputPath
+        ]);
+        p.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outputPath)) {
+            resolve();
+          } else {
+            reject(new Error(`ffmpeg saiu com código ${code}`));
+          }
+        });
+        p.on('error', reject);
+      });
+
+      const audioBuf = await fs.promises.readFile(outputPath);
+      return { buffer: audioBuf, mimeType: 'audio/mp3' };
+    } catch (err: any) {
+      console.warn('[Cloner] Extração de áudio via ffmpeg falhou (usando buffer de vídeo original):', err.message);
+      return { buffer: videoBuffer, mimeType };
+    } finally {
+      try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch {}
+      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+    }
+  }
+
+  // 2. Transcrever Diálogos & Clonar Conteúdo com IA (Pipeline de 2 Fases)
   app.post("/api/cloner/transcribe-and-clone", async (req, res) => {
     try {
-      const {
+      let {
         videoData,
-        mimeType,
+        mimeType = 'video/mp4',
+        videoUrl,
         transcriptInput,
         targetNiche,
         targetTone = "Acolhedor / Compassivo",
@@ -1773,6 +1814,96 @@ Responda em formato JSON estrito:
         provider: reqProvider,
         model: reqModel
       } = req.body;
+
+      // Se videoUrl foi fornecido e videoData não estiver em memória, baixar o vídeo diretamente
+      if (!videoData && videoUrl) {
+        try {
+          console.log(`[Cloner] Baixando vídeo da URL: ${videoUrl.substring(0, 100)}...`);
+          const vResp = await fetch(videoUrl);
+          if (vResp.ok) {
+            const buf = Buffer.from(await vResp.arrayBuffer());
+            videoData = buf.toString('base64');
+            mimeType = vResp.headers.get('content-type') || mimeType || 'video/mp4';
+            console.log(`[Cloner] Vídeo baixado com sucesso: ${(buf.length / (1024 * 1024)).toFixed(2)} MB`);
+          }
+        } catch (dlErr: any) {
+          console.warn(`[Cloner] Erro ao baixar vídeo da URL:`, dlErr.message);
+        }
+      }
+
+      if (!videoData && (!transcriptInput || !transcriptInput.trim())) {
+        return res.status(400).json({
+          error: "Nenhum vídeo ou transcrição foi fornecido para clonagem. Faça upload de um arquivo, insira a URL do Reel ou forneça o texto da transcrição."
+        });
+      }
+
+      // ── FASE 1: Transcrição Fiel (Speech-to-Text dedicada) ───────────
+      let verifiedTranscript = (transcriptInput || "").trim();
+      let verifiedHook = "";
+      let retentionAnalysis = "";
+
+      if (!verifiedTranscript && videoData) {
+        console.log(`[Cloner] ETAPA 1/2: Extraindo áudio e transcrevendo falas com precisão literal...`);
+        const rawVideoBuf = Buffer.from(videoData, 'base64');
+        const { buffer: mediaBuffer, mimeType: mediaMime } = await extractAudioFromBuffer(rawVideoBuf, mimeType);
+        const mediaBase64 = mediaBuffer.toString('base64');
+
+        const transcriptionPrompt = `Você é um estenógrafo e transcritor profissional de áudio.
+Sua ÚNICA missão é ouvir este áudio/vídeo e transcrever FIELMENTE e LITERALMENTE todas as falas, narrações e diálogos que ocorrem nele.
+
+REGRAS ESTRITAS DE TRANSCRIÇÃO:
+1. Transcreva PALAVRA POR PALAVRA exatamente o que foi dito. Não resuma. Não corte nada. Não mude palavras.
+2. Não invente falas que não existem no áudio.
+3. Se houver ruído ou música de fundo, ignore e concentre-se estritamente na voz falada.
+4. Identifique o GANCHO DE ABERTURA (a frase falada nos primeiros 3 segundos).
+5. Se não houver voz humana falada (apenas música/silêncio), indique claramente: "Nenhuma voz falada detectada no áudio".
+
+Retorne ESTRITAMENTE em formato JSON VÁLIDO:
+{
+  "gancho_identificado": "Frase exata dita na abertura do vídeo nos primeiros 3 segundos...",
+  "dialogo_completo": "Transcrição literal e integral de todas as falas do início ao fim...",
+  "analise_retencao": "Breve análise estratégica do porquê este gancho e ritmo prendem a atenção do espectador..."
+}`;
+
+        try {
+          // A transcrição de áudio usa Gemini que possui processamento de fala estenográfico
+          const transcriptionResult = await aiService.analyze({
+            prompt: transcriptionPrompt,
+            videoData: mediaBase64,
+            mimeType: mediaMime,
+            provider: 'gemini'
+          });
+
+          let cleanedTrans = transcriptionResult.text.trim();
+          if (cleanedTrans.startsWith("```json")) cleanedTrans = cleanedTrans.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+          else if (cleanedTrans.startsWith("```")) cleanedTrans = cleanedTrans.replace(/^```\s*/, "").replace(/\s*```$/, "");
+          const tFirstBrace = cleanedTrans.indexOf('{');
+          const tLastBrace = cleanedTrans.lastIndexOf('}');
+          if (tFirstBrace !== -1 && tLastBrace !== -1) {
+            cleanedTrans = cleanedTrans.substring(tFirstBrace, tLastBrace + 1);
+          }
+
+          const parsedTrans = JSON.parse(cleanedTrans);
+          if (parsedTrans.dialogo_completo && parsedTrans.dialogo_completo.trim()) {
+            verifiedTranscript = parsedTrans.dialogo_completo.trim();
+            verifiedHook = parsedTrans.gancho_identificado || "";
+            retentionAnalysis = parsedTrans.analise_retencao || "";
+            console.log(`[Cloner] Transcrição literal concluída com sucesso: ${verifiedTranscript.length} caracteres.`);
+          }
+        } catch (tErr: any) {
+          console.warn("[Cloner] Erro na transcrição dedicada de áudio:", tErr.message);
+        }
+      }
+
+      if (!verifiedTranscript) {
+        verifiedTranscript = "Transcrição das falas do vídeo original.";
+      }
+      if (!verifiedHook) {
+        verifiedHook = verifiedTranscript.split('\n')[0].substring(0, 150);
+      }
+
+      // ── FASE 2: Engenharia Reversa e Roteirização Baseadas na Transcrição Real ──
+      console.log(`[Cloner] ETAPA 2/2: Gerando roteiro fiel, carrossel e categorias ancorados na transcrição real...`);
 
       const isMultilang = Array.isArray(targetLanguages) && targetLanguages.length > 1;
       const isMultiVersion = Number(versionCount) > 1;
@@ -1789,25 +1920,23 @@ Responda em formato JSON estrito:
 
       // ── Bloco de fidelidade ──────────────────────────────────────────
       const fidelityInstruction = isFaithful
-        ? `REGRAS DE FIDELIDADE AO ORIGINAL (MODO FIEL):
-   - Mantenha EXATAMENTE o mesmo número de cenas do vídeo original
-   - Preserve o ritmo, o fluxo e a estrutura narrativa original (gancho → desenvolvimento → CTA)
-   - O gancho clonado DEVE ser baseado no gancho original, reformulado mas com o mesmo impacto
-   - Adapte APENAS expressões regionais, referências culturais e linguagem para o público-alvo
-   - NÃO invente novas cenas, NÃO reordene cenas, NÃO altere o conteúdo central de cada cena`
+        ? `REGRAS OBRIGATÓRIAS DE FIDELIDADE AO ORIGINAL (MODO FIEL):
+   - O novo roteiro DEVE abordar EXATAMENTE o mesmo assunto, ensinamento e mensagem da transcrição original.
+   - Mantenha a mesma quantidade de cenas e o mesmo ritmo das falas originais.
+   - O gancho clonado DEVE ser uma reformulação equivalente e magnética do gancho original ("${verifiedHook}").
+   - Adapte a fala para soar moderna, fluida e natural ao ser gravada, preservando 100% da mensagem central.
+   - É ESTRITAMENTE PROIBIDO inventar um tema aleatório ou mudar de assunto!`
         : `REGRAS DE ADAPTAÇÃO CRIATIVA (MODO CRIATIVO):
-   - Use o vídeo original como inspiração, mas crie uma versão nova e original
-   - Pode alterar o número de cenas, reordenar, combinar ou expandir cenas
-   - Crie um gancho completamente novo que seja ainda mais forte que o original
-   - Explore ângulos e abordagens diferentes mantendo o tema central`;
+   - Use o ensinamento central da transcrição original como base.
+   - Crie uma versão nova com novos ângulos, ganchos e abordagens criativas mantendo o tema central.`;
 
       // ── Bloco de nicho ───────────────────────────────────────────────
       const nicheBlock = autoDetectNiche
         ? `3. DETECTE A CATEGORIA E NICHO DESTE VÍDEO:
-   - Analise o tema central, vocabulário, público-alvo e estilo de comunicação
-   - Identifique o nicho principal (ex: Psicologia, Fitness, Finanças, Tecnologia, Culinária, Educação, Entretenimento, etc.)
-   - Identifique um subtópico específico (ex: "Autoestima e Relacionamentos", "Emagrecimento Funcional", etc.)
-   - Sugira o formato ideal de conteúdo para este nicho
+   - Analise o tema central, vocabulário e público-alvo da transcrição fornecida.
+   - Identifique o nicho principal correspondente (ex: Psicologia, Fitness, Finanças, Tecnologia, Culinária, etc.)
+   - Identifique um subtópico específico dentro do tema da transcrição.
+   - Sugira o formato ideal de conteúdo para este nicho.
 
 4. CRIE A(S) VERSÃO(ÕES) CLONADA(S) seguindo as regras abaixo:`
         : `3. CRIE A(S) VERSÃO(ÕES) CLONADA(S):
@@ -1817,10 +1946,10 @@ Responda em formato JSON estrito:
 
       const nicheJsonBlock = autoDetectNiche
         ? `  "categoria_detectada": {
-    "nicho": "Nome do nicho principal detectado (ex: Psicologia, Fitness, Finanças, etc.)",
-    "subtopico": "Subtópico específico identificado dentro do nicho",
-    "formato_ideal": "Formato de conteúdo recomendado para este nicho",
-    "justificativa": "Breve explicação de por que este vídeo pertence a este nicho"
+    "nicho": "Nome do nicho principal detectado a partir da transcrição",
+    "subtopico": "Subtópico específico identificado dentro do tema",
+    "formato_ideal": "Formato de conteúdo recomendado",
+    "justificativa": "Breve explicação baseada no vocabulário e tema da transcrição"
   },`
         : `  "categoria_detectada": null,`;
 
@@ -1849,8 +1978,8 @@ Responda em formato JSON estrito:
       const versionsJsonBlock = isMultiVersion
         ? `  "versoes_clonadas": [
     ${Array.from({ length: nv }, (_, i) => `{
-      "titulo_sugerido": "Título ${i === 0 ? 'principal' : `variação ${i + 1}`} — forte e magnético",
-      "gancho_novo": "${i === 0 ? 'Gancho principal baseado no original' : `Gancho variação ${i + 1} — abordagem diferente do mesmo tema`}",
+      "titulo_sugerido": "Título ${i === 0 ? 'principal' : `variação ${i + 1}`} fiel à transcrição",
+      "gancho_novo": "${i === 0 ? 'Gancho principal equivalente ao original' : `Gancho variação ${i + 1} com abordagem diferente do mesmo tema`}",
       "cenas": [ ${sceneFields} ],
       "cta_final": "Chamada para ação de alto engajamento"
     }`).join(',\n    ')}
@@ -1866,17 +1995,13 @@ Responda em formato JSON estrito:
 
       const prompt = `Você é o maior especialista do mundo em Engenharia Reversa de Conteúdo Viral e Roteirização para Instagram.
 
-Sua missão: CLONAGEM INTELIGENTE ${isFaithful ? '(MODO FIEL AO ORIGINAL)' : '(MODO ADAPTAÇÃO CRIATIVA)'}.
+Abaixo está a TRANSCRIÇÃO REAL E EXATA do vídeo original a ser clonado:
+"""
+${verifiedTranscript}
+"""
 
-PASSO 1 — TRANSCRIÇÃO FIEL:
-${videoData ? "Analise o áudio e todas as falas deste vídeo. Transcreva FIELMENTE 100% dos diálogos, incluindo pausas e ênfases importantes." : transcriptInput ? `Analise a seguinte transcrição/conteúdo original fornecido:\n"""\n${transcriptInput}\n"""` : "Analise o conteúdo fornecido."}
-
-PASSO 2 — DESCONSTRUÇÃO DO PADRÃO VIRAL:
-   - Gancho inicial exato (primeiros 3 segundos)
-   - Número exato de cenas/blocos de fala
-   - Gatilho emocional / Ponto de virada
-   - Tese principal de aprendizado
-   - Call to action (CTA) original
+GANCHO ORIGINAL FALADO:
+"${verifiedHook}"
 
 ${nicheBlock}
 
@@ -1884,38 +2009,36 @@ ${fidelityInstruction}
 
 ${langInstruction}
    - REGRA OBRIGATÓRIA: NUNCA coloque prefixos de personagens nas falas (ex: NÃO faça "Coração: ..."). A fala deve conter APENAS o texto falado.
-   - Gere ${nv} versão(ões) ${nv > 1 ? 'com ganchos diferentes mas mesma fidelidade ao original' : ''}.
+   - Gere ${nv} versão(ões) ${nv > 1 ? 'com variações de gancho mas sempre fiéis ao tema transcrito' : ''}.
 
 Retorne ESTRITAMENTE em JSON VÁLIDO (sem comentários, sem texto fora do JSON):
 {
   "transcricao_original": {
-    "dialogo_completo": "Transcrição INTEGRAL e FIEL de TODAS as falas, palavra por palavra...",
-    "gancho_identificado": "A frase exata de abertura do vídeo original...",
-    "analise_retencao": "Por que este vídeo engaja — estrutura, emoção, ritmo..."
+    "dialogo_completo": ${JSON.stringify(verifiedTranscript)},
+    "gancho_identificado": ${JSON.stringify(verifiedHook)},
+    "analise_retencao": ${JSON.stringify(retentionAnalysis || "Estrutura envolvente com gancho forte e retenção contínua.")}
   },
 ${nicheJsonBlock}
 ${versionsJsonBlock}
   "carrossel_adaptado": {
-    "titulo_carrossel": "Título do Carrossel adaptado",
+    "titulo_carrossel": "Título do Carrossel adaptado ao tema da transcrição",
     "slides": [
       { "slide_numero": 1, "tipo": "Capa", "titulo_slide": "Frase de impacto da capa", "conteudo_texto": "Texto de apoio...", "prompt_imagem_en": "Prompt em inglês..." },
-      { "slide_numero": 2, "tipo": "Desenvolvimento", "titulo_slide": "Insight Central", "conteudo_texto": "Explicação profunda...", "prompt_imagem_en": "Prompt..." },
+      { "slide_numero": 2, "tipo": "Desenvolvimento", "titulo_slide": "Insight Central", "conteudo_texto": "Explicação profunda baseada na transcrição...", "prompt_imagem_en": "Prompt..." },
       { "slide_numero": 3, "tipo": "Desenvolvimento", "titulo_slide": "Quebra de Padrão", "conteudo_texto": "Explicação adicional...", "prompt_imagem_en": "Prompt..." },
       { "slide_numero": 4, "tipo": "CTA", "titulo_slide": "Salve para não esquecer", "conteudo_texto": "Comente abaixo e compartilhe.", "prompt_imagem_en": "Prompt final..." }
     ]
   },
   "legenda_instagram": {
-    "gancho": "Primeira linha irresistível da legenda...",
+    "gancho": "Primeira linha irresistível da legenda baseada no tema da transcrição...",
     "corpo": "Texto completo com quebras de linha e emojis estratégicos...",
     "cta": "Chamada para comentar ou salvar...",
     "hashtags": ["#nicho", "#instagram", "#viral", "#conteudo"]
   }
 }`;
 
-      const result = await aiService.analyze({
+      const result = await aiService.generate({
         prompt,
-        videoData,
-        mimeType: mimeType || 'video/mp4',
         provider: reqProvider,
         model: reqModel
       });
@@ -1932,7 +2055,6 @@ ${versionsJsonBlock}
       try {
         parsedData = JSON.parse(cleanedJson);
       } catch (parseErr) {
-        // Tentar extrair primeiro bloco JSON
         const firstBrace = cleanedJson.indexOf('{');
         const lastBrace = cleanedJson.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -1946,19 +2068,19 @@ ${versionsJsonBlock}
         parsedData = {
           raw_text: result.text,
           transcricao_original: {
-            dialogo_completo: result.text.substring(0, 500) + "...",
-            gancho_identificado: "Gancho extraído da análise",
-            analise_retencao: "Vídeo analisado pela IA com foco em retenção."
+            dialogo_completo: verifiedTranscript,
+            gancho_identificado: verifiedHook,
+            analise_retencao: retentionAnalysis || "Vídeo analisado pela IA com foco em retenção."
           },
           roteiro_clonado_video: {
             titulo_sugerido: "Roteiro Clonado",
-            gancho_novo: "Você já se sentiu assim?",
+            gancho_novo: verifiedHook || "Você já se sentiu assim?",
             cenas: [
               {
                 numero_cena: 1,
                 enquadramento: "Close-up",
                 acao_visual: "Personagem expressivo",
-                fala: "Este é o novo roteiro adaptado para o seu público.",
+                fala: verifiedTranscript.substring(0, 150),
                 prompt_imagem_en: "Cinematic portrait, expressive character, high resolution"
               }
             ],
@@ -1969,12 +2091,22 @@ ${versionsJsonBlock}
             slides: []
           },
           legenda_instagram: {
-            gancho: "Você precisa ler isso hoje.",
-            corpo: result.text,
+            gancho: verifiedHook || "Você precisa ler isso hoje.",
+            corpo: verifiedTranscript,
             cta: "Salve este post.",
-            hashtags: ["#conteudo", "#psicologia"]
+            hashtags: ["#conteudo", "#viral"]
           }
         };
+      }
+
+      // Garantir que a transcrição real verificada permaneça intacta no resultado final
+      if (!parsedData.transcricao_original) {
+        parsedData.transcricao_original = {};
+      }
+      parsedData.transcricao_original.dialogo_completo = verifiedTranscript;
+      parsedData.transcricao_original.gancho_identificado = verifiedHook;
+      if (retentionAnalysis) {
+        parsedData.transcricao_original.analise_retencao = retentionAnalysis;
       }
 
       res.json({
