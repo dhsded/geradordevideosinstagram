@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle, Users } from 'lucide-react';
+import { Loader2, Copy, Check, Sparkles, Image as ImageIcon, Clapperboard, MessageSquare, Upload, Key, X, FileText, Download, ArrowLeft, ArrowRight, RotateCw, Play, Square, Trash2, Eye, Compass, Terminal, MousePointer, Keyboard, Cpu, Send, Database, Zap, Settings, Bot, Globe, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, KeyRound, ExternalLink, Layers, DollarSign, Activity, Gauge, BarChart3, Images, ListOrdered, FileCheck2, ZoomIn, AlertTriangle, FolderArchive, Grid, SlidersHorizontal, Sparkle, FileUp, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, Maximize2, Minimize2, Filter, CheckSquare, Camera, Workflow, ListChecks, Plus, Pause, FolderOpen, BookOpen, Clock, FileCode, CheckCheck, Save, Palette, Code, Edit2, FileDown, Instagram, Video, Flame, Repeat, Shuffle, Users, GripVertical } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
@@ -10342,14 +10343,21 @@ export default function App() {
               </div>
             </div>
 
-            {/* Corpo principal */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden min-h-0">
+            {/* Corpo principal — painéis redimensionáveis */}
+            <PanelGroup
+              direction="horizontal"
+              autoSaveId="reels-layout-h"
+              className="flex-1 overflow-hidden min-h-0 gap-0"
+            >
+              {/* ═══════════════════════════════════════════
+                  PAINEL ESQUERDO: Molduras + Grade de Vídeos
+              ═══════════════════════════════════════════ */}
+              <Panel defaultSize={42} minSize={25} className="flex flex-col overflow-hidden min-h-0">
+                <PanelGroup direction="vertical" autoSaveId="reels-layout-left" className="flex-1 overflow-hidden min-h-0">
 
-              {/* Coluna Esquerda: Molduras + Vídeos */}
-              <div className="lg:col-span-5 flex flex-col gap-4 overflow-hidden min-h-0">
-
-                {/* Zona de Molduras */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
+                  {/* Painel: Molduras */}
+                  <Panel defaultSize={30} minSize={15} className="overflow-hidden flex flex-col min-h-0">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-y-auto flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 bg-rose-50 rounded-lg flex items-center justify-center">
@@ -10397,10 +10405,17 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                </div>
+                 </div>
+                  </Panel>
 
-                {/* Zona de Vídeos */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex-1 overflow-hidden flex flex-col min-h-0">
+                  {/* Handle vertical entre Molduras e Vídeos */}
+                  <PanelResizeHandle className="group flex items-center justify-center h-2 mx-2 cursor-row-resize my-0.5">
+                    <div className="w-10 h-1 rounded-full bg-slate-200 group-hover:bg-rose-400 group-active:bg-rose-500 transition-colors" />
+                  </PanelResizeHandle>
+
+                  {/* Painel: Grade de Vídeos */}
+                  <Panel defaultSize={70} minSize={30} className="overflow-hidden flex flex-col min-h-0">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-hidden flex flex-col min-h-0">
                   <div className="flex items-center justify-between mb-3 shrink-0">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 bg-slate-100 rounded-lg flex items-center justify-center">
@@ -10471,7 +10486,7 @@ export default function App() {
                       </div>
                     )}
                     {reelsVideoQueue.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2 pb-1">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pb-1">
                         {reelsVideoQueue.map((video, vi) => {
                           const assignedFrame = reelsFrames.length > 0 ? reelsFrames[vi % reelsFrames.length] : null;
                           const isProcessing = video.status === 'processing';
@@ -10618,13 +10633,26 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div>
+                  </Panel>
+                </PanelGroup>
+              </Panel>
 
-              {/* Coluna Direita: Preview + Configurações + Botão */}
-              <div className="lg:col-span-7 flex flex-col gap-4 overflow-y-auto min-h-0">
+              {/* Handle horizontal entre Esquerda e Direita */}
+              <PanelResizeHandle className="group flex flex-col items-center justify-center w-2 mx-0.5 cursor-col-resize">
+                <div className="h-12 w-1 rounded-full bg-slate-200 group-hover:bg-rose-400 group-active:bg-rose-500 transition-colors flex flex-col items-center justify-center gap-0.5">
+                  <GripVertical className="w-3 h-3 text-slate-400 group-hover:text-rose-500" />
+                </div>
+              </PanelResizeHandle>
 
-                {/* Preview da Composição — interativo */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
+              {/* ═══════════════════════════════════════════
+                  PAINEL DIREITO: Preview + Configurações + Ação
+              ═══════════════════════════════════════════ */}
+              <Panel defaultSize={58} minSize={30} className="flex flex-col overflow-hidden min-h-0">
+                <PanelGroup direction="vertical" autoSaveId="reels-layout-right" className="flex-1 overflow-hidden min-h-0">
+
+                  {/* Painel: Preview da Composição */}
+                  <Panel defaultSize={45} minSize={25} className="overflow-hidden flex flex-col min-h-0">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-y-auto flex flex-col">
                   <h3 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5 text-rose-500" />
                     Preview da Composição
@@ -10758,9 +10786,16 @@ export default function App() {
                     })()}
                   </div>
                 </div>
+                  </Panel>
 
-                {/* Configurações de Saída */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
+                  {/* Handle vertical entre Preview e Configurações */}
+                  <PanelResizeHandle className="group flex items-center justify-center h-2 mx-2 cursor-row-resize my-0.5">
+                    <div className="w-10 h-1 rounded-full bg-slate-200 group-hover:bg-rose-400 group-active:bg-rose-500 transition-colors" />
+                  </PanelResizeHandle>
+
+                  {/* Painel: Configurações + Ação */}
+                  <Panel defaultSize={55} minSize={30} className="overflow-hidden flex flex-col min-h-0">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-y-auto flex flex-col gap-4">
                   <h3 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                     <Settings className="w-3.5 h-3.5 text-slate-500" />
                     Configurações de Saída
@@ -10881,8 +10916,10 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
+                  </Panel>
+                </PanelGroup>
+              </Panel>
+            </PanelGroup>
           </div>
         ) : activeTab !== 'analysis' ? (
           <>

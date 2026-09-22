@@ -84,6 +84,7 @@
     "pdf-parse": "^2.4.5",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-resizable-panels": "^4.13.2",
     "vite": "^6.2.3"
   },
   "devDependencies": {
