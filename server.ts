@@ -2696,7 +2696,10 @@ Analise cada imagem abaixo e distribua entre os projetos identificados:`;
 
   server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${PORT} is already in use. Server is already active.`);
+      console.error(`\n⚠️  [ATENÇÃO] A porta ${PORT} já está ocupada por outro processo!`);
+      console.error(`   Se você tem outro projeto aberto (ex: Next.js na pasta "Clonador,Criador em massa Vercel"),`);
+      console.error(`   ele está usando a porta ${PORT}. Encerre-o ou execute-o em outra porta (ex: 3001) para que o PostForge funcione.`);
+      console.error(`   O PostForge NÃO conseguirá responder em http://localhost:${PORT} enquanto a porta estiver ocupada.\n`);
     } else {
       console.error('Server error:', err);
     }
