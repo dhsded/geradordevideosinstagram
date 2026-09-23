@@ -689,11 +689,12 @@ function ClonerSceneCard({
   copiedStates,
   handleCopy
 }: {
+  key?: React.Key;
   cena: ClonedVideoScene;
   cIdx: number;
   versionIndex: number;
   copiedStates: Record<string, boolean>;
-  handleCopy: (text: string, key: string) => void;
+  handleCopy: (text: string, key: string) => void | Promise<void>;
 }) {
   const isMultiLang = !!(cena.fala_pt || cena.fala_en || cena.fala_es);
   const availLangs = isMultiLang
@@ -5054,7 +5055,7 @@ export default function App() {
         data: { 
           batchCarouselResults, 
           artStyle, 
-          niche: selectedNiche,
+          niche,
           characterDescription 
         } 
       });
