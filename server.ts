@@ -288,6 +288,113 @@ export async function startServer(port = 3000) {
     }
   });
 
+  // Proba metadados (duração em segundos) e thumbnail via ffprobe e ffmpeg
+  app.post("/api/reels-editor/probe-videos", async (req, res) => {
+    try {
+      const { paths } = req.body;
+      if (!Array.isArray(paths) || paths.length === 0) {
+        return res.json({ results: {} });
+      }
+
+      const results: Record<string, { duration?: number; thumbnail?: string }> = {};
+
+      await Promise.all(
+        paths.map(async (filePath: string) => {
+          if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) return;
+
+          // 1. Duração via ffprobe
+          let duration: number | undefined = undefined;
+          try {
+            await new Promise<void>((resolve) => {
+              const proc = spawn('ffprobe', [
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                filePath,
+              ]);
+              let out = '';
+              proc.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+              proc.on('close', (code: number) => {
+                if (code === 0 && out.trim()) {
+                  const sec = parseFloat(out.trim());
+                  if (!isNaN(sec) && sec > 0) duration = Math.round(sec);
+                }
+                resolve();
+              });
+              proc.on('error', () => resolve());
+            });
+          } catch (_) {}
+
+          // 2. Thumbnail via ffmpeg
+          let thumbnail: string | undefined = undefined;
+          try {
+            await new Promise<void>((resolve) => {
+              const proc = spawn('ffmpeg', [
+                '-ss', '00:00:01',
+                '-i', filePath,
+                '-vframes', '1',
+                '-vf', 'scale=320:-1',
+                '-q:v', '3',
+                '-f', 'image2',
+                'pipe:1',
+              ]);
+              const chunks: Buffer[] = [];
+              proc.stdout.on('data', (d: Buffer) => chunks.push(d));
+              proc.on('close', (code: number) => {
+                if (code === 0 && chunks.length > 0) {
+                  const b64 = Buffer.concat(chunks).toString('base64');
+                  thumbnail = `data:image/jpeg;base64,${b64}`;
+                }
+                resolve();
+              });
+              proc.on('error', () => resolve());
+            });
+          } catch (_) {}
+
+          results[filePath] = { duration, thumbnail };
+        })
+      );
+
+      res.json({ results });
+    } catch (err: any) {
+      console.error("[Reels Editor] Erro ao extrair metadados dos vídeos:", err);
+      res.status(500).json({ error: err.message || "Erro ao analisar vídeos." });
+    }
+  });
+
+  // Excluir arquivos de vídeo do disco de origem (permanente)
+  app.post("/api/reels-editor/delete-files", async (req, res) => {
+    try {
+      const { filePaths } = req.body;
+      if (!Array.isArray(filePaths) || filePaths.length === 0) {
+        return res.status(400).json({ error: "filePaths deve ser um array não vazio." });
+      }
+
+      const deleted: string[] = [];
+      const errors: { path: string; error: string }[] = [];
+
+      for (const p of filePaths) {
+        try {
+          if (fs.existsSync(p)) {
+            fs.unlinkSync(p);
+            deleted.push(p);
+            console.log(`[Reels Editor] 🗑️ Arquivo apagado do disco: ${p}`);
+          } else {
+            deleted.push(p);
+          }
+        } catch (err: any) {
+          console.error(`[Reels Editor] ❌ Falha ao apagar arquivo ${p}:`, err);
+          errors.push({ path: p, error: err.message });
+        }
+      }
+
+      res.json({ success: true, deleted, errors });
+    } catch (err: any) {
+      console.error("[Reels Editor] Erro ao apagar arquivos:", err);
+      res.status(500).json({ error: err.message || "Erro ao apagar arquivos." });
+    }
+  });
+
   // Abre seletor nativo de pasta via PowerShell e retorna o caminho escolhido
   app.post("/api/pick-folder", (req, res) => {
     const { defaultPath } = req.body || {};
